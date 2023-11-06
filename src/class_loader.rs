@@ -1,4 +1,4 @@
-use crate::class::{AccessFlags, Attribute, Class, ClassVersion, Constant, Field, Method};
+use crate::class::{AccessFlags, Attribute, Class, ClassVersion, Code, Constant, Field, Method};
 
 pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String> {
     let [0xCA, 0xFE, 0xBA, 0xBE] = bytes.take(4).collect::<Vec<_>>()[..] else { return Err(String::from("Invalid header")) };
@@ -130,11 +130,31 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
         for _ in 0..attrs_count {
             attributes.push(get_attribute(&constants, bytes)?);
         }
+
+        let code_attributes = attributes
+            .iter()
+            .filter(|attr| attr.name == "Code")
+            .collect::<Vec<_>>();
+        let code = match (
+            access.is_native() || access.is_abstract(),
+            &code_attributes[..],
+        ) {
+            (true, []) => None,
+            (false, [code]) => {
+                let bytes = code.data.clone();
+                let code = parse_code_attribute(&constants, bytes)?;
+                Some(code)
+            }
+            (true, [_]) => return Err(String::from("Method marked as native or abstract")),
+            (false, []) => return Err(String::from("Method must contain code")),
+            _ => return Err(String::from("Method must only have one code attribute")),
+        };
         methods.push(Method {
             access_flags,
             name,
             descriptor,
             attributes,
+            code,
         })
     }
 
@@ -163,10 +183,47 @@ fn get_attribute(
 ) -> Result<Attribute, String> {
     let name_idx = get_u16(bytes)?;
     let name = str_index(constants, name_idx as usize)?;
-    let attr_length = get_u64(bytes)?;
+    let attr_length = get_u32(bytes)?;
     Ok(Attribute {
         name,
         data: bytes.take(attr_length as usize).collect::<Vec<_>>(),
+    })
+}
+
+fn parse_code_attribute(constants: &[Constant], bytes: Vec<u8>) -> Result<Code, String> {
+    let mut bytes = bytes.into_iter();
+    let max_stack = get_u16(&mut bytes)?;
+    let max_locals = get_u16(&mut bytes)?;
+    let code_length = get_u32(&mut bytes)?;
+    let code = (&mut bytes).take(code_length as usize).collect::<Vec<_>>();
+
+    let exception_table_length = get_u16(&mut bytes)?;
+    let mut exception_table = Vec::new();
+    for _ in 0..exception_table_length {
+        let start_pc = get_u16(&mut bytes)?;
+        let end_pc = get_u16(&mut bytes)?;
+        let handler_pc = get_u16(&mut bytes)?;
+        let catch_type = get_u16(&mut bytes)?;
+        let catch_type = if catch_type == 0 {
+            None
+        } else {
+            Some(str_index(constants, catch_type as usize)?)
+        };
+        exception_table.push((start_pc, end_pc, handler_pc, catch_type));
+    }
+
+    let attrs_count = get_u16(&mut bytes)?;
+    let mut attributes = Vec::new();
+    for _ in 0..attrs_count {
+        attributes.push(get_attribute(constants, &mut bytes)?);
+    }
+
+    Ok(Code {
+        max_stack,
+        max_locals,
+        code,
+        exception_table,
+        attributes,
     })
 }
 

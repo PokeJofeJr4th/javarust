@@ -72,7 +72,7 @@ pub enum Constant {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 /// Flag Name 	        Value 	Interpretation
 /// ACC_PUBLIC 	        0x0001 	Declared public; may be accessed from outside its package.
 /// ACC_PRIVATE 	    0x0002 	Declared private; usable only within the defining class.
@@ -88,6 +88,18 @@ pub enum Constant {
 /// ACC_SYNTHETIC 	    0x1000 	Declared synthetic; not present in the source code.
 /// ACC_ENUM 	        0x4000 	Declared as an element of an enum.
 pub struct AccessFlags(pub u16);
+
+impl AccessFlags {
+    pub const fn is_static(self) -> bool {
+        self.0 & 0x0008 != 0
+    }
+    pub const fn is_native(self) -> bool {
+        self.0 & 0x0100 != 0
+    }
+    pub const fn is_abstract(self) -> bool {
+        self.0 & 0x0400 != 0
+    }
+}
 
 #[derive(Debug)]
 pub struct ClassVersion {
@@ -109,10 +121,20 @@ pub struct Method {
     pub name: String,
     pub descriptor: String,
     pub attributes: Vec<Attribute>,
+    pub code: Option<Code>,
 }
 
 #[derive(Debug)]
 pub struct Attribute {
     pub name: String,
     pub data: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub struct Code {
+    pub max_stack: u16,
+    pub max_locals: u16,
+    pub code: Vec<u8>,
+    pub exception_table: Vec<(u16, u16, u16, Option<String>)>,
+    pub attributes: Vec<Attribute>,
 }
