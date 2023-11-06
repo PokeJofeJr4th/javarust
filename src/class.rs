@@ -62,7 +62,8 @@ pub enum Constant {
         constant: u32,
     },
     InvokeDynamic {
-        idk: u32,
+        bootstrap_index: u16,
+        name_type_index: u16,
     },
     Module {
         identity: u16,
@@ -113,6 +114,7 @@ pub struct Field {
     pub name: String,
     pub descriptor: String,
     pub attributes: Vec<Attribute>,
+    pub constant_value: Option<Constant>,
 }
 
 #[derive(Debug)]
@@ -137,4 +139,49 @@ pub struct Code {
     pub code: Vec<u8>,
     pub exception_table: Vec<(u16, u16, u16, Option<String>)>,
     pub attributes: Vec<Attribute>,
+    pub stack_map: Vec<StackMapFrame>,
+}
+
+#[derive(Debug)]
+pub enum StackMapFrame {
+    Same {
+        offset_delta: u8,
+    },
+    SameLocals1Stack {
+        offset_delta: u8,
+        verification: VerificationTypeInfo,
+    },
+    SameLocals1StackExtended {
+        offset_delta: u16,
+        verification: VerificationTypeInfo,
+    },
+    Chop {
+        chop: u8,
+        offset_delta: u16,
+    },
+    SameExtended {
+        offset_delta: u16,
+    },
+    Append {
+        offset_delta: u16,
+        locals: Vec<VerificationTypeInfo>,
+    },
+    Full {
+        offset_delta: u16,
+        locals: Vec<VerificationTypeInfo>,
+        stack: Vec<()>,
+    },
+}
+
+#[derive(Debug)]
+pub enum VerificationTypeInfo {
+    Top,
+    Integer,
+    Float,
+    Null,
+    UninitializedThis,
+    Object { class_name: String },
+    Uninitialized { offset: u16 },
+    Long,
+    Double,
 }

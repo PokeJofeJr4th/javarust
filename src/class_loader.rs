@@ -1,7 +1,9 @@
-use crate::class::{AccessFlags, Attribute, Class, ClassVersion, Code, Constant, Field, Method};
+use crate::class::{
+    AccessFlags, Attribute, Class, ClassVersion, Code, Constant, Field, Method, StackMapFrame,
+};
 
 pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String> {
-    let [0xCA, 0xFE, 0xBA, 0xBE] = bytes.take(4).collect::<Vec<_>>()[..] else { return Err(String::from("Invalid header")) };
+    let 0xCAFEBABE = get_u32(bytes)? else { return Err(String::from("Invalid header")) };
     let version = ClassVersion {
         minor_version: get_u16(bytes)?,
         major_version: get_u16(bytes)?,
@@ -73,21 +75,34 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
                     type_addr,
                 });
             }
-            Some(15..=20) => {
-                todo!()
+            Some(15) => {
+                let Some(descriptor) = bytes.next() else { return Err(String::from("Unexpected EOF"))};
+                let index = get_u16(bytes)?;
+                constants.push(Constant::MethodHandle { descriptor, index });
+            }
+            Some(16) => {
+                let index = get_u16(bytes)?;
+                constants.push(Constant::MethodType { index });
+            }
+            Some(18) => {
+                let bootstrap_index = get_u16(bytes)?;
+                let name_type_index = get_u16(bytes)?;
+                constants.push(Constant::InvokeDynamic {
+                    bootstrap_index,
+                    name_type_index,
+                });
             }
             other => return Err(format!("Ugh, {other:?}")),
         }
+        // println!("{constants:?}");
     }
 
     let access = AccessFlags(get_u16(bytes)?);
     let this_class = get_u16(bytes)?;
-    let Some(Constant::String(this_class)) = constants.get(this_class as usize - 1).cloned() else {
-        return Err(format!("Invalid `this` class pointer; {constants:?}[{this_class}]"))
-    };
+    let this_class = class_index(&constants, this_class as usize)?;
 
     let super_class = get_u16(bytes)?;
-    let super_class = str_index(&constants, super_class as usize)?;
+    let super_class = class_index(&constants, super_class as usize)?;
 
     let interface_count = get_u16(bytes)?;
     let mut interfaces = Vec::new();
@@ -108,16 +123,34 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
         for _ in 0..attrs_count {
             attributes.push(get_attribute(&constants, bytes)?);
         }
+
+        let constant_value = if access_flags.is_static() {
+            let [const_idx] = attributes.iter().filter(|attr| attr.name == "ConstantValue").collect::<Vec<_>>()[..] else {
+                return Err(String::from("Static field must have exactly one `ConstantValue` attribute"))
+            };
+            let [b0, b1] = const_idx.data[..] else {
+                return Err(String::from("`ConstantValue` attribute must have exactly two bytes"))
+            };
+            let Some(constant) = constants.get((b0 as usize) << 8 | b1 as usize) else {
+                return Err(String::from("`ConstantValue` attribute has invalid constant index"))
+            };
+            Some(constant.clone())
+        } else {
+            None
+        };
+
         fields.push(Field {
             access_flags,
             name,
             descriptor,
             attributes,
+            constant_value,
         })
     }
 
     let method_count: u16 = get_u16(bytes)?;
     let mut methods = Vec::new();
+    // println!("{method_count} methods");
     for _ in 0..method_count {
         let access_flags = AccessFlags(get_u16(bytes)?);
         let name_idx = get_u16(bytes)?;
@@ -134,6 +167,9 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
             .iter()
             .filter(|attr| attr.name == "Code")
             .collect::<Vec<_>>();
+        // println!("Method {name}: {descriptor}; {attrs_count} attrs");
+        // println!("{attributes:?}");
+        // println!("{access:?}");
         let code = match (
             access.is_native() || access.is_abstract(),
             &code_attributes[..],
@@ -145,7 +181,8 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
                 Some(code)
             }
             (true, [_]) => return Err(String::from("Method marked as native or abstract")),
-            (false, []) => return Err(String::from("Method must contain code")),
+            // (false, []) => return Err(String::from("Method must contain code")),
+            (false, []) => None,
             _ => return Err(String::from("Method must only have one code attribute")),
         };
         methods.push(Method {
@@ -217,12 +254,33 @@ fn parse_code_attribute(constants: &[Constant], bytes: Vec<u8>) -> Result<Code, 
         attributes.push(get_attribute(constants, &mut bytes)?);
     }
 
+    let stack_map_attrs = attributes
+        .iter()
+        .filter(|attr| attr.name == "StackMapTable")
+        .collect::<Vec<_>>();
+    let stack_map = match stack_map_attrs[..] {
+        [attr] => {
+            let mut stack_map = Vec::new();
+            let mut bytes = attr.data.iter().copied();
+            let frame_count = get_u16(&mut bytes)?;
+            for _ in 0..frame_count {
+                // stack_map.push(match bytes.next() {
+                //     Some(offset_delta @ 0..=63) => {StackMapFrame::Same { offset_delta }}
+                // })
+            }
+            stack_map
+        }
+        [] => Vec::new(),
+        _ => return Err(String::from("Only one `StackMapTable` attribute expected")),
+    };
+
     Ok(Code {
         max_stack,
         max_locals,
         code,
         exception_table,
         attributes,
+        stack_map,
     })
 }
 
@@ -254,6 +312,14 @@ fn str_index(constants: &[Constant], idx: usize) -> Result<String, String> {
     }
 }
 
+fn class_index(constants: &[Constant], idx: usize) -> Result<String, String> {
+    match constants.get(idx - 1) {
+        Some(Constant::ClassRef { string_addr }) => str_index(constants, *string_addr as usize),
+        Some(other) => Err(format!("Expected a string; got `{other:?}`")),
+        None => Err(String::from("Unexpected EOF")),
+    }
+}
+
 fn parse_java_string(bytes: Vec<u8>) -> Result<String, String> {
     let mut bytes = bytes.into_iter();
     let bytes = &mut bytes;
@@ -265,23 +331,23 @@ fn parse_java_string(bytes: Vec<u8>) -> Result<String, String> {
             str.push(b as char);
         } else if b & 0b1110_0000 == 0b1100_0000 {
             let Some(y) = bytes.next() else { return Err(String::from("Unexpected end of string"))};
-            let chr = ((b as u16 & 0x1f) << 6) + (y as u16 & 0x3f);
+            let chr = ((b as u16 & 0x1f) << 6) | (y as u16 & 0x3f);
             str.push(
                 char::from_u32(chr as u32).ok_or_else(|| String::from("Invalid character code"))?,
             );
         } else if b == 0b1110_1101 {
             let [v, w, x, y, z] = get_bytes(bytes)?;
             let chr = 0x10000
-                + ((v as u32 & 0x0f) << 16)
-                + ((w as u32 & 0x3f) << 10)
-                + ((y as u32 & 0x0f) << 6)
-                + (z as u32 & 0x3f);
+                | ((v as u32 & 0x0f) << 16)
+                | ((w as u32 & 0x3f) << 10)
+                | ((y as u32 & 0x0f) << 6)
+                | (z as u32 & 0x3f);
             let chr = char::from_u32(chr).ok_or_else(|| String::from("Invalid character code"))?;
             str.push(chr);
         } else if b & 0b1111_0000 == 0b1110_0000 {
             let Some(y) = bytes.next() else { return Err(String::from("Unexpected end of string"))};
             let Some(z) = bytes.next() else { return Err(String::from("Unexpected end of string"))};
-            let chr = ((b as u32 & 0xf) << 12) + ((y as u32 & 0x3f) << 6) + (z as u32 & 0x3f);
+            let chr = ((b as u32 & 0xf) << 12) | ((y as u32 & 0x3f) << 6) | (z as u32 & 0x3f);
             let chr = char::from_u32(chr).ok_or_else(|| String::from("Invalid character code"))?;
             str.push(chr);
         }
