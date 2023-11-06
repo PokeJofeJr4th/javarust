@@ -1,10 +1,12 @@
+use std::rc::Rc;
+
 #[derive(Debug)]
 pub struct Class {
     pub version: ClassVersion,
     pub constants: Vec<Constant>,
     pub access: AccessFlags,
-    pub this: String,
-    pub super_class: String,
+    pub this: Rc<str>,
+    pub super_class: Rc<str>,
     pub interfaces: Vec<u16>,
     pub fields: Vec<Field>,
     pub methods: Vec<Method>,
@@ -14,42 +16,31 @@ pub struct Class {
 /// A member of the constant pool
 #[derive(Debug, Clone)]
 pub enum Constant {
-    String(String),
+    String(Rc<str>),
     Int(i32),
     Float(f32),
     Long(i64),
     Double(f64),
-    ClassRef {
-        /// index in constant pool for a String value (internally-qualified class name)
-        string_addr: u16,
-    },
-    StringRef {
-        /// index in constant pool for a String value
-        string_addr: u16,
-    },
+    ClassRef(Rc<str>),
+    StringRef(Rc<str>),
     FieldRef {
-        /// index in constant pool for a ClassRef value
-        class_ref_addr: u16,
-        /// index in constant pool for a NameTypeDescriptor value
-        name_type_addr: u16,
+        class: Rc<str>,
+        name: Rc<str>,
+        field_type: Rc<str>,
     },
     MethodRef {
-        /// index in constant pool for a ClassRef value
-        class_ref_addr: u16,
-        /// index in constant pool for a NameTypeDescriptor value
-        name_type_addr: u16,
+        class: Rc<str>,
+        name: Rc<str>,
+        method_type: Rc<str>
     },
     InterfaceRef {
-        /// index in constant pool for a ClassRef value
-        class_ref_addr: u16,
-        /// index in constant pool for a NameTypeDescriptor value
-        name_type_addr: u16,
+        class: Rc<str>,
+        name: Rc<str>,
+        interface_type: Rc<str>
     },
     NameTypeDescriptor {
-        /// index in constant pool for a String value for the name
-        name_desc_addr: u16,
-        /// index in constant pool for a String value - specially encoded type
-        type_addr: u16,
+        name: Rc<str>,
+        type_descriptor: Rc<str>,
     },
     MethodHandle {
         descriptor: u8,
@@ -111,8 +102,8 @@ pub struct ClassVersion {
 #[derive(Debug)]
 pub struct Field {
     pub access_flags: AccessFlags,
-    pub name: String,
-    pub descriptor: String,
+    pub name: Rc<str>,
+    pub descriptor: Rc<str>,
     pub attributes: Vec<Attribute>,
     pub constant_value: Option<Constant>,
 }
@@ -120,15 +111,15 @@ pub struct Field {
 #[derive(Debug)]
 pub struct Method {
     pub access_flags: AccessFlags,
-    pub name: String,
-    pub descriptor: String,
+    pub name: Rc<str>,
+    pub descriptor: Rc<str>,
     pub attributes: Vec<Attribute>,
     pub code: Option<Code>,
 }
 
 #[derive(Debug)]
 pub struct Attribute {
-    pub name: String,
+    pub name: Rc<str>,
     pub data: Vec<u8>,
 }
 
@@ -137,7 +128,7 @@ pub struct Code {
     pub max_stack: u16,
     pub max_locals: u16,
     pub code: Vec<u8>,
-    pub exception_table: Vec<(u16, u16, u16, Option<String>)>,
+    pub exception_table: Vec<(u16, u16, u16, Option<Rc<str>>)>,
     pub attributes: Vec<Attribute>,
     pub stack_map: Vec<StackMapFrame>,
 }
@@ -169,7 +160,7 @@ pub enum StackMapFrame {
     Full {
         offset_delta: u16,
         locals: Vec<VerificationTypeInfo>,
-        stack: Vec<()>,
+        stack: Vec<VerificationTypeInfo>,
     },
 }
 
@@ -180,7 +171,7 @@ pub enum VerificationTypeInfo {
     Float,
     Null,
     UninitializedThis,
-    Object { class_name: String },
+    Object { class_name: Rc<str> },
     Uninitialized { offset: u16 },
     Long,
     Double,
