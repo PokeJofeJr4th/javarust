@@ -1,13 +1,14 @@
 #[derive(Debug)]
 pub struct Class {
+    pub version: ClassVersion,
     pub constants: Vec<Constant>,
     pub access: AccessFlags,
     pub this: String,
     pub super_class: String,
     pub interfaces: Vec<u16>,
-    pub fields: Vec<()>,
-    pub methods: Vec<()>,
-    pub attributes: ClassAttributes,
+    pub fields: Vec<Field>,
+    pub methods: Vec<Method>,
+    pub attributes: Vec<Attribute>,
 }
 
 /// A member of the constant pool
@@ -72,10 +73,46 @@ pub enum Constant {
 }
 
 #[derive(Debug)]
+/// Flag Name 	        Value 	Interpretation
+/// ACC_PUBLIC 	        0x0001 	Declared public; may be accessed from outside its package.
+/// ACC_PRIVATE 	    0x0002 	Declared private; usable only within the defining class.
+/// ACC_PROTECTED 	    0x0004 	Declared protected; may be accessed within subclasses.
+/// ACC_STATIC 	        0x0008 	Declared static.
+/// ACC_FINAL 	        0x0010 	Declared final; never directly assigned to after object construction (JLS §17.5).
+/// ACC_SYNCHRONIZED 	0x0020 	Declared synchronized; invocation is wrapped by a monitor use.
+/// ACC_VOLATILE 	    0x0040 	Declared volatile; cannot be cached.
+/// ACC_TRANSIENT 	    0x0080 	Declared transient; not written or read by a persistent object manager.
+/// ACC_NATIVE 	        0x0100 	Declared native; implemented in a language other than Java.
+/// ACC_ABSTRACT 	    0x0400 	Declared abstract; no implementation is provided.
+/// ACC_STRICT 	        0x0800 	Declared strictfp; floating-point mode is FP-strict.
+/// ACC_SYNTHETIC 	    0x1000 	Declared synthetic; not present in the source code.
+/// ACC_ENUM 	        0x4000 	Declared as an element of an enum.
 pub struct AccessFlags(pub u16);
 
 #[derive(Debug)]
-pub struct ClassAttributes {
+pub struct ClassVersion {
     pub minor_version: u16,
     pub major_version: u16,
+}
+
+#[derive(Debug)]
+pub struct Field {
+    pub access_flags: AccessFlags,
+    pub name: String,
+    pub descriptor: String,
+    pub attributes: Vec<Attribute>,
+}
+
+#[derive(Debug)]
+pub struct Method {
+    pub access_flags: AccessFlags,
+    pub name: String,
+    pub descriptor: String,
+    pub attributes: Vec<Attribute>,
+}
+
+#[derive(Debug)]
+pub struct Attribute {
+    pub name: String,
+    pub data: Vec<u8>,
 }

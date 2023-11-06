@@ -1,8 +1,8 @@
-use crate::class::{AccessFlags, Class, ClassAttributes, Constant};
+use crate::class::{AccessFlags, Attribute, Class, ClassVersion, Constant, Field, Method};
 
 pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String> {
     let [0xCA, 0xFE, 0xBA, 0xBE] = bytes.take(4).collect::<Vec<_>>()[..] else { return Err(String::from("Invalid header")) };
-    let attributes = ClassAttributes {
+    let version = ClassVersion {
         minor_version: get_u16(bytes)?,
         major_version: get_u16(bytes)?,
     };
@@ -88,9 +88,7 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
     };
 
     let super_class = get_u16(bytes)?;
-    let Some(Constant::String(super_class)) = constants.get(super_class as usize - 1).cloned() else {
-        return Err(String::from("Invalid `super` class pointer"))
-    };
+    let super_class = str_index(&constants, super_class as usize)?;
 
     let interface_count = get_u16(bytes)?;
     let mut interfaces = Vec::new();
@@ -101,18 +99,49 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
     let field_count = get_u16(bytes)?;
     let mut fields = Vec::new();
     for _ in 0..field_count {
-        todo!("Get the fields")
+        let access_flags = AccessFlags(get_u16(bytes)?);
+        let name_idx = get_u16(bytes)?;
+        let name = str_index(&constants, name_idx as usize)?;
+        let descriptor_idx = get_u16(bytes)?;
+        let descriptor = str_index(&constants, descriptor_idx as usize)?;
+        let attrs_count = get_u16(bytes)?;
+        let mut attributes = Vec::new();
+        for _ in 0..attrs_count {
+            attributes.push(get_attribute(&constants, bytes)?);
+        }
+        fields.push(Field {
+            access_flags,
+            name,
+            descriptor,
+            attributes,
+        })
     }
 
     let method_count: u16 = get_u16(bytes)?;
     let mut methods = Vec::new();
     for _ in 0..method_count {
-        todo!("Get the methods")
+        let access_flags = AccessFlags(get_u16(bytes)?);
+        let name_idx = get_u16(bytes)?;
+        let name = str_index(&constants, name_idx as usize)?;
+        let descriptor_idx = get_u16(bytes)?;
+        let descriptor = str_index(&constants, descriptor_idx as usize)?;
+        let attrs_count = get_u16(bytes)?;
+        let mut attributes = Vec::new();
+        for _ in 0..attrs_count {
+            attributes.push(get_attribute(&constants, bytes)?);
+        }
+        methods.push(Method {
+            access_flags,
+            name,
+            descriptor,
+            attributes,
+        })
     }
 
     let attribute_count = get_u16(bytes)?;
+    let mut attributes = Vec::new();
     for _ in 0..attribute_count {
-        todo!("Get the attributes")
+        attributes.push(get_attribute(&constants, bytes)?);
     }
 
     Ok(Class {
@@ -123,7 +152,21 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
         interfaces,
         fields,
         methods,
+        version,
         attributes,
+    })
+}
+
+fn get_attribute(
+    constants: &[Constant],
+    bytes: &mut impl Iterator<Item = u8>,
+) -> Result<Attribute, String> {
+    let name_idx = get_u16(bytes)?;
+    let name = str_index(constants, name_idx as usize)?;
+    let attr_length = get_u64(bytes)?;
+    Ok(Attribute {
+        name,
+        data: bytes.take(attr_length as usize).collect::<Vec<_>>(),
     })
 }
 
@@ -145,4 +188,12 @@ fn get_u32(bytes: &mut impl Iterator<Item = u8>) -> Result<u32, String> {
 fn get_u64(bytes: &mut impl Iterator<Item = u8>) -> Result<u64, String> {
     let bytes = get_bytes::<8>(bytes)?;
     Ok(u64::from_be_bytes(bytes))
+}
+
+fn str_index(constants: &[Constant], idx: usize) -> Result<String, String> {
+    match constants.get(idx - 1) {
+        Some(Constant::String(str)) => Ok(str.clone()),
+        Some(other) => Err(format!("Expected a string; got `{other:?}`")),
+        None => Err(String::from("Unexpected EOF")),
+    }
 }
