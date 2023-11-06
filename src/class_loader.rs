@@ -14,8 +14,7 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
             Some(1) => {
                 let strlen = get_u16(bytes)?;
                 let string = bytes.take(strlen as usize).collect::<Vec<u8>>();
-                let string =
-                    String::from_utf8(string).map_err(|err| format!("String Error - {err}"))?;
+                let string = parse_java_string(string)?;
                 constants.push(Constant::String(string));
             }
             Some(3) => {
@@ -253,4 +252,39 @@ fn str_index(constants: &[Constant], idx: usize) -> Result<String, String> {
         Some(other) => Err(format!("Expected a string; got `{other:?}`")),
         None => Err(String::from("Unexpected EOF")),
     }
+}
+
+fn parse_java_string(bytes: Vec<u8>) -> Result<String, String> {
+    let mut bytes = bytes.into_iter();
+    let bytes = &mut bytes;
+    let mut str = String::new();
+    while let Some(b) = bytes.next() {
+        if b == 0 {
+            return Err(String::from("No byte can have the value zero"));
+        } else if b < 128 {
+            str.push(b as char);
+        } else if b & 0b1110_0000 == 0b1100_0000 {
+            let Some(y) = bytes.next() else { return Err(String::from("Unexpected end of string"))};
+            let chr = ((b as u16 & 0x1f) << 6) + (y as u16 & 0x3f);
+            str.push(
+                char::from_u32(chr as u32).ok_or_else(|| String::from("Invalid character code"))?,
+            );
+        } else if b == 0b1110_1101 {
+            let [v, w, x, y, z] = get_bytes(bytes)?;
+            let chr = 0x10000
+                + ((v as u32 & 0x0f) << 16)
+                + ((w as u32 & 0x3f) << 10)
+                + ((y as u32 & 0x0f) << 6)
+                + (z as u32 & 0x3f);
+            let chr = char::from_u32(chr).ok_or_else(|| String::from("Invalid character code"))?;
+            str.push(chr);
+        } else if b & 0b1111_0000 == 0b1110_0000 {
+            let Some(y) = bytes.next() else { return Err(String::from("Unexpected end of string"))};
+            let Some(z) = bytes.next() else { return Err(String::from("Unexpected end of string"))};
+            let chr = ((b as u32 & 0xf) << 12) + ((y as u32 & 0x3f) << 6) + (z as u32 & 0x3f);
+            let chr = char::from_u32(chr).ok_or_else(|| String::from("Invalid character code"))?;
+            str.push(chr);
+        }
+    }
+    Ok(str)
 }
