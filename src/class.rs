@@ -8,7 +8,8 @@ pub struct Class {
     pub this: Rc<str>,
     pub super_class: Rc<str>,
     pub interfaces: Vec<u16>,
-    pub fields: Vec<Field>,
+    pub field_size: usize,
+    pub fields: Vec<(Field, usize)>,
     pub methods: Vec<Rc<Method>>,
     pub attributes: Vec<Attribute>,
 }

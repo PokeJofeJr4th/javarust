@@ -271,12 +271,23 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
         attributes.push(get_attribute(&raw_constants, bytes)?);
     }
 
+    let mut field_size = 0;
+    let fields = fields
+        .into_iter()
+        .map(|field| {
+            let field_location = field_size;
+            field_size += field.descriptor.get_size();
+            (field, field_location)
+        })
+        .collect();
+
     Ok(Class {
         constants,
         access,
         this: this_class,
         super_class,
         interfaces,
+        field_size,
         fields,
         methods,
         version,

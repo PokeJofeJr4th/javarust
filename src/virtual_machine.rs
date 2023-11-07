@@ -8,6 +8,7 @@ struct Thread {
     pc_register: usize,
     stack: Vec<Rc<RefCell<StackFrame>>>,
     method_area: Rc<Vec<(Rc<Class>, Rc<Method>)>>,
+    class_area: Rc<Vec<Rc<Class>>>,
     heap: Rc<RefCell<Vec<Rc<RefCell<Object>>>>>,
 }
 
@@ -821,8 +822,51 @@ impl Thread {
                 todo!("getfield")
             }
             0xB5 => {
-                todo!("putfield")
+                // putfield
                 // set a field in an object
+                let ib1 = self.get_pc_byte(stackframe.clone());
+                let ib2 = self.get_pc_byte(stackframe.clone());
+                let index = u16::from_be_bytes([ib1, ib2]);
+
+                let Constant::FieldRef { class, name, field_type } = stackframe.borrow().class.constants[index as usize - 1].clone() else {
+                    return Err(format!("Error invoking PutField at index {index}; {:?}", stackframe.borrow().class.constants[index as usize - 1]))
+                };
+
+                let Some(class) = search_class_area(&self.class_area, class.clone()) else {
+                    return Err(format!("Couldn't resolve class {class}"))
+                };
+
+                let field_index = class
+                    .fields
+                    .iter()
+                    .find(|(field, _)| field.name == name)
+                    .ok_or_else(|| {
+                        format!("Couldn't find field `{name}` on class `{}`", class.this)
+                    })?
+                    .1;
+                let value = if field_type.get_size() == 1 {
+                    stackframe.borrow_mut().operand_stack.pop().unwrap() as u64
+                } else {
+                    pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap()
+                };
+                let object_index = stackframe.borrow_mut().operand_stack.pop().unwrap();
+
+                let object = self.heap.borrow()[object_index as usize].clone();
+
+                let mut object_borrow = object.borrow_mut();
+                let object_fields = object_borrow
+                    .fields
+                    .iter_mut()
+                    .find(|(class_name, _)| class_name == &name)
+                    .ok_or_else(|| format!("Couldn't find `{}` class in object", class.this))?;
+                let object_fields = &mut object_fields.1;
+
+                if field_type.get_size() == 1 {
+                    object_fields[field_index] = value as u32;
+                } else {
+                    object_fields[field_index] = (value >> 32) as u32;
+                    object_fields[field_index + 1] = value as u32;
+                }
             }
             0xB6 => {
                 todo!("invokevirtual")
@@ -882,8 +926,10 @@ impl Thread {
                     todo!("Throw some sort of error")
                 };
 
+                let fields_size = stackframe.borrow().class.field_size;
+
                 let new_object = Object {
-                    object_type: class.clone(),
+                    fields: vec![(class.clone(), vec![0; fields_size])],
                 };
 
                 let length = self.heap.borrow().len();
@@ -1032,6 +1078,15 @@ fn long_load(stackframe: Rc<RefCell<StackFrame>>, index: usize) {
         .extend([value_upper, value_lower]);
 }
 
+fn search_class_area(class_area: &[Rc<Class>], class: Rc<str>) -> Option<Rc<Class>> {
+    for possible_class in class_area {
+        if possible_class.this == class {
+            return Some(possible_class.clone());
+        }
+    }
+    None
+}
+
 fn search_method_area(
     method_area: &[(Rc<Class>, Rc<Method>)],
     class: Rc<str>,
@@ -1072,7 +1127,7 @@ impl StackFrame {
 }
 
 struct Object {
-    object_type: Rc<str>,
+    fields: Vec<(Rc<str>, Vec<u32>)>,
 }
 
 pub fn start_vm(src: Class) {
@@ -1083,7 +1138,8 @@ pub fn start_vm(src: Class) {
         .cloned()
         .map(|method| (class.clone(), method))
         .collect::<Vec<_>>();
-    add_native_methods(&mut method_area);
+    let mut class_area = vec![class.clone()];
+    add_native_methods(&mut method_area, &mut class_area);
     let heap = Rc::new(RefCell::new(Vec::new()));
     let mut method = None;
     for methods in &class.methods {
@@ -1097,6 +1153,7 @@ pub fn start_vm(src: Class) {
         pc_register: 0,
         stack: Vec::new(),
         method_area: Rc::new(method_area),
+        class_area: Rc::new(class_area),
         heap,
     };
     primary_thread.invoke_method(method, class);
@@ -1106,7 +1163,10 @@ pub fn start_vm(src: Class) {
     }
 }
 
-fn add_native_methods(method_area: &mut Vec<(Rc<Class>, Rc<Method>)>) {
+fn add_native_methods(
+    method_area: &mut Vec<(Rc<Class>, Rc<Method>)>,
+    class_area: &mut Vec<Rc<Class>>,
+) {
     let init = Rc::new(Method {
         access_flags: AccessFlags(AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC),
         name: "<init>".into(),
@@ -1129,10 +1189,12 @@ fn add_native_methods(method_area: &mut Vec<(Rc<Class>, Rc<Method>)>) {
         this: "java/lang/Object".into(),
         super_class: "java/lang/Object".into(),
         interfaces: Vec::new(),
+        field_size: 0,
         fields: Vec::new(),
         methods: vec![init.clone()],
         attributes: Vec::new(),
     });
 
-    method_area.extend([(object, init)]);
+    method_area.extend([(object.clone(), init)]);
+    class_area.extend([object]);
 }
