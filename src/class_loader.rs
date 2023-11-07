@@ -1,4 +1,4 @@
-use std::{iter::Peekable, rc::Rc, sync::Arc};
+use std::{iter::Peekable, rc::Rc};
 
 use crate::class::{
     AccessFlags, Attribute, Class, ClassVersion, Code, Constant, Field, FieldType, Method,
@@ -256,7 +256,7 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
             (false, []) => None,
             _ => return Err(String::from("Method must only have one code attribute")),
         };
-        methods.push(Arc::new(Method {
+        methods.push(Rc::new(Method {
             access_flags,
             name,
             descriptor,
@@ -610,7 +610,9 @@ fn parse_method_descriptor(src: &str) -> Result<MethodDescriptor, String> {
         Some('V') => None,
         _ => Some(parse_field_type(chars)?),
     };
+    let parameter_size = parameters.iter().map(FieldType::get_size).sum();
     Ok(MethodDescriptor {
+        parameter_size,
         parameters,
         return_type,
     })

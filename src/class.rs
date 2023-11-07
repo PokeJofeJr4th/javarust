@@ -1,4 +1,4 @@
-use std::{rc::Rc, sync::Arc};
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Class {
@@ -9,7 +9,7 @@ pub struct Class {
     pub super_class: Rc<str>,
     pub interfaces: Vec<u16>,
     pub fields: Vec<Field>,
-    pub methods: Vec<Arc<Method>>,
+    pub methods: Vec<Rc<Method>>,
     pub attributes: Vec<Attribute>,
 }
 
@@ -83,14 +83,31 @@ pub struct AccessFlags(pub u16);
 
 impl AccessFlags {
     pub const fn is_static(self) -> bool {
-        self.0 & 0x0008 != 0
+        self.0 & Self::ACC_STATIC != 0
     }
     pub const fn is_native(self) -> bool {
-        self.0 & 0x0100 != 0
+        self.0 & Self::ACC_NATIVE != 0
     }
     pub const fn is_abstract(self) -> bool {
-        self.0 & 0x0400 != 0
+        self.0 & Self::ACC_ABSTRACT != 0
     }
+
+    pub const ACC_PUBLIC: u16 = 0x0001;
+    pub const ACC_PRIVATE: u16 = 0x0002;
+    pub const ACC_PROTECTED: u16 = 0x0004;
+    pub const ACC_STATIC: u16 = 0x0008;
+    pub const ACC_FINAL: u16 = 0x0010;
+    pub const ACC_SYNCHRONIZED: u16 = 0x0020;
+    pub const ACC_VOLATILE: u16 = 0x0040;
+    pub const ACC_TRANSIENT: u16 = 0x0080;
+    pub const ACC_NATIVE: u16 = 0x0100;
+    // pub const ACC_UNDEFINED: u16 = 0x0200;
+    pub const ACC_ABSTRACT: u16 = 0x0400;
+    pub const ACC_STRICT: u16 = 0x0800;
+    pub const ACC_SYNTHETIC: u16 = 0x1000;
+    // pub const ACC_UNDEFINED: u16 = 0x2000;
+    pub const ACC_ENUM: u16 = 0x4000;
+    // pub const ACC_UNDEFINED: u16 = 0x8000;
 }
 
 #[derive(Debug)]
@@ -117,13 +134,14 @@ pub struct Method {
     pub code: Option<Code>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MethodDescriptor {
+    pub parameter_size: usize,
     pub parameters: Vec<FieldType>,
     pub return_type: Option<FieldType>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldType {
     Byte,
     Char,
@@ -135,6 +153,15 @@ pub enum FieldType {
     Short,
     Boolean,
     Array(Box<FieldType>),
+}
+
+impl FieldType {
+    pub fn get_size(&self) -> usize {
+        match self {
+            Self::Double | Self::Long => 2,
+            _ => 1,
+        }
+    }
 }
 
 #[derive(Debug)]

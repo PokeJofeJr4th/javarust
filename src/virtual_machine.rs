@@ -1,27 +1,24 @@
-// the heap will be an uncollected set of Arc<Mutex<>>es
+// the heap will be an uncollected set of Rc<Mutex<>>es
 
-use std::{
-    cell::RefCell,
-    cmp::Ordering,
-    rc::Rc,
-    sync::{Arc, Mutex},
-};
+use std::{cell::RefCell, cmp::Ordering, rc::Rc};
 
-use crate::class::{Class, Method};
+use crate::class::{AccessFlags, Class, ClassVersion, Constant, Method, MethodDescriptor};
 
 struct Thread {
     pc_register: usize,
     stack: Vec<Rc<RefCell<StackFrame>>>,
-    method: Arc<Method>,
-    class: Arc<Class>,
-    heap: Arc<Mutex<Vec<Arc<Mutex<Object>>>>>,
+    method_area: Rc<Vec<(Rc<Class>, Rc<Method>)>>,
+    heap: Rc<RefCell<Vec<Rc<RefCell<Object>>>>>,
 }
 
 impl Thread {
     pub fn tick(&mut self) -> Result<(), String> {
-        let opcode = self.get_pc_byte();
         // this way we can mutate the stack frame without angering the borrow checker
         let stackframe = self.stack.last().unwrap().clone();
+        if stackframe.borrow().method.access_flags.is_native() {
+            return self.invoke_native(stackframe);
+        }
+        let opcode = self.get_pc_byte(stackframe.clone());
         match opcode {
             0x0 => {
                 // nop
@@ -64,15 +61,15 @@ impl Thread {
             0x10 => {
                 // bipush byte
                 // push a byte onto the operand stack
-                let byte = self.get_pc_byte() as i8;
+                let byte = self.get_pc_byte(stackframe.clone()) as i8;
                 // I think this will sign-extend it, not entirely sure tho
                 let value = byte as i32 as u32;
                 stackframe.borrow_mut().operand_stack.push(value);
             }
             0x11 => {
                 // sipush b1 b2
-                let upper = self.get_pc_byte();
-                let lower = self.get_pc_byte();
+                let upper = self.get_pc_byte(stackframe.clone());
+                let lower = self.get_pc_byte(stackframe.clone());
                 let short = u16::from_be_bytes([upper, lower]) as i16 as i32;
                 stackframe.borrow_mut().operand_stack.push(short as u32);
             }
@@ -88,13 +85,13 @@ impl Thread {
             0x18 | 0x16 => {
                 // dload|lload index
                 // load a double from locals to stack
-                let index = self.get_pc_byte();
+                let index = self.get_pc_byte(stackframe.clone());
                 long_load(stackframe, index as usize);
             }
             0x19 | 0x17 | 0x15 => {
                 // aload|fload|iload index
                 // load one item from locals to stack
-                let index = self.get_pc_byte();
+                let index = self.get_pc_byte(stackframe.clone());
                 value_load(stackframe, index as usize);
             }
             iload_n @ 0x1A..=0x1D => {
@@ -145,13 +142,13 @@ impl Thread {
             0x39 | 0x37 => {
                 // dstore|lstore index
                 // put two values into a local
-                let index = self.get_pc_byte();
+                let index = self.get_pc_byte(stackframe.clone());
                 long_store(stackframe, index as usize);
             }
             0x3A | 0x38 | 0x36 => {
                 // astore|fstore|istore index
                 // put one reference into a local
-                let index = self.get_pc_byte();
+                let index = self.get_pc_byte(stackframe.clone());
                 value_store(stackframe, index as usize);
             }
             istore_n @ 0x3B..=0x3E => {
@@ -508,7 +505,7 @@ impl Thread {
                 // iushr
                 // int logical shift right
                 let rhs = (stackframe.borrow_mut().operand_stack.pop().unwrap()) & 0x1F;
-                let lhs = (stackframe.borrow_mut().operand_stack.pop().unwrap());
+                let lhs = stackframe.borrow_mut().operand_stack.pop().unwrap();
                 let result = lhs >> rhs;
                 stackframe.borrow_mut().operand_stack.push(result);
             }
@@ -571,8 +568,8 @@ impl Thread {
             0x84 => {
                 // iinc
                 // int increment
-                let index = self.get_pc_byte();
-                let inc = self.get_pc_byte() as i32;
+                let index = self.get_pc_byte(stackframe.clone());
+                let inc = self.get_pc_byte(stackframe.clone()) as i32;
                 let start = stackframe.borrow().locals[index as usize] as i32;
                 stackframe.borrow_mut().locals[index as usize] = start.wrapping_add(inc) as u32;
             }
@@ -733,8 +730,8 @@ impl Thread {
             if_cnd @ 0x99..=0x9E => {
                 // if<cond>
                 // integer comparison to zero
-                let bb1 = self.get_pc_byte();
-                let bb2 = self.get_pc_byte();
+                let bb1 = self.get_pc_byte(stackframe.clone());
+                let bb2 = self.get_pc_byte(stackframe.clone());
                 let branch = u16::from_be_bytes([bb1, bb2]);
 
                 let lhs = stackframe.borrow_mut().operand_stack.pop().unwrap() as i32;
@@ -754,8 +751,8 @@ impl Thread {
             if_icmp @ 0x9F..=0xA4 => {
                 // if_icmp<cond>
                 // comparison between integers
-                let bb1 = self.get_pc_byte();
-                let bb2 = self.get_pc_byte();
+                let bb1 = self.get_pc_byte(stackframe.clone());
+                let bb2 = self.get_pc_byte(stackframe.clone());
                 let branch = u16::from_be_bytes([bb1, bb2]);
 
                 let rhs = stackframe.borrow_mut().operand_stack.pop().unwrap() as i32;
@@ -778,8 +775,8 @@ impl Thread {
             }
             0xA7 => {
                 // goto bb1 bb2
-                let bb1 = self.get_pc_byte();
-                let bb2 = self.get_pc_byte();
+                let bb1 = self.get_pc_byte(stackframe.clone());
+                let bb2 = self.get_pc_byte(stackframe);
                 let branchoffset = u16::from_be_bytes([bb1, bb2]);
                 self.pc_register = branchoffset as usize;
             }
@@ -831,7 +828,39 @@ impl Thread {
                 todo!("invokevirtual")
             }
             0xB7 => {
-                todo!("invokespecial")
+                // invokespecial
+                // invoke an instance method
+                let ib1 = self.get_pc_byte(stackframe.clone());
+                let ib2 = self.get_pc_byte(stackframe.clone());
+                let index = u16::from_be_bytes([ib1, ib2]);
+
+                let Constant::MethodRef{name, class, method_type} = stackframe.borrow().class.constants[index as usize - 1].clone() else {
+                    todo!("Error during InvokeSpecial")
+                };
+
+                let (class_ref, method_ref) = search_method_area(
+                    &self.method_area,
+                    class.clone(),
+                    name.clone(),
+                    &method_type,
+                )
+                .ok_or_else(|| format!("Error during InvokeSpecial; {}.{}", class, name))?;
+                let args_start =
+                    stackframe.borrow().operand_stack.len() - method_type.parameter_size;
+                let stack = &mut stackframe.borrow_mut().operand_stack;
+                let mut stack_iter = core::mem::take(stack).into_iter();
+                stack.extend((&mut stack_iter).take(args_start));
+                stack.push(self.pc_register as u32);
+
+                let args = stack_iter.collect::<Vec<_>>();
+
+                println!("Invoking Method {} on {}", method_ref.name, class_ref.this);
+                self.invoke_method(method_ref, class_ref);
+                self.pc_register = 0;
+
+                let new_stackframe = self.stack.last().unwrap().clone();
+
+                new_stackframe.borrow_mut().operand_stack.extend(args);
             }
             0xB8 => {
                 todo!("invokestatic")
@@ -843,8 +872,28 @@ impl Thread {
                 todo!("invokedynamic")
             }
             0xBB => {
-                todo!("new")
+                // new
                 // make a new object instance
+                let ib1 = self.get_pc_byte(stackframe.clone());
+                let ib2 = self.get_pc_byte(stackframe.clone());
+                let index = u16::from_be_bytes([ib1, ib2]);
+
+                let Constant::ClassRef(class) = stackframe.borrow().class.constants[index as usize - 1].clone() else {
+                    todo!("Throw some sort of error")
+                };
+
+                let new_object = Object {
+                    object_type: class.clone(),
+                };
+
+                let length = self.heap.borrow().len();
+
+                self.heap
+                    .borrow_mut()
+                    .push(Rc::new(RefCell::new(new_object)));
+
+                let objectref = length as u32;
+                stackframe.borrow_mut().operand_stack.push(objectref);
             }
             0xBC => {
                 todo!("newarray")
@@ -881,8 +930,8 @@ impl Thread {
             }
             if_null @ 0xC6..=0xC7 => {
                 // ifnull | ifnonnull
-                let bb1 = self.get_pc_byte();
-                let bb2 = self.get_pc_byte();
+                let bb1 = self.get_pc_byte(stackframe.clone());
+                let bb2 = self.get_pc_byte(stackframe.clone());
                 let branch = u16::from_be_bytes([bb1, bb2]);
 
                 let ptr = stackframe.borrow_mut().operand_stack.pop().unwrap();
@@ -892,10 +941,10 @@ impl Thread {
             }
             0xC8 => {
                 // goto_w bb1 bb2 bb3 bb4
-                let bb1 = self.get_pc_byte();
-                let bb2 = self.get_pc_byte();
-                let bb3 = self.get_pc_byte();
-                let bb4 = self.get_pc_byte();
+                let bb1 = self.get_pc_byte(stackframe.clone());
+                let bb2 = self.get_pc_byte(stackframe.clone());
+                let bb3 = self.get_pc_byte(stackframe.clone());
+                let bb4 = self.get_pc_byte(stackframe);
                 let branchoffset = u32::from_be_bytes([bb1, bb2, bb3, bb4]);
                 self.pc_register = branchoffset as usize;
             }
@@ -908,19 +957,39 @@ impl Thread {
         Ok(())
     }
 
-    fn get_code(&self, idx: usize) -> u8 {
-        self.method.code.as_ref().unwrap().code[idx]
+    fn get_code(&self, stackframe: Rc<RefCell<StackFrame>>, idx: usize) -> u8 {
+        stackframe.borrow().method.code.as_ref().unwrap().code[idx]
     }
 
-    fn get_pc_byte(&mut self) -> u8 {
-        let b = self.get_code(self.pc_register);
+    fn get_pc_byte(&mut self, stackframe: Rc<RefCell<StackFrame>>) -> u8 {
+        let b = self.get_code(stackframe, self.pc_register);
         self.pc_register += 1;
         b
     }
 
-    fn invoke_method(&mut self, method: Arc<Method>) {
-        let stackframe = StackFrame::from_method(method);
+    fn invoke_method(&mut self, method: Rc<Method>, class: Rc<Class>) {
+        let stackframe = StackFrame::from_method(method, class);
         self.stack.push(Rc::new(RefCell::new(stackframe)));
+    }
+
+    fn invoke_native(&mut self, stackframe: Rc<RefCell<StackFrame>>) -> Result<(), String> {
+        let name = stackframe.borrow().method.name.clone();
+        let class = stackframe.borrow().class.this.clone();
+        match (&*class, &*name) {
+            ("java/lang/Object", "<init>") => self.return_void(),
+            (class, name) => return Err(format!("Error invoking native method; {class}.{name}")),
+        }
+        Ok(())
+    }
+
+    fn return_void(&mut self) {
+        self.stack.pop();
+        if self.stack.is_empty() {
+            return;
+        }
+        let stackframe = self.stack.last().unwrap();
+        let return_address = stackframe.borrow_mut().operand_stack.pop().unwrap();
+        self.pc_register = return_address as usize;
     }
 }
 
@@ -963,17 +1032,41 @@ fn long_load(stackframe: Rc<RefCell<StackFrame>>, index: usize) {
         .extend([value_upper, value_lower]);
 }
 
+fn search_method_area(
+    method_area: &[(Rc<Class>, Rc<Method>)],
+    class: Rc<str>,
+    method: Rc<str>,
+    method_type: &MethodDescriptor,
+) -> Option<(Rc<Class>, Rc<Method>)> {
+    for (possible_class, possible_method) in method_area {
+        if possible_class.this == class
+            && possible_method.name == method
+            && &possible_method.descriptor == method_type
+        {
+            return Some((possible_class.clone(), possible_method.clone()));
+        }
+    }
+    None
+}
+
 struct StackFrame {
     locals: Vec<u32>,
     operand_stack: Vec<u32>,
+    method: Rc<Method>,
+    class: Rc<Class>,
 }
 
 impl StackFrame {
-    pub fn from_method(method: Arc<Method>) -> Self {
-        let locals = method.code.as_ref().unwrap().max_locals;
+    pub fn from_method(method: Rc<Method>, class: Rc<Class>) -> Self {
+        let locals = match method.code.as_ref() {
+            Some(code) => code.max_locals,
+            _ => 0,
+        };
         Self {
-            locals: (0..locals).map(|_| 0).collect(),
+            locals: (0..=locals).map(|_| 0).collect(),
             operand_stack: Vec::new(),
+            class,
+            method,
         }
     }
 }
@@ -983,14 +1076,15 @@ struct Object {
 }
 
 pub fn start_vm(src: Class) {
-    let class = Arc::new(src);
-    let method_area = class
+    let class = Rc::new(src);
+    let mut method_area = class
         .methods
         .iter()
         .cloned()
         .map(|method| (class.clone(), method))
         .collect::<Vec<_>>();
-    let heap = Arc::new(Mutex::new(Vec::new()));
+    add_native_methods(&mut method_area);
+    let heap = Rc::new(RefCell::new(Vec::new()));
     let mut method = None;
     for methods in &class.methods {
         if &*methods.name == "main" {
@@ -1002,13 +1096,43 @@ pub fn start_vm(src: Class) {
     let mut primary_thread = Thread {
         pc_register: 0,
         stack: Vec::new(),
-        method: method.clone(),
-        class,
+        method_area: Rc::new(method_area),
         heap,
     };
-    primary_thread.invoke_method(method);
+    primary_thread.invoke_method(method, class);
     loop {
         println!("{}", primary_thread.pc_register);
         primary_thread.tick().unwrap();
     }
+}
+
+fn add_native_methods(method_area: &mut Vec<(Rc<Class>, Rc<Method>)>) {
+    let init = Rc::new(Method {
+        access_flags: AccessFlags(AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC),
+        name: "<init>".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 0,
+            parameters: Vec::new(),
+            return_type: None,
+        },
+        attributes: Vec::new(),
+        code: None,
+    });
+
+    let object = Rc::new(Class {
+        version: ClassVersion {
+            minor_version: 0,
+            major_version: 0,
+        },
+        constants: Vec::new(),
+        access: AccessFlags(AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC),
+        this: "java/lang/Object".into(),
+        super_class: "java/lang/Object".into(),
+        interfaces: Vec::new(),
+        fields: Vec::new(),
+        methods: vec![init.clone()],
+        attributes: Vec::new(),
+    });
+
+    method_area.extend([(object, init)]);
 }
