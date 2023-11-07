@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{rc::Rc, sync::Arc};
 
 #[derive(Debug)]
 pub struct Class {
@@ -9,7 +9,7 @@ pub struct Class {
     pub super_class: Rc<str>,
     pub interfaces: Vec<u16>,
     pub fields: Vec<Field>,
-    pub methods: Vec<Method>,
+    pub methods: Vec<Arc<Method>>,
     pub attributes: Vec<Attribute>,
 }
 
@@ -26,17 +26,17 @@ pub enum Constant {
     FieldRef {
         class: Rc<str>,
         name: Rc<str>,
-        field_type: Rc<str>,
+        field_type: FieldType,
     },
     MethodRef {
         class: Rc<str>,
         name: Rc<str>,
-        method_type: Rc<str>
+        method_type: MethodDescriptor,
     },
     InterfaceRef {
         class: Rc<str>,
         name: Rc<str>,
-        interface_type: Rc<str>
+        interface_type: Rc<str>,
     },
     NameTypeDescriptor {
         name: Rc<str>,
@@ -103,7 +103,7 @@ pub struct ClassVersion {
 pub struct Field {
     pub access_flags: AccessFlags,
     pub name: Rc<str>,
-    pub descriptor: Rc<str>,
+    pub descriptor: FieldType,
     pub attributes: Vec<Attribute>,
     pub constant_value: Option<Constant>,
 }
@@ -112,9 +112,29 @@ pub struct Field {
 pub struct Method {
     pub access_flags: AccessFlags,
     pub name: Rc<str>,
-    pub descriptor: Rc<str>,
+    pub descriptor: MethodDescriptor,
     pub attributes: Vec<Attribute>,
     pub code: Option<Code>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MethodDescriptor {
+    pub parameters: Vec<FieldType>,
+    pub return_type: Option<FieldType>,
+}
+
+#[derive(Debug, Clone)]
+pub enum FieldType {
+    Byte,
+    Char,
+    Double,
+    Float,
+    Int,
+    Long,
+    Object(Rc<str>),
+    Short,
+    Boolean,
+    Array(Box<FieldType>),
 }
 
 #[derive(Debug)]

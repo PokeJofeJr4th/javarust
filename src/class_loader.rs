@@ -1,8 +1,8 @@
-use std::rc::Rc;
+use std::{iter::Peekable, rc::Rc, sync::Arc};
 
 use crate::class::{
-    AccessFlags, Attribute, Class, ClassVersion, Code, Constant, Field, Method, StackMapFrame,
-    VerificationTypeInfo,
+    AccessFlags, Attribute, Class, ClassVersion, Code, Constant, Field, FieldType, Method,
+    MethodDescriptor, StackMapFrame, VerificationTypeInfo,
 };
 
 /// A member of the constant pool
@@ -188,6 +188,7 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
         let name = str_index(&raw_constants, name_idx as usize)?;
         let descriptor_idx = get_u16(bytes)?;
         let descriptor = str_index(&raw_constants, descriptor_idx as usize)?;
+        let descriptor = parse_field_type(&mut descriptor.chars().peekable())?;
         let attrs_count = get_u16(bytes)?;
         let mut attributes = Vec::new();
         for _ in 0..attrs_count {
@@ -227,6 +228,7 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
         let name = str_index(&raw_constants, name_idx as usize)?;
         let descriptor_idx = get_u16(bytes)?;
         let descriptor = str_index(&raw_constants, descriptor_idx as usize)?;
+        let descriptor = parse_method_descriptor(&descriptor)?;
         let attrs_count = get_u16(bytes)?;
         let mut attributes = Vec::new();
         for _ in 0..attrs_count {
@@ -254,13 +256,13 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
             (false, []) => None,
             _ => return Err(String::from("Method must only have one code attribute")),
         };
-        methods.push(Method {
+        methods.push(Arc::new(Method {
             access_flags,
             name,
             descriptor,
             attributes,
             code,
-        })
+        }));
     }
 
     let attribute_count = get_u16(bytes)?;
@@ -517,6 +519,7 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
         } => {
             let class = class_index(constants, *class_ref_addr as usize)?;
             let (name, field_type) = name_type_index(constants, *name_type_addr as usize)?;
+            let field_type = parse_field_type(&mut field_type.chars().peekable())?;
             Constant::FieldRef {
                 class,
                 name,
@@ -554,6 +557,7 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
         } => {
             let class = class_index(constants, *class_ref_addr as usize)?;
             let (name, method_type) = name_type_index(constants, *name_type_addr as usize)?;
+            let method_type = parse_method_descriptor(&method_type)?;
             Constant::MethodRef {
                 class,
                 name,
@@ -589,4 +593,51 @@ fn name_type_index(constants: &[RawConstant], idx: usize) -> Result<(Rc<str>, Rc
     let name = str_index(constants, *name_desc_addr as usize)?;
     let type_name = str_index(constants, *type_addr as usize)?;
     Ok((name, type_name))
+}
+
+fn parse_method_descriptor(src: &str) -> Result<MethodDescriptor, String> {
+    let mut chars = src.chars().peekable();
+    let chars = &mut chars;
+    let Some('(') = chars.next() else {
+        return Err(String::from("Expected `(`"))
+    };
+    let mut parameters = Vec::new();
+    while chars.peek() != Some(&')') {
+        parameters.push(parse_field_type(chars)?);
+    }
+    chars.next();
+    let return_type = match chars.peek() {
+        Some('V') => None,
+        _ => Some(parse_field_type(chars)?),
+    };
+    Ok(MethodDescriptor {
+        parameters,
+        return_type,
+    })
+}
+
+fn parse_field_type(chars: &mut Peekable<impl Iterator<Item = char>>) -> Result<FieldType, String> {
+    match chars.next() {
+        Some('B') => Ok(FieldType::Byte),
+        Some('C') => Ok(FieldType::Char),
+        Some('D') => Ok(FieldType::Double),
+        Some('F') => Ok(FieldType::Float),
+        Some('I') => Ok(FieldType::Int),
+        Some('J') => Ok(FieldType::Long),
+        Some('L') => {
+            let mut class_buf = String::new();
+            while let Some(char) = chars.peek() {
+                if char == &';' {
+                    chars.next();
+                    break;
+                }
+                class_buf.push(chars.next().unwrap());
+            }
+            Ok(FieldType::Object(class_buf.into()))
+        }
+        Some('S') => Ok(FieldType::Short),
+        Some('Z') => Ok(FieldType::Boolean),
+        Some('[') => Ok(FieldType::Array(Box::new(parse_field_type(chars)?))),
+        other => Err(format!("bad field type {other:?}")),
+    }
 }
