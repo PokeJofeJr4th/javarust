@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -50,36 +51,36 @@ pub enum Constant {
     MethodType {
         index: u16,
     },
-    Dynamic {
-        constant: u32,
-    },
+    // Dynamic {
+    //     constant: u32,
+    // },
     InvokeDynamic {
         bootstrap_index: u16,
         name_type_index: u16,
     },
-    Module {
-        identity: u16,
-    },
-    Package {
-        identity: u16,
-    },
+    // Module {
+    //     identity: u16,
+    // },
+    // Package {
+    //     identity: u16,
+    // },
 }
 
 #[derive(Debug, Clone, Copy)]
-/// Flag Name 	        Value 	Interpretation
-/// ACC_PUBLIC 	        0x0001 	Declared public; may be accessed from outside its package.
-/// ACC_PRIVATE 	    0x0002 	Declared private; usable only within the defining class.
-/// ACC_PROTECTED 	    0x0004 	Declared protected; may be accessed within subclasses.
-/// ACC_STATIC 	        0x0008 	Declared static.
-/// ACC_FINAL 	        0x0010 	Declared final; never directly assigned to after object construction (JLS §17.5).
-/// ACC_SYNCHRONIZED 	0x0020 	Declared synchronized; invocation is wrapped by a monitor use.
-/// ACC_VOLATILE 	    0x0040 	Declared volatile; cannot be cached.
-/// ACC_TRANSIENT 	    0x0080 	Declared transient; not written or read by a persistent object manager.
-/// ACC_NATIVE 	        0x0100 	Declared native; implemented in a language other than Java.
-/// ACC_ABSTRACT 	    0x0400 	Declared abstract; no implementation is provided.
-/// ACC_STRICT 	        0x0800 	Declared strictfp; floating-point mode is FP-strict.
-/// ACC_SYNTHETIC 	    0x1000 	Declared synthetic; not present in the source code.
-/// ACC_ENUM 	        0x4000 	Declared as an element of an enum.
+/// Flag Name           Value   Interpretation
+/// ACC_PUBLIC          0x0001  Declared public; may be accessed from outside its package.
+/// ACC_PRIVATE         0x0002  Declared private; usable only within the defining class.
+/// ACC_PROTECTED       0x0004  Declared protected; may be accessed within subclasses.
+/// ACC_STATIC          0x0008  Declared static.
+/// ACC_FINAL           0x0010  Declared final; never directly assigned to after object construction (JLS §17.5).
+/// ACC_SYNCHRONIZED    0x0020  Declared synchronized; invocation is wrapped by a monitor use.
+/// ACC_VOLATILE        0x0040  Declared volatile; cannot be cached.
+/// ACC_TRANSIENT       0x0080  Declared transient; not written or read by a persistent object manager.
+/// ACC_NATIVE          0x0100  Declared native; implemented in a language other than Java.
+/// ACC_ABSTRACT        0x0400  Declared abstract; no implementation is provided.
+/// ACC_STRICT          0x0800  Declared strictfp; floating-point mode is FP-strict.
+/// ACC_SYNTHETIC       0x1000  Declared synthetic; not present in the source code.
+/// ACC_ENUM            0x4000  Declared as an element of an enum.
 pub struct AccessFlags(pub u16);
 
 impl AccessFlags {
@@ -94,20 +95,20 @@ impl AccessFlags {
     }
 
     pub const ACC_PUBLIC: u16 = 0x0001;
-    pub const ACC_PRIVATE: u16 = 0x0002;
-    pub const ACC_PROTECTED: u16 = 0x0004;
+    // pub const ACC_PRIVATE: u16 = 0x0002;
+    // pub const ACC_PROTECTED: u16 = 0x0004;
     pub const ACC_STATIC: u16 = 0x0008;
-    pub const ACC_FINAL: u16 = 0x0010;
-    pub const ACC_SYNCHRONIZED: u16 = 0x0020;
-    pub const ACC_VOLATILE: u16 = 0x0040;
-    pub const ACC_TRANSIENT: u16 = 0x0080;
+    // pub const ACC_FINAL: u16 = 0x0010;
+    // pub const ACC_SYNCHRONIZED: u16 = 0x0020;
+    // pub const ACC_VOLATILE: u16 = 0x0040;
+    // pub const ACC_TRANSIENT: u16 = 0x0080;
     pub const ACC_NATIVE: u16 = 0x0100;
     // pub const ACC_UNDEFINED: u16 = 0x0200;
     pub const ACC_ABSTRACT: u16 = 0x0400;
-    pub const ACC_STRICT: u16 = 0x0800;
-    pub const ACC_SYNTHETIC: u16 = 0x1000;
+    // pub const ACC_STRICT: u16 = 0x0800;
+    // pub const ACC_SYNTHETIC: u16 = 0x1000;
     // pub const ACC_UNDEFINED: u16 = 0x2000;
-    pub const ACC_ENUM: u16 = 0x4000;
+    // pub const ACC_ENUM: u16 = 0x4000;
     // pub const ACC_UNDEFINED: u16 = 0x8000;
 }
 

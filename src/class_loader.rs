@@ -52,19 +52,19 @@ pub enum RawConstant {
     MethodType {
         index: u16,
     },
-    Dynamic {
-        constant: u32,
-    },
+    // Dynamic {
+    //     constant: u32,
+    // },
     InvokeDynamic {
         bootstrap_index: u16,
         name_type_index: u16,
     },
-    Module {
-        identity: u16,
-    },
-    Package {
-        identity: u16,
-    },
+    // Module {
+    //     identity: u16,
+    // },
+    // Package {
+    //     identity: u16,
+    // },
 }
 
 pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String> {
@@ -496,7 +496,7 @@ fn parse_java_string(bytes: Vec<u8>) -> Result<String, String> {
                 char::from_u32(chr as u32).ok_or_else(|| String::from("Invalid character code"))?,
             );
         } else if b == 0b1110_1101 {
-            let [v, w, x, y, z] = get_bytes(bytes)?;
+            let [v, w, _x, y, z] = get_bytes(bytes)?;
             let chr = 0x10000
                 | ((v as u32 & 0x0f) << 16)
                 | ((w as u32 & 0x3f) << 10)
@@ -521,9 +521,9 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
             Constant::ClassRef(str_index(constants, *string_addr as usize)?)
         }
         RawConstant::Double(d) => Constant::Double(*d),
-        RawConstant::Dynamic { constant } => Constant::Dynamic {
-            constant: *constant,
-        },
+        // RawConstant::Dynamic { constant } => Constant::Dynamic {
+        //     constant: *constant,
+        // },
         RawConstant::FieldRef {
             class_ref_addr,
             name_type_addr,
@@ -576,7 +576,7 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
             }
         }
         &RawConstant::MethodType { index } => Constant::MethodType { index },
-        &RawConstant::Module { identity } => Constant::Module { identity },
+        // &RawConstant::Module { identity } => Constant::Module { identity },
         RawConstant::NameTypeDescriptor {
             name_desc_addr,
             type_addr,
@@ -588,7 +588,7 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
                 type_descriptor,
             }
         }
-        &RawConstant::Package { identity } => Constant::Package { identity },
+        // &RawConstant::Package { identity } => Constant::Package { identity },
         RawConstant::String(string) => Constant::String(string.clone()),
         RawConstant::StringRef { string_addr } => {
             let string = str_index(constants, *string_addr as usize)?;
