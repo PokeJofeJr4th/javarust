@@ -835,7 +835,39 @@ impl Thread {
                 self.return_void();
             }
             0xB2 => {
-                todo!("getstatic")
+                // getstatic
+                // get a static field from a class
+                let ib1 = self.get_pc_byte(stackframe.clone());
+                let ib2 = self.get_pc_byte(stackframe.clone());
+                let index = u16::from_be_bytes([ib1, ib2]);
+
+                let Constant::FieldRef { class, name, field_type } = stackframe.borrow().class.constants[index as usize - 1].clone() else {
+                    return Err(format!("Error invoking GetStatic at index {index}; {:?}", stackframe.borrow().class.constants[index as usize - 1]))
+                };
+
+                let Some(class) = search_class_area(&self.class_area, class.clone()) else {
+                    return Err(format!("Couldn't resolve class {class}"))
+                };
+
+                let staticindex = class
+                    .statics
+                    .iter()
+                    .find(|(field, _)| field.name == name)
+                    .ok_or_else(|| {
+                        format!("Couldn't find static `{name}` on class `{}`", class.this)
+                    })?
+                    .1;
+                println!("Getting Static {name} of {}", class.this);
+                let mut static_fields = class.static_data.borrow_mut();
+
+                if field_type.get_size() == 1 {
+                    let value = static_fields[staticindex];
+                    stackframe.borrow_mut().operand_stack.push(value);
+                } else {
+                    let upper = static_fields[staticindex];
+                    let lower = static_fields[staticindex + 1];
+                    stackframe.borrow_mut().operand_stack.extend([upper, lower]);
+                }
             }
             0xB3 => {
                 todo!("putstatic")
@@ -947,7 +979,12 @@ impl Thread {
                     name.clone(),
                     &method_type,
                 )
-                .ok_or_else(|| format!("Error during InvokeVirtual; {}.{}", class, name))?;
+                .ok_or_else(|| {
+                    format!(
+                        "Error during InvokeVirtual; {}.{} : {:?}",
+                        class, name, method_type
+                    )
+                })?;
                 let args_start =
                     stackframe.borrow().operand_stack.len() - method_type.parameter_size - 1;
                 let stack = &mut stackframe.borrow_mut().operand_stack;
@@ -1049,7 +1086,23 @@ impl Thread {
                 todo!("invokeinterface")
             }
             0xBA => {
-                todo!("invokedynamic")
+                // invokedynamic
+                // dynamically figure out what to do
+                let ib1 = self.get_pc_byte(stackframe.clone());
+                let ib2 = self.get_pc_byte(stackframe.clone());
+                let index = u16::from_be_bytes([ib1, ib2]);
+
+                let 0 = self.get_pc_byte(stackframe.clone()) else { return Err(String::from("Expected a zero"))};
+                let 0 = self.get_pc_byte(stackframe.clone()) else { return Err(String::from("Expected a zero"))};
+
+                let Constant::InvokeDynamic { bootstrap_index, method_name, method_type } =
+                    stackframe.borrow().class.constants[index as usize - 1].clone() else {
+                        return Err(format!("Error running InvokeDynamic - {:?}", stackframe.borrow().class.constants[index as usize - 1]))
+                    };
+
+                return Err(format!(
+                    "Invoking Dynamic {bootstrap_index} - {method_name} : {method_type:?}"
+                ));
             }
             0xBB => {
                 // new
@@ -1156,6 +1209,22 @@ impl Thread {
         let class = stackframe.borrow().class.this.clone();
         match (&*class, &*name) {
             ("java/lang/Object", "<init>") => self.return_void(),
+            ("java/io/PrintStream", "println") => {
+                let args = stackframe.borrow().method.descriptor.parameter_size;
+                if args == 0 {
+                    println!();
+                } else {
+                    let arg = stackframe.borrow_mut().operand_stack.pop().unwrap();
+                    let heap_borrow = self.heap.borrow();
+                    let reference = heap_borrow.get(arg as usize);
+                    match &*reference.unwrap().borrow() {
+                        HeapElement::String(str) => println!("{str}"),
+                        _ => todo!(),
+                    }
+                    drop(heap_borrow);
+                }
+                self.return_void();
+            }
             (class, name) => return Err(format!("Error invoking native method; {class}.{name}")),
         }
         Ok(())
@@ -1220,7 +1289,7 @@ fn search_class_area(class_area: &[Rc<Class>], class: Rc<str>) -> Option<Rc<Clas
     None
 }
 
-fn heap_allocate(heap: &mut Vec<Rc<RefCell<HeapElement>>>, element: HeapElement) -> u32 {
+pub(super) fn heap_allocate(heap: &mut Vec<Rc<RefCell<HeapElement>>>, element: HeapElement) -> u32 {
     let length = heap.len();
 
     heap.push(Rc::new(RefCell::new(element)));

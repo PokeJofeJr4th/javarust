@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::fmt::Debug;
 use std::rc::Rc;
 
@@ -11,6 +12,8 @@ pub struct Class {
     pub interfaces: Vec<u16>,
     pub field_size: usize,
     pub fields: Vec<(Field, usize)>,
+    pub static_data: RefCell<Vec<u32>>,
+    pub statics: Vec<(Field, usize)>,
     pub methods: Vec<Rc<Method>>,
     pub attributes: Vec<Attribute>,
 }
@@ -56,7 +59,8 @@ pub enum Constant {
     // },
     InvokeDynamic {
         bootstrap_index: u16,
-        name_type_index: u16,
+        method_name: Rc<str>,
+        method_type: MethodDescriptor,
     },
     // Module {
     //     identity: u16,

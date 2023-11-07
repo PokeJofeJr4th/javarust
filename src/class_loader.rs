@@ -1,4 +1,4 @@
-use std::{iter::Peekable, rc::Rc};
+use std::{cell::RefCell, iter::Peekable, rc::Rc};
 
 use crate::class::{
     AccessFlags, Attribute, Class, ClassVersion, Code, Constant, Field, FieldType, Method,
@@ -271,12 +271,26 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
         attributes.push(get_attribute(&raw_constants, bytes)?);
     }
 
+    let (statics, fields): (Vec<_>, Vec<_>) = fields
+        .into_iter()
+        .partition(|field| field.access_flags.is_static());
+
     let mut field_size = 0;
     let fields = fields
         .into_iter()
         .map(|field| {
             let field_location = field_size;
             field_size += field.descriptor.get_size();
+            (field, field_location)
+        })
+        .collect();
+
+    let mut statics_size = 0;
+    let statics = statics
+        .into_iter()
+        .map(|field| {
+            let field_location = statics_size;
+            statics_size += field.descriptor.get_size();
             (field, field_location)
         })
         .collect();
@@ -289,6 +303,8 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
         interfaces,
         field_size,
         fields,
+        statics,
+        static_data: RefCell::new(vec![0; statics_size]),
         methods,
         version,
         attributes,
@@ -553,11 +569,16 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
         }
         &RawConstant::InvokeDynamic {
             bootstrap_index,
-            name_type_index,
-        } => Constant::InvokeDynamic {
-            bootstrap_index,
-            name_type_index,
-        },
+            name_type_index: name,
+        } => {
+            let (method_name, method_type) = name_type_index(constants, name as usize)?;
+            let method_type = parse_method_descriptor(&method_type)?;
+            Constant::InvokeDynamic {
+                bootstrap_index,
+                method_name,
+                method_type,
+            }
+        }
         RawConstant::Long(l) => Constant::Long(*l),
         &RawConstant::MethodHandle { descriptor, index } => {
             Constant::MethodHandle { descriptor, index }

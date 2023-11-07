@@ -2,9 +2,9 @@ mod thread;
 
 use std::{cell::RefCell, rc::Rc};
 
-use crate::class::{AccessFlags, Class, ClassVersion, Method, MethodDescriptor};
+use crate::class::{AccessFlags, Class, ClassVersion, Field, FieldType, Method, MethodDescriptor};
 
-use self::thread::Thread;
+use self::thread::{heap_allocate, Thread};
 
 fn search_method_area(
     method_area: &[(Rc<Class>, Rc<Method>)],
@@ -91,8 +91,8 @@ pub fn start_vm(src: Class) {
         .map(|method| (class.clone(), method))
         .collect::<Vec<_>>();
     let mut class_area = vec![class.clone()];
-    add_native_methods(&mut method_area, &mut class_area);
     let heap = Rc::new(RefCell::new(Vec::new()));
+    add_native_methods(&mut method_area, &mut class_area, &mut heap.borrow_mut());
     let mut method = None;
     for methods in &class.methods {
         if &*methods.name == "main" {
@@ -100,7 +100,7 @@ pub fn start_vm(src: Class) {
             break;
         }
     }
-    let method = method.expect("No `Main` function found");
+    let method = method.expect("No `main` function found");
     let mut primary_thread = Thread {
         pc_register: 0,
         stack: Vec::new(),
@@ -110,11 +110,11 @@ pub fn start_vm(src: Class) {
     };
     primary_thread.invoke_method(method, class);
     loop {
-        println!(
-            "{:?}",
-            primary_thread.stack.last().unwrap().borrow().operand_stack
-        );
-        println!("{}", primary_thread.pc_register);
+        // println!(
+        //     "{:?}",
+        //     primary_thread.stack.last().unwrap().borrow().operand_stack
+        // );
+        // println!("{}", primary_thread.pc_register);
         primary_thread.tick().unwrap();
     }
 }
@@ -122,6 +122,7 @@ pub fn start_vm(src: Class) {
 fn add_native_methods(
     method_area: &mut Vec<(Rc<Class>, Rc<Method>)>,
     class_area: &mut Vec<Rc<Class>>,
+    heap: &mut Vec<Rc<RefCell<HeapElement>>>,
 ) {
     let init = Rc::new(Method {
         access_flags: AccessFlags(AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC),
@@ -148,9 +149,88 @@ fn add_native_methods(
         field_size: 0,
         fields: Vec::new(),
         methods: vec![init.clone()],
+        static_data: RefCell::new(Vec::new()),
+        statics: Vec::new(),
         attributes: Vec::new(),
     });
 
-    method_area.extend([(object.clone(), init)]);
-    class_area.extend([object]);
+    let println = Rc::new(Method {
+        access_flags: AccessFlags(AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC),
+        name: "println".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 1,
+            parameters: vec![FieldType::Object("java/lang/String".into())],
+            return_type: None,
+        },
+        attributes: Vec::new(),
+        code: None,
+    });
+
+    let println_empty = Rc::new(Method {
+        access_flags: AccessFlags(AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC),
+        name: "println".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 0,
+            parameters: Vec::new(),
+            return_type: None,
+        },
+        attributes: Vec::new(),
+        code: None,
+    });
+
+    let printstream = Rc::new(Class {
+        version: ClassVersion {
+            minor_version: 0,
+            major_version: 0,
+        },
+        constants: Vec::new(),
+        access: AccessFlags(AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC),
+        this: "java/io/PrintStream".into(),
+        super_class: "java/lang/Object".into(),
+        interfaces: Vec::new(),
+        field_size: 0,
+        fields: Vec::new(),
+        methods: vec![println.clone()],
+        static_data: RefCell::new(Vec::new()),
+        statics: Vec::new(),
+        attributes: Vec::new(),
+    });
+
+    let mut system_out = Object::new();
+    system_out.class_mut_or_insert(printstream.clone());
+    let system_out_idx = heap_allocate(heap, HeapElement::Object(system_out));
+
+    let system = Rc::new(Class {
+        version: ClassVersion {
+            minor_version: 0,
+            major_version: 0,
+        },
+        constants: Vec::new(),
+        access: AccessFlags(AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC),
+        this: "java/lang/System".into(),
+        super_class: "java/lang/Object".into(),
+        interfaces: Vec::new(),
+        field_size: 0,
+        fields: Vec::new(),
+        methods: Vec::new(),
+        static_data: RefCell::new(vec![system_out_idx]),
+        statics: vec![(
+            Field {
+                access_flags: AccessFlags(AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC),
+                name: "out".into(),
+                descriptor: FieldType::Object("java/io/PrintStream".into()),
+                attributes: Vec::new(),
+                constant_value: None,
+            },
+            0,
+        )],
+        attributes: Vec::new(),
+    });
+
+    method_area.extend([
+        (object.clone(), init),
+        (printstream.clone(), println),
+        (printstream.clone(), println_empty),
+    ]);
+    class_area.extend([object, system, printstream]);
 }
