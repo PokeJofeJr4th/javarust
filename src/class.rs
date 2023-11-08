@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::fmt::Debug;
+use std::ops::{BitAnd, BitOr};
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -109,7 +110,7 @@ impl Constant {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Flag Name           Value   Interpretation
 /// ACC_PUBLIC          0x0001  Declared public; may be accessed from outside its package.
 /// ACC_PRIVATE         0x0002  Declared private; usable only within the defining class.
@@ -128,31 +129,46 @@ pub struct AccessFlags(pub u16);
 
 impl AccessFlags {
     pub const fn is_static(self) -> bool {
-        self.0 & Self::ACC_STATIC != 0
+        self.0 & Self::ACC_STATIC.0 != 0
     }
     pub const fn is_native(self) -> bool {
-        self.0 & Self::ACC_NATIVE != 0
+        self.0 & Self::ACC_NATIVE.0 != 0
     }
     pub const fn is_abstract(self) -> bool {
-        self.0 & Self::ACC_ABSTRACT != 0
+        self.0 & Self::ACC_ABSTRACT.0 != 0
     }
 
-    pub const ACC_PUBLIC: u16 = 0x0001;
+    pub const ZERO: Self = Self(0);
+    pub const ACC_PUBLIC: Self = Self(0x0001);
     // pub const ACC_PRIVATE: u16 = 0x0002;
     // pub const ACC_PROTECTED: u16 = 0x0004;
-    pub const ACC_STATIC: u16 = 0x0008;
+    pub const ACC_STATIC: Self = Self(0x0008);
     // pub const ACC_FINAL: u16 = 0x0010;
     // pub const ACC_SYNCHRONIZED: u16 = 0x0020;
     // pub const ACC_VOLATILE: u16 = 0x0040;
     // pub const ACC_TRANSIENT: u16 = 0x0080;
-    pub const ACC_NATIVE: u16 = 0x0100;
+    pub const ACC_NATIVE: Self = Self(0x0100);
     // pub const ACC_UNDEFINED: u16 = 0x0200;
-    pub const ACC_ABSTRACT: u16 = 0x0400;
+    pub const ACC_ABSTRACT: Self = Self(0x0400);
     // pub const ACC_STRICT: u16 = 0x0800;
     // pub const ACC_SYNTHETIC: u16 = 0x1000;
     // pub const ACC_UNDEFINED: u16 = 0x2000;
     // pub const ACC_ENUM: u16 = 0x4000;
     // pub const ACC_UNDEFINED: u16 = 0x8000;
+}
+
+impl BitOr for AccessFlags {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
+impl BitAnd for AccessFlags {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
 }
 
 #[derive(Debug)]
