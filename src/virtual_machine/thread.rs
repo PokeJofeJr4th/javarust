@@ -1100,6 +1100,16 @@ impl Thread {
                         return Err(format!("Error running InvokeDynamic - {:?}", stackframe.borrow().class.constants[index as usize - 1]))
                     };
 
+                let mut bootstrap_object = Object::new();
+                let method_handle_class =
+                    search_class_area(&self.class_area, "java/lang/invoke/MethodHandle".into())
+                        .unwrap();
+                bootstrap_object.class_mut_or_insert(method_handle_class)[0] =
+                    bootstrap_index as u32;
+                let bootstrap_pointer = heap_allocate(
+                    &mut self.heap.borrow_mut(),
+                    HeapElement::Object(bootstrap_object),
+                );
                 let bootstrap_method =
                     stackframe.borrow().class.bootstrap_methods[bootstrap_index as usize].clone();
 

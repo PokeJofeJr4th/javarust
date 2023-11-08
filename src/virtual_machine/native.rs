@@ -87,18 +87,40 @@ pub(super) fn add_native_methods(
     ));
     let system = Rc::new(system);
 
-    let method_handle = Class::new(
+    let mut method_handle = Class::new(
         AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE,
         "java/lang/invoke/MethodHandle".into(),
         object_name.clone(),
     );
+    method_handle.field_size = 1;
+    method_handle.fields.push((
+        Field {
+            access_flags: AccessFlags::ACC_PUBLIC,
+            name: "location".into(),
+            descriptor: FieldType::Int,
+            attributes: Vec::new(),
+            constant_value: None,
+        },
+        0,
+    ));
     let method_handle = Rc::new(method_handle);
 
-    let method_type = Class::new(
+    let mut method_type = Class::new(
         AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE,
         "java/lang/invoke/MethodType".into(),
         object_name.clone(),
     );
+    method_type.field_size = 1;
+    method_type.fields.push((
+        Field {
+            access_flags: AccessFlags::ACC_PUBLIC,
+            name: "location".into(),
+            descriptor: FieldType::Int,
+            attributes: Vec::new(),
+            constant_value: None,
+        },
+        0,
+    ));
     let method_type = Rc::new(method_type);
 
     let call_site = Class::new(
