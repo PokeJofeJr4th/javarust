@@ -15,7 +15,31 @@ pub struct Class {
     pub static_data: RefCell<Vec<u32>>,
     pub statics: Vec<(Field, usize)>,
     pub methods: Vec<Rc<Method>>,
+    pub bootstrap_methods: Vec<BootstrapMethod>,
     pub attributes: Vec<Attribute>,
+}
+
+impl Class {
+    pub fn new(access: AccessFlags, this: Rc<str>, super_class: Rc<str>) -> Self {
+        Self {
+            version: ClassVersion {
+                minor_version: 0,
+                major_version: 0,
+            },
+            constants: Vec::new(),
+            access,
+            this,
+            super_class,
+            interfaces: Vec::new(),
+            field_size: 0,
+            fields: Vec::new(),
+            static_data: RefCell::new(Vec::new()),
+            statics: Vec::new(),
+            methods: Vec::new(),
+            bootstrap_methods: Vec::new(),
+            attributes: Vec::new(),
+        }
+    }
 }
 
 /// A member of the constant pool
@@ -68,6 +92,21 @@ pub enum Constant {
     // Package {
     //     identity: u16,
     // },
+}
+
+impl Constant {
+    pub fn bytes(&self) -> Vec<u32> {
+        match self {
+            Self::Int(i) => vec![*i as u32],
+            Self::Float(f) => vec![f.to_bits()],
+            Self::Long(l) => vec![*l as u64 as u32, (*l as u64 >> 32) as u32],
+            Self::Double(f) => {
+                let bits = f.to_bits();
+                vec![bits as u64 as u32, (bits as u64 >> 32) as u32]
+            }
+            _ => vec![u32::MAX],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -228,4 +267,12 @@ pub enum VerificationTypeInfo {
     Uninitialized { offset: u16 },
     Long,
     Double,
+}
+
+#[derive(Debug, Clone)]
+pub struct BootstrapMethod {
+    pub name: Rc<str>,
+    pub class: Rc<str>,
+    pub descriptor: MethodDescriptor,
+    pub args: Vec<Constant>,
 }

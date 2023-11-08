@@ -858,7 +858,7 @@ impl Thread {
                     })?
                     .1;
                 println!("Getting Static {name} of {}", class.this);
-                let mut static_fields = class.static_data.borrow_mut();
+                let static_fields = class.static_data.borrow();
 
                 if field_type.get_size() == 1 {
                     let value = static_fields[staticindex];
@@ -1100,9 +1100,13 @@ impl Thread {
                         return Err(format!("Error running InvokeDynamic - {:?}", stackframe.borrow().class.constants[index as usize - 1]))
                     };
 
+                let bootstrap_method =
+                    stackframe.borrow().class.bootstrap_methods[bootstrap_index as usize].clone();
+
                 return Err(format!(
-                    "Invoking Dynamic {bootstrap_index} - {method_name} : {method_type:?}"
+                    "Invoking Dynamic {bootstrap_method:?} - {method_name} : {method_type:?}"
                 ));
+                // TODO: Finish InvokeDynamic
             }
             0xBB => {
                 // new

@@ -2,7 +2,7 @@ use std::{cell::RefCell, iter::Peekable, rc::Rc};
 
 use crate::class::{
     AccessFlags, Attribute, Class, ClassVersion, Code, Constant, Field, FieldType, Method,
-    MethodDescriptor, StackMapFrame, VerificationTypeInfo,
+    MethodDescriptor, StackMapFrame, VerificationTypeInfo, BootstrapMethod,
 };
 
 /// A member of the constant pool
@@ -270,6 +270,45 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
     for _ in 0..attribute_count {
         attributes.push(get_attribute(&raw_constants, bytes)?);
     }
+    let (bootstrap_attrs, attributes) = {
+        let split: (Vec<_>, Vec<_>) = attributes
+            .into_iter()
+            .partition(|attr| &*attr.name == "BootstrapMethods");
+        split
+    };
+
+    let bootstrap_methods = match &bootstrap_attrs[..] {
+        [bootstrap] => {
+            let mut bytes = bootstrap.data.iter().copied().peekable();
+            let num_bootstrap_methods = get_u16(&mut bytes)?;
+            let mut bootstrap_methods = Vec::new();
+            for _ in 0..num_bootstrap_methods {
+                let method_ref = get_u16(&mut bytes)?;
+                let Constant::MethodRef { class, name, method_type } = constants[method_ref as usize].clone() else {
+                    return Err(String::from("Bootstrap method needs to lead to a MethodRef"))
+                };
+                let num_args = get_u16(&mut bytes)?;
+                let mut args = Vec::new();
+                for _ in 0..num_args {
+                    let arg_index = get_u16(&mut bytes)?;
+                    args.push(constants[arg_index as usize].clone());
+                }
+                bootstrap_methods.push(BootstrapMethod {
+                    name,
+                    class,
+                    descriptor: method_type,
+                    args,
+                });
+            }
+            bootstrap_methods
+        }
+        [] => Vec::new(),
+        _ => {
+            return Err(String::from(
+                "A class can have at most one BootstrapMethods attribute",
+            ))
+        }
+    };
 
     let (statics, fields): (Vec<_>, Vec<_>) = fields
         .into_iter()
@@ -286,14 +325,21 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
         .collect();
 
     let mut statics_size = 0;
+    let mut static_data = Vec::new();
     let statics = statics
         .into_iter()
         .map(|field| {
             let field_location = statics_size;
             statics_size += field.descriptor.get_size();
+            let x = field.constant_value.clone().unwrap();
+            static_data.extend(x.bytes());
             (field, field_location)
         })
         .collect();
+
+    if static_data.len() != statics_size {
+        return Err(String::from("Static data size error"));
+    }
 
     Ok(Class {
         constants,
@@ -304,8 +350,9 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
         field_size,
         fields,
         statics,
-        static_data: RefCell::new(vec![0; statics_size]),
+        static_data: RefCell::new(static_data),
         methods,
+        bootstrap_methods,
         version,
         attributes,
     })

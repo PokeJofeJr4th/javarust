@@ -141,7 +141,18 @@ Class {
         ),
         InvokeDynamic {
             bootstrap_index: 0,
-            name_type_index: 34,
+            method_name: "makeConcatWithConstants",
+            method_type: MethodDescriptor {
+                parameter_size: 1,
+                parameters: [
+                    Int,
+                ],
+                return_type: Some(
+                    Object(
+                        "java/lang/String",
+                    ),
+                ),
+            },
         },
         NameTypeDescriptor {
             name: "makeConcatWithConstants",
@@ -155,7 +166,18 @@ Class {
         ),
         InvokeDynamic {
             bootstrap_index: 1,
-            name_type_index: 34,
+            method_name: "makeConcatWithConstants",
+            method_type: MethodDescriptor {
+                parameter_size: 1,
+                parameters: [
+                    Int,
+                ],
+                return_type: Some(
+                    Object(
+                        "java/lang/String",
+                    ),
+                ),
+            },
         },
         StringRef(
             "ya' take one down, ya' pass it around,",
@@ -216,15 +238,48 @@ Class {
         ),
         InvokeDynamic {
             bootstrap_index: 2,
-            name_type_index: 34,
+            method_name: "makeConcatWithConstants",
+            method_type: MethodDescriptor {
+                parameter_size: 1,
+                parameters: [
+                    Int,
+                ],
+                return_type: Some(
+                    Object(
+                        "java/lang/String",
+                    ),
+                ),
+            },
         },
         InvokeDynamic {
             bootstrap_index: 3,
-            name_type_index: 34,
+            method_name: "makeConcatWithConstants",
+            method_type: MethodDescriptor {
+                parameter_size: 1,
+                parameters: [
+                    Int,
+                ],
+                return_type: Some(
+                    Object(
+                        "java/lang/String",
+                    ),
+                ),
+            },
         },
         InvokeDynamic {
             bootstrap_index: 4,
-            name_type_index: 34,
+            method_name: "makeConcatWithConstants",
+            method_type: MethodDescriptor {
+                parameter_size: 1,
+                parameters: [
+                    Int,
+                ],
+                return_type: Some(
+                    Object(
+                        "java/lang/String",
+                    ),
+                ),
+            },
         },
         MethodRef {
             class: "DrunkBottlesOfBeerOnTheWall",
@@ -559,34 +614,45 @@ Class {
     this: "DrunkBottlesOfBeerOnTheWall",
     super_class: "java/lang/Object",
     interfaces: [],
+    field_size: 2,
     fields: [
-        Field {
-            access_flags: AccessFlags(
-                0,
-            ),
-            name: "beersDrank",
-            descriptor: Int,
-            attributes: [],
-            constant_value: None,
-        },
-        Field {
-            access_flags: AccessFlags(
-                16,
-            ),
-            name: "PEOPLE_IN_DRINKING_GROUP",
-            descriptor: Int,
-            attributes: [
-                Attribute {
-                    name: "ConstantValue",
-                    data: [
-                        0,
-                        92,
-                    ],
-                },
-            ],
-            constant_value: None,
-        },
+        (
+            Field {
+                access_flags: AccessFlags(
+                    0,
+                ),
+                name: "beersDrank",
+                descriptor: Int,
+                attributes: [],
+                constant_value: None,
+            },
+            0,
+        ),
+        (
+            Field {
+                access_flags: AccessFlags(
+                    16,
+                ),
+                name: "PEOPLE_IN_DRINKING_GROUP",
+                descriptor: Int,
+                attributes: [
+                    Attribute {
+                        name: "ConstantValue",
+                        data: [
+                            0,
+                            92,
+                        ],
+                    },
+                ],
+                constant_value: None,
+            },
+            1,
+        ),
     ],
+    static_data: RefCell {
+        value: [],
+    },
+    statics: [],
     methods: [
         Method {
             access_flags: AccessFlags(
@@ -1269,49 +1335,194 @@ Class {
             ),
         },
     ],
+    bootstrap_methods: [
+        BootstrapMethod {
+            name: "makeConcatWithConstants",
+            class: "java/lang/invoke/StringConcatFactory",
+            descriptor: MethodDescriptor {
+                parameter_size: 5,
+                parameters: [
+                    Object(
+                        "java/lang/invoke/MethodHandles$Lookup",
+                    ),
+                    Object(
+                        "java/lang/String",
+                    ),
+                    Object(
+                        "java/lang/invoke/MethodType",
+                    ),
+                    Object(
+                        "java/lang/String",
+                    ),
+                    Array(
+                        Object(
+                            "java/lang/Object",
+                        ),
+                    ),
+                ],
+                return_type: Some(
+                    Object(
+                        "java/lang/invoke/CallSite",
+                    ),
+                ),
+            },
+            args: [
+                String(
+                    "\u{1} bottle of beer on the wall,",
+                ),
+            ],
+        },
+        BootstrapMethod {
+            name: "makeConcatWithConstants",
+            class: "java/lang/invoke/StringConcatFactory",
+            descriptor: MethodDescriptor {
+                parameter_size: 5,
+                parameters: [
+                    Object(
+                        "java/lang/invoke/MethodHandles$Lookup",
+                    ),
+                    Object(
+                        "java/lang/String",
+                    ),
+                    Object(
+                        "java/lang/invoke/MethodType",
+                    ),
+                    Object(
+                        "java/lang/String",
+                    ),
+                    Array(
+                        Object(
+                            "java/lang/Object",
+                        ),
+                    ),
+                ],
+                return_type: Some(
+                    Object(
+                        "java/lang/invoke/CallSite",
+                    ),
+                ),
+            },
+            args: [
+                String(
+                    "\u{1} bottle of beer,",
+                ),
+            ],
+        },
+        BootstrapMethod {
+            name: "makeConcatWithConstants",
+            class: "java/lang/invoke/StringConcatFactory",
+            descriptor: MethodDescriptor {
+                parameter_size: 5,
+                parameters: [
+                    Object(
+                        "java/lang/invoke/MethodHandles$Lookup",
+                    ),
+                    Object(
+                        "java/lang/String",
+                    ),
+                    Object(
+                        "java/lang/invoke/MethodType",
+                    ),
+                    Object(
+                        "java/lang/String",
+                    ),
+                    Array(
+                        Object(
+                            "java/lang/Object",
+                        ),
+                    ),
+                ],
+                return_type: Some(
+                    Object(
+                        "java/lang/invoke/CallSite",
+                    ),
+                ),
+            },
+            args: [
+                String(
+                    "\u{1} bottles of beer on the wall,",
+                ),
+            ],
+        },
+        BootstrapMethod {
+            name: "makeConcatWithConstants",
+            class: "java/lang/invoke/StringConcatFactory",
+            descriptor: MethodDescriptor {
+                parameter_size: 5,
+                parameters: [
+                    Object(
+                        "java/lang/invoke/MethodHandles$Lookup",
+                    ),
+                    Object(
+                        "java/lang/String",
+                    ),
+                    Object(
+                        "java/lang/invoke/MethodType",
+                    ),
+                    Object(
+                        "java/lang/String",
+                    ),
+                    Array(
+                        Object(
+                            "java/lang/Object",
+                        ),
+                    ),
+                ],
+                return_type: Some(
+                    Object(
+                        "java/lang/invoke/CallSite",
+                    ),
+                ),
+            },
+            args: [
+                String(
+                    "\u{1} bottles of beer,",
+                ),
+            ],
+        },
+        BootstrapMethod {
+            name: "makeConcatWithConstants",
+            class: "java/lang/invoke/StringConcatFactory",
+            descriptor: MethodDescriptor {
+                parameter_size: 5,
+                parameters: [
+                    Object(
+                        "java/lang/invoke/MethodHandles$Lookup",
+                    ),
+                    Object(
+                        "java/lang/String",
+                    ),
+                    Object(
+                        "java/lang/invoke/MethodType",
+                    ),
+                    Object(
+                        "java/lang/String",
+                    ),
+                    Array(
+                        Object(
+                            "java/lang/Object",
+                        ),
+                    ),
+                ],
+                return_type: Some(
+                    Object(
+                        "java/lang/invoke/CallSite",
+                    ),
+                ),
+            },
+            args: [
+                String(
+                    "\u{1} bottles of beer on the wall\n",
+                ),
+            ],
+        },
+    ],
     attributes: [
         Attribute {
             name: "SourceFile",
             data: [
                 0,
                 99,
-            ],
-        },
-        Attribute {
-            name: "BootstrapMethods",
-            data: [
-                0,
-                5,
-                0,
-                101,
-                0,
-                1,
-                0,
-                107,
-                0,
-                101,
-                0,
-                1,
-                0,
-                109,
-                0,
-                101,
-                0,
-                1,
-                0,
-                111,
-                0,
-                101,
-                0,
-                1,
-                0,
-                113,
-                0,
-                101,
-                0,
-                1,
-                0,
-                115,
             ],
         },
         Attribute {
