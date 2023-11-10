@@ -1,11 +1,11 @@
 use std::{cell::RefCell, cmp::Ordering, rc::Rc};
 
 use crate::{
-    class::{Class, Constant, Method},
+    class::{Class, Method},
     virtual_machine::search_method_area,
 };
 
-use super::{HeapElement, Object, StackFrame};
+use super::{instruction::Type, Cmp, HeapElement, Instruction, Object, Op, StackFrame};
 
 pub(super) struct Thread {
     pub pc_register: usize,
@@ -24,240 +24,73 @@ impl Thread {
         }
         let opcode = self.get_pc_byte(stackframe.clone());
         match opcode {
-            0x0 => {
+            Instruction::Noop => {
                 // nop
             }
-            0x01 => {
-                // aconst_null
-                // push a null pointer onto the operand stack
-                stackframe.borrow_mut().operand_stack.push(u32::MAX);
+            Instruction::Push1(i) => {
+                // push one item onto the operand stack
+                stackframe.borrow_mut().operand_stack.push(i);
             }
-            iconst_i @ 0x02..=0x08 => {
-                // iconst_<i>
-                // push an integer constant onto the stack
-                let iconst = iconst_i as i8 - 3;
-                stackframe
-                    .borrow_mut()
-                    .operand_stack
-                    .push(iconst as i32 as u32);
+            Instruction::Push2(a, b) => {
+                // push 2 items onto the operand stack
+                let operand_stack = &mut stackframe.borrow_mut().operand_stack;
+                operand_stack.push(a);
+                operand_stack.push(b);
             }
-            lconst_l @ 0x09..=0x0A => {
-                // lconst_<l>
-                // push a long constant onto the stack
-                let lconst = lconst_l - 0x09;
-                let long = lconst as i64;
-                push_long(&mut stackframe.borrow_mut().operand_stack, long as u64);
+            Instruction::LoadString(str) => {
+                let str_obj = String::from(&*str.clone());
+                let str_ptr =
+                    heap_allocate(&mut self.heap.borrow_mut(), HeapElement::String(str_obj));
+                stackframe.borrow_mut().operand_stack.push(str_ptr);
             }
-            fconst_f @ 0x0B..=0x0D => {
-                // fconst_<f>
-                // push a float constant onto the stack
-                let fconst = fconst_f - 0x0B;
-                let float = fconst as f32;
-                stackframe.borrow_mut().operand_stack.push(float.to_bits());
-            }
-            dconst_d @ (0x0E | 0x0F) => {
-                // dconst_<d>
-                // push a double constant onto the stack
-                let dconst = dconst_d - 0xE;
-                let double = dconst as f64;
-                push_long(&mut stackframe.borrow_mut().operand_stack, double.to_bits());
-            }
-            0x10 => {
-                // bipush byte
-                // push a byte onto the operand stack
-                let byte = self.get_pc_byte(stackframe.clone()) as i8;
-                // I think this will sign-extend it, not entirely sure tho
-                let value = byte as i32 as u32;
-                stackframe.borrow_mut().operand_stack.push(value);
-            }
-            0x11 => {
-                // sipush b1 b2
-                let upper = self.get_pc_byte(stackframe.clone());
-                let lower = self.get_pc_byte(stackframe.clone());
-                let short = u16::from_be_bytes([upper, lower]) as i16 as i32;
-                stackframe.borrow_mut().operand_stack.push(short as u32);
-            }
-            0x12 => {
-                // ldc
-                // push item from constant pool
-
-                let index = self.get_pc_byte(stackframe.clone());
-
-                let constant = stackframe.borrow().class.constants[index as usize].clone();
-
-                match constant {
-                    Constant::Int(i) => stackframe.borrow_mut().operand_stack.push(i as u32),
-                    Constant::Float(i) => stackframe.borrow_mut().operand_stack.push(i.to_bits()),
-                    Constant::String(str) => {
-                        let str_obj = String::from(&*str.clone());
-                        let str_ptr = heap_allocate(
-                            &mut self.heap.borrow_mut(),
-                            HeapElement::String(str_obj),
-                        );
-                        stackframe.borrow_mut().operand_stack.push(str_ptr);
-                    }
-                    other => return Err(format!("Error during lcd; can't load {other:?}")),
-                }
-            }
-            0x13 => {
-                todo!("ldc_w")
-            }
-            0x14 => {
-                todo!("ldc2_w")
-            }
-            0x18 | 0x16 => {
-                // dload|lload index
+            Instruction::Load2(index) => {
                 // load a double from locals to stack
-                let index = self.get_pc_byte(stackframe.clone());
-                long_load(stackframe, index as usize);
+                long_load(stackframe, index);
             }
-            0x19 | 0x17 | 0x15 => {
-                // aload|fload|iload index
+            Instruction::Load1(index) => {
                 // load one item from locals to stack
-                let index = self.get_pc_byte(stackframe.clone());
-                value_load(stackframe, index as usize);
+                value_load(stackframe, index);
             }
-            iload_n @ 0x1A..=0x1D => {
-                // iload_<n>
-                // load one item from locals to stack
-                let index = iload_n - 0x1A;
-                value_load(stackframe, index as usize);
-            }
-            lload_n @ 0x1E..=0x21 => {
-                // lload_<n>
-                // load one item from locals to stack
-                let index = lload_n - 0x1E;
-                long_load(stackframe, index as usize);
-            }
-            fload_n @ 0x22..=0x25 => {
-                // fload_<n>
-                // load one item from locals to stack
-                let index = fload_n - 0x22;
-                value_load(stackframe, index as usize);
-            }
-            dload_n @ 0x26..=0x29 => {
-                // dload_<n>
-                // load two items from locals to stack
-                let index = dload_n - 0x26;
-                long_load(stackframe, index as usize);
-            }
-            aload_n @ 0x2A..=0x2D => {
-                // aload_<n>
-                // load one item from locals to stack
-                let index = aload_n - 0x29;
-                value_load(stackframe, index as usize);
-            }
-            0x31 | 0x2F => {
-                todo!("daload | laload")
-            }
-            0x32 | 0x30 | 0x2E => {
-                todo!("aaload | faload | iaload")
-            }
-            0x33 => {
-                todo!("baload")
-            }
-            0x34 => {
-                todo!("caload")
-            }
-            0x35 => {
-                todo!("saload")
-            }
-            0x39 | 0x37 => {
-                // dstore|lstore index
+            Instruction::Store2(index) => {
                 // put two values into a local
-                let index = self.get_pc_byte(stackframe.clone());
-                long_store(stackframe, index as usize);
+                long_store(stackframe, index);
             }
-            0x3A | 0x38 | 0x36 => {
-                // astore|fstore|istore index
+            Instruction::Store1(index) => {
                 // put one reference into a local
-                let index = self.get_pc_byte(stackframe.clone());
-                value_store(stackframe, index as usize);
+                value_store(stackframe, index);
             }
-            istore_n @ 0x3B..=0x3E => {
-                // istore_<n>
-                // store one item from stack into local
-                let index = istore_n - 0x3B;
-                value_store(stackframe, index as usize);
-            }
-            lstore_n @ 0x3F..=0x42 => {
-                // lstore_<n>
-                // store two items from stack into local
-                let index = lstore_n - 0x3F;
-                long_store(stackframe, index as usize);
-            }
-            fstore_n @ 0x43..=0x46 => {
-                // fstore_<n>
-                // store one item from stack into local
-                let index = fstore_n - 0x43;
-                value_store(stackframe, index as usize);
-            }
-            dstore_n @ 0x47..=0x4A => {
-                // dstore_<n>
-                // store two items from stack into locals
-                let index = dstore_n - 0x47;
-                long_store(stackframe, index as usize);
-            }
-            astore_n @ 0x4B..=0x4E => {
-                // astore_<n>
-                // store one item from stack into locals
-                let index = astore_n - 0x4A;
-                value_store(stackframe, index as usize);
-            }
-            0x52 | 0x50 => {
-                todo!("dastore | lastore")
-            }
-            0x53 | 0x51 | 0x4F => {
-                todo!("aastore | fastore | iastore")
-            }
-            0x54 => {
-                todo!("bastore")
-            }
-            0x55 => {
-                todo!("castore")
-            }
-            0x56 => {
-                todo!("sastore")
-            }
-            0x57 => {
-                // pop
+            Instruction::Pop => {
                 stackframe.borrow_mut().operand_stack.pop();
             }
-            0x58 => {
-                // pop2
-
+            Instruction::Pop2 => {
                 stackframe.borrow_mut().operand_stack.pop();
                 stackframe.borrow_mut().operand_stack.pop();
             }
-            0x59 => {
+            Instruction::Dup => {
                 // dup
                 let value = *stackframe.borrow().operand_stack.last().unwrap();
                 stackframe.borrow_mut().operand_stack.push(value);
             }
-            0x5A => {
-                // dup_x1
+            Instruction::Dupx1 => {
                 // xy => yxy
                 let y = stackframe.borrow_mut().operand_stack.pop().unwrap();
                 let x = stackframe.borrow_mut().operand_stack.pop().unwrap();
                 stackframe.borrow_mut().operand_stack.extend([y, x, y]);
             }
-            0x5B => {
-                // dup_x1
+            Instruction::Dupx2 => {
                 // xyz => zxyz
                 let z = stackframe.borrow_mut().operand_stack.pop().unwrap();
                 let y = stackframe.borrow_mut().operand_stack.pop().unwrap();
                 let x = stackframe.borrow_mut().operand_stack.pop().unwrap();
                 stackframe.borrow_mut().operand_stack.extend([z, x, y, z]);
             }
-            0x5C => {
-                // dup2
+            Instruction::Dup2 => {
                 // xy => xyxy
                 let y = *stackframe.borrow().operand_stack.last().unwrap();
                 let x = *stackframe.borrow().operand_stack.last().unwrap();
                 stackframe.borrow_mut().operand_stack.extend([x, y]);
             }
-            0x5D => {
-                // dup2_x1
+            Instruction::Dup2x1 => {
                 // xyz => yzxyz
                 let z = stackframe.borrow_mut().operand_stack.pop().unwrap();
                 let y = stackframe.borrow_mut().operand_stack.pop().unwrap();
@@ -267,8 +100,7 @@ impl Thread {
                     .operand_stack
                     .extend([y, z, x, y, z]);
             }
-            0x5E => {
-                // dup2_x2
+            Instruction::Dup2x2 => {
                 // wxyz => yzwxyz
                 let z = stackframe.borrow_mut().operand_stack.pop().unwrap();
                 let y = stackframe.borrow_mut().operand_stack.pop().unwrap();
@@ -279,15 +111,13 @@ impl Thread {
                     .operand_stack
                     .extend([y, z, w, x, y, z]);
             }
-            0x5F => {
-                // swap
-                // swap two values
+            Instruction::Swap => {
                 let x = stackframe.borrow_mut().operand_stack.pop().unwrap();
                 let y = stackframe.borrow_mut().operand_stack.pop().unwrap();
                 stackframe.borrow_mut().operand_stack.push(x);
                 stackframe.borrow_mut().operand_stack.push(y);
             }
-            0x60 => {
+            Instruction::IOp(Op::Add) => {
                 // iadd
                 // int add
                 let rhs = (stackframe.borrow_mut().operand_stack.pop().unwrap()) as i32;
@@ -295,7 +125,7 @@ impl Thread {
                 let result = lhs.wrapping_add(rhs);
                 stackframe.borrow_mut().operand_stack.push(result as u32);
             }
-            0x61 => {
+            Instruction::LOp(Op::Add) => {
                 // ladd
                 // long add
                 let rhs = pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap() as i64;
@@ -303,7 +133,7 @@ impl Thread {
                 let result = lhs.wrapping_add(rhs);
                 push_long(&mut stackframe.borrow_mut().operand_stack, result as u64);
             }
-            0x62 => {
+            Instruction::FOp(Op::Add) => {
                 // fadd
                 // float add
                 let rhs = f32::from_bits(stackframe.borrow_mut().operand_stack.pop().unwrap());
@@ -311,7 +141,7 @@ impl Thread {
                 let result = lhs + rhs;
                 stackframe.borrow_mut().operand_stack.push(result.to_bits());
             }
-            0x63 => {
+            Instruction::DOp(Op::Add) => {
                 // dadd
                 // double add
                 let rhs =
@@ -321,7 +151,7 @@ impl Thread {
                 let sum = rhs + lhs;
                 push_long(&mut stackframe.borrow_mut().operand_stack, sum.to_bits());
             }
-            0x64 => {
+            Instruction::IOp(Op::Sub) => {
                 // isub
                 // int subtract
                 let rhs = (stackframe.borrow_mut().operand_stack.pop().unwrap()) as i32;
@@ -329,7 +159,7 @@ impl Thread {
                 let result = lhs.wrapping_sub(rhs);
                 stackframe.borrow_mut().operand_stack.push(result as u32);
             }
-            0x65 => {
+            Instruction::LOp(Op::Sub) => {
                 // lsub
                 // long subtract
                 let rhs = pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap() as i64;
@@ -337,7 +167,7 @@ impl Thread {
                 let result = lhs.wrapping_sub(rhs);
                 push_long(&mut stackframe.borrow_mut().operand_stack, result as u64);
             }
-            0x66 => {
+            Instruction::FOp(Op::Sub) => {
                 // fsub
                 // float sub
                 let rhs = f32::from_bits(stackframe.borrow_mut().operand_stack.pop().unwrap());
@@ -345,7 +175,7 @@ impl Thread {
                 let result = lhs - rhs;
                 stackframe.borrow_mut().operand_stack.push(result.to_bits());
             }
-            0x67 => {
+            Instruction::DOp(Op::Sub) => {
                 // dsub
                 // double subtraction
                 let rhs =
@@ -355,7 +185,7 @@ impl Thread {
                 let result = lhs - rhs;
                 push_long(&mut stackframe.borrow_mut().operand_stack, result.to_bits());
             }
-            0x68 => {
+            Instruction::IOp(Op::Mul) => {
                 // imul
                 // int multiply
                 let rhs = (stackframe.borrow_mut().operand_stack.pop().unwrap()) as i32;
@@ -363,7 +193,7 @@ impl Thread {
                 let result = lhs.wrapping_mul(rhs);
                 stackframe.borrow_mut().operand_stack.push(result as u32);
             }
-            0x69 => {
+            Instruction::LOp(Op::Mul) => {
                 // lmul
                 // long multiply
                 let rhs = pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap() as i64;
@@ -371,7 +201,7 @@ impl Thread {
                 let result = lhs.wrapping_mul(rhs);
                 push_long(&mut stackframe.borrow_mut().operand_stack, result as u64);
             }
-            0x6A => {
+            Instruction::FOp(Op::Mul) => {
                 // fmul
                 // float mul
                 let rhs = f32::from_bits(stackframe.borrow_mut().operand_stack.pop().unwrap());
@@ -379,7 +209,7 @@ impl Thread {
                 let result = lhs * rhs;
                 stackframe.borrow_mut().operand_stack.push(result.to_bits());
             }
-            0x6B => {
+            Instruction::DOp(Op::Mul) => {
                 // dmul
                 // double multiplication
                 let rhs =
@@ -389,7 +219,7 @@ impl Thread {
                 let result = lhs * rhs;
                 push_long(&mut stackframe.borrow_mut().operand_stack, result.to_bits());
             }
-            0x6C => {
+            Instruction::IOp(Op::Div) => {
                 // idiv
                 // int divide
                 let rhs = (stackframe.borrow_mut().operand_stack.pop().unwrap()) as i32;
@@ -398,7 +228,7 @@ impl Thread {
                 let result = lhs / rhs;
                 stackframe.borrow_mut().operand_stack.push(result as u32);
             }
-            0x6D => {
+            Instruction::LOp(Op::Div) => {
                 // ldiv
                 // long division
 
@@ -408,7 +238,7 @@ impl Thread {
                 let result = lhs / rhs;
                 push_long(&mut stackframe.borrow_mut().operand_stack, result as u64);
             }
-            0x6E => {
+            Instruction::FOp(Op::Div) => {
                 // fdiv
                 // float div
                 let rhs = f32::from_bits(stackframe.borrow_mut().operand_stack.pop().unwrap());
@@ -416,7 +246,7 @@ impl Thread {
                 let result = lhs / rhs;
                 stackframe.borrow_mut().operand_stack.push(result.to_bits());
             }
-            0x6F => {
+            Instruction::DOp(Op::Div) => {
                 // ddiv
                 // double division
                 let rhs =
@@ -426,7 +256,7 @@ impl Thread {
                 let result = lhs / rhs;
                 push_long(&mut stackframe.borrow_mut().operand_stack, result.to_bits());
             }
-            0x70 => {
+            Instruction::IOp(Op::Mod) => {
                 // irem
                 // int remainder
                 let rhs = (stackframe.borrow_mut().operand_stack.pop().unwrap()) as i32;
@@ -435,7 +265,7 @@ impl Thread {
                 let result = lhs % rhs;
                 stackframe.borrow_mut().operand_stack.push(result as u32);
             }
-            0x71 => {
+            Instruction::LOp(Op::Mod) => {
                 // lrem
                 // long modulo
 
@@ -445,7 +275,7 @@ impl Thread {
                 let result = lhs % rhs;
                 push_long(&mut stackframe.borrow_mut().operand_stack, result as u64);
             }
-            0x72 => {
+            Instruction::FOp(Op::Mod) => {
                 // frem
                 // float rem
                 let rhs = f32::from_bits(stackframe.borrow_mut().operand_stack.pop().unwrap());
@@ -453,7 +283,7 @@ impl Thread {
                 let result = lhs % rhs;
                 stackframe.borrow_mut().operand_stack.push(result.to_bits());
             }
-            0x73 => {
+            Instruction::DOp(Op::Mod) => {
                 // drem
                 // double remainder
                 let rhs =
@@ -463,28 +293,28 @@ impl Thread {
                 let result = lhs % rhs;
                 push_long(&mut stackframe.borrow_mut().operand_stack, result.to_bits());
             }
-            0x74 => {
+            Instruction::IOp(Op::Neg) => {
                 // ineg
                 // negate int
                 let f = stackframe.borrow_mut().operand_stack.pop().unwrap() as i32;
                 let result = -f;
                 stackframe.borrow_mut().operand_stack.push(result as u32);
             }
-            0x75 => {
+            Instruction::LOp(Op::Neg) => {
                 // lneg
                 // negate long
                 let l = pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap() as i64;
                 let result = -l;
                 push_long(&mut stackframe.borrow_mut().operand_stack, result as u64);
             }
-            0x76 => {
+            Instruction::FOp(Op::Neg) => {
                 // fneg
                 // negate float
                 let f = f32::from_bits(stackframe.borrow_mut().operand_stack.pop().unwrap());
                 let result = -f;
                 stackframe.borrow_mut().operand_stack.push(result.to_bits());
             }
-            0x77 => {
+            Instruction::DOp(Op::Neg) => {
                 // dneg
                 // negate double
                 let d =
@@ -492,7 +322,7 @@ impl Thread {
                 let result = -d;
                 push_long(&mut stackframe.borrow_mut().operand_stack, result.to_bits());
             }
-            0x78 => {
+            Instruction::IOp(Op::Shl) => {
                 // ishl
                 // int shift left
                 let rhs = (stackframe.borrow_mut().operand_stack.pop().unwrap()) & 0x1F;
@@ -500,7 +330,7 @@ impl Thread {
                 let result = lhs << rhs;
                 stackframe.borrow_mut().operand_stack.push(result as u32);
             }
-            0x79 => {
+            Instruction::LOp(Op::Shl) => {
                 // lshl
                 // long shift left
                 let rhs = stackframe.borrow_mut().operand_stack.pop().unwrap() & 0x3F;
@@ -508,7 +338,7 @@ impl Thread {
                 let result = lhs << rhs;
                 push_long(&mut stackframe.borrow_mut().operand_stack, result as u64);
             }
-            0x7A => {
+            Instruction::IOp(Op::Shr) => {
                 // ishr
                 // int shift right
                 let rhs = (stackframe.borrow_mut().operand_stack.pop().unwrap()) & 0x1F;
@@ -516,7 +346,7 @@ impl Thread {
                 let result = lhs >> rhs;
                 stackframe.borrow_mut().operand_stack.push(result as u32);
             }
-            0x7B => {
+            Instruction::LOp(Op::Shr) => {
                 // lshr
                 // long shift right
                 let rhs = stackframe.borrow_mut().operand_stack.pop().unwrap() & 0x3F;
@@ -524,7 +354,7 @@ impl Thread {
                 let result = lhs >> rhs;
                 push_long(&mut stackframe.borrow_mut().operand_stack, result as u64);
             }
-            0x7C => {
+            Instruction::IOp(Op::Ushr) => {
                 // iushr
                 // int logical shift right
                 let rhs = (stackframe.borrow_mut().operand_stack.pop().unwrap()) & 0x1F;
@@ -532,7 +362,7 @@ impl Thread {
                 let result = lhs >> rhs;
                 stackframe.borrow_mut().operand_stack.push(result);
             }
-            0x7D => {
+            Instruction::LOp(Op::Ushr) => {
                 // lushr
                 // long logical shift right
                 let rhs = stackframe.borrow_mut().operand_stack.pop().unwrap() & 0x3F;
@@ -540,7 +370,7 @@ impl Thread {
                 let result = lhs >> rhs;
                 push_long(&mut stackframe.borrow_mut().operand_stack, result);
             }
-            0x7E => {
+            Instruction::IOp(Op::And) => {
                 // iand
                 // int boolean and
                 let rhs = stackframe.borrow_mut().operand_stack.pop().unwrap();
@@ -548,7 +378,7 @@ impl Thread {
                 let result = lhs & rhs;
                 stackframe.borrow_mut().operand_stack.push(result);
             }
-            0x7F => {
+            Instruction::LOp(Op::And) => {
                 // land
                 // long boolean and
                 let rhs = pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap();
@@ -556,7 +386,7 @@ impl Thread {
                 let result = lhs & rhs;
                 push_long(&mut stackframe.borrow_mut().operand_stack, result);
             }
-            0x80 => {
+            Instruction::IOp(Op::Or) => {
                 // ior
                 // int boolean or
                 let rhs = stackframe.borrow_mut().operand_stack.pop().unwrap();
@@ -564,7 +394,7 @@ impl Thread {
                 let result = lhs | rhs;
                 stackframe.borrow_mut().operand_stack.push(result);
             }
-            0x81 => {
+            Instruction::LOp(Op::Or) => {
                 // lor
                 // long boolean or
                 let rhs = pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap();
@@ -572,7 +402,7 @@ impl Thread {
                 let result = lhs | rhs;
                 push_long(&mut stackframe.borrow_mut().operand_stack, result);
             }
-            0x82 => {
+            Instruction::IOp(Op::Xor) => {
                 // ixor
                 // int boolean xor
                 let rhs = stackframe.borrow_mut().operand_stack.pop().unwrap();
@@ -580,7 +410,7 @@ impl Thread {
                 let result = lhs ^ rhs;
                 stackframe.borrow_mut().operand_stack.push(result);
             }
-            0x83 => {
+            Instruction::LOp(Op::Xor) => {
                 // lxor
                 // long boolean xor
                 let rhs = pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap();
@@ -588,78 +418,76 @@ impl Thread {
                 let result = lhs ^ rhs;
                 push_long(&mut stackframe.borrow_mut().operand_stack, result);
             }
-            0x84 => {
+            Instruction::IInc(index, inc) => {
                 // iinc
                 // int increment
-                let index = self.get_pc_byte(stackframe.clone());
-                let inc = self.get_pc_byte(stackframe.clone()) as i32;
-                let start = stackframe.borrow().locals[index as usize] as i32;
-                stackframe.borrow_mut().locals[index as usize] = start.wrapping_add(inc) as u32;
+                let start = stackframe.borrow().locals[index] as i32;
+                stackframe.borrow_mut().locals[index] = start.wrapping_add(inc) as u32;
             }
-            0x85 => {
+            Instruction::Convert(Type::Int, Type::Long) => {
                 // i2l
                 // int to long
                 let int = stackframe.borrow_mut().operand_stack.pop().unwrap() as i32;
                 let long = int as i64;
                 push_long(&mut stackframe.borrow_mut().operand_stack, long as u64);
             }
-            0x86 => {
+            Instruction::Convert(Type::Int, Type::Float) => {
                 // i2f
                 // int to float
                 let int = stackframe.borrow_mut().operand_stack.pop().unwrap() as i32;
                 let float = int as f32;
                 stackframe.borrow_mut().operand_stack.push(float.to_bits());
             }
-            0x87 => {
+            Instruction::Convert(Type::Int, Type::Double) => {
                 // i2d
                 // int to double
                 let int = stackframe.borrow_mut().operand_stack.pop().unwrap() as i32;
                 let double = int as f64;
                 push_long(&mut stackframe.borrow_mut().operand_stack, double.to_bits());
             }
-            0x88 => {
+            Instruction::Convert(Type::Long, Type::Int) => {
                 // l2i
                 // long to int
                 let long = pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap();
                 let int = long as u32;
                 stackframe.borrow_mut().operand_stack.push(int);
             }
-            0x89 => {
+            Instruction::Convert(Type::Long, Type::Float) => {
                 // l2f
                 // long to float
                 let long = pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap() as i64;
                 let float = long as f32;
                 stackframe.borrow_mut().operand_stack.push(float.to_bits());
             }
-            0x8A => {
+            Instruction::Convert(Type::Long, Type::Double) => {
                 // l2d
                 // long to double
                 let long = pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap() as i64;
                 let double = long as f64;
                 push_long(&mut stackframe.borrow_mut().operand_stack, double.to_bits());
             }
-            0x8B => {
+            Instruction::Convert(Type::Float, Type::Int) => {
                 // f2i
                 // float to integer
                 let float = f32::from_bits(stackframe.borrow_mut().operand_stack.pop().unwrap());
                 let int = float as i32;
                 stackframe.borrow_mut().operand_stack.push(int as u32);
             }
-            0x8C => {
+            Instruction::Convert(Type::Float, Type::Long) => {
                 // f2l
                 // float to long
                 let float = f32::from_bits(stackframe.borrow_mut().operand_stack.pop().unwrap());
                 let long = float as u64;
                 push_long(&mut stackframe.borrow_mut().operand_stack, long);
             }
-            0x8D => {
+            Instruction::Convert(Type::Float, Type::Double) => {
                 // f2d
                 // float to double
                 let float = f32::from_bits(stackframe.borrow_mut().operand_stack.pop().unwrap());
                 let double = float as f64;
                 push_long(&mut stackframe.borrow_mut().operand_stack, double.to_bits());
             }
-            0x8E => {
+            Instruction::Convert(Type::Double, Type::Int) => {
                 // d2i
                 // double to integer
                 let double =
@@ -667,7 +495,7 @@ impl Thread {
                 let int = double as u32;
                 stackframe.borrow_mut().operand_stack.push(int);
             }
-            0x8F => {
+            Instruction::Convert(Type::Double, Type::Long) => {
                 // d2l
                 // double to long
                 let double =
@@ -675,7 +503,7 @@ impl Thread {
                 let int = double as u64;
                 push_long(&mut stackframe.borrow_mut().operand_stack, int);
             }
-            0x90 => {
+            Instruction::Convert(Type::Double, Type::Float) => {
                 // d2f
                 // double to float
                 let double =
@@ -683,28 +511,28 @@ impl Thread {
                 let float = (double as f32).to_bits();
                 stackframe.borrow_mut().operand_stack.push(float);
             }
-            0x91 => {
+            Instruction::Convert(Type::Int, Type::Byte) => {
                 // i2b
                 // int to byte
                 let int = stackframe.borrow_mut().operand_stack.pop().unwrap() as i32;
                 let byte = int as i8 as i32;
                 stackframe.borrow_mut().operand_stack.push(byte as u32);
             }
-            0x92 => {
+            Instruction::Convert(Type::Int, Type::Char) => {
                 // i2c
                 // int to char
                 let int = stackframe.borrow_mut().operand_stack.pop().unwrap() as i32;
                 let char = int as u8;
                 stackframe.borrow_mut().operand_stack.push(char as u32);
             }
-            0x93 => {
+            Instruction::Convert(Type::Int, Type::Short) => {
                 // i2s
                 // int to short
                 let int = stackframe.borrow_mut().operand_stack.pop().unwrap() as i32;
                 let short = int as i16 as i32;
                 stackframe.borrow_mut().operand_stack.push(short as u32);
             }
-            0x94 => {
+            Instruction::LCmp => {
                 // lcmp
                 // long comparison
                 let rhs = pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap() as i64;
@@ -716,7 +544,7 @@ impl Thread {
                 };
                 stackframe.borrow_mut().operand_stack.push(value as u32);
             }
-            fcmp_op @ 0x95..=0x96 => {
+            Instruction::FCmp(is_rev) => {
                 // fcmp<op>
                 // float comparison
                 let rhs = f32::from_bits(stackframe.borrow_mut().operand_stack.pop().unwrap());
@@ -725,14 +553,14 @@ impl Thread {
                     1
                 } else if lhs == rhs {
                     0
-                } else if lhs < rhs || fcmp_op == 0x95 {
+                } else if lhs < rhs || is_rev {
                     -1
                 } else {
                     1
                 } as u32;
                 stackframe.borrow_mut().operand_stack.push(value);
             }
-            dcmp_op @ 0x97..=0x98 => {
+            Instruction::DCmp(is_rev) => {
                 // dcmp<op>
                 // double comparison
                 let rhs =
@@ -743,108 +571,60 @@ impl Thread {
                     1
                 } else if lhs == rhs {
                     0
-                } else if lhs < rhs || dcmp_op == 0x97 {
+                } else if lhs < rhs || is_rev {
                     -1
                 } else {
                     1
                 } as u32;
                 stackframe.borrow_mut().operand_stack.push(value);
             }
-            if_cnd @ 0x99..=0x9E => {
+            Instruction::IfCmp(cmp, branch) => {
                 // if<cond>
                 // integer comparison to zero
-                let bb1 = self.get_pc_byte(stackframe.clone());
-                let bb2 = self.get_pc_byte(stackframe.clone());
-                let branch = u16::from_be_bytes([bb1, bb2]) as i16;
 
                 let lhs = stackframe.borrow_mut().operand_stack.pop().unwrap() as i32;
-                let cond = match if_cnd {
-                    0x99 => lhs == 0,
-                    0x9A => lhs != 0,
-                    0x9B => lhs < 0,
-                    0x9C => lhs >= 0,
-                    0x9D => lhs > 0,
-                    0x9E => lhs <= 0,
-                    _ => unreachable!(),
+                let cond = match cmp {
+                    Cmp::Eq => lhs == 0,
+                    Cmp::Ne => lhs != 0,
+                    Cmp::Lt => lhs < 0,
+                    Cmp::Ge => lhs >= 0,
+                    Cmp::Gt => lhs > 0,
+                    Cmp::Le => lhs <= 0,
                 };
                 if cond {
-                    self.pc_register += branch as usize - 3;
+                    self.pc_register += branch as usize;
                 }
             }
-            if_icmp @ 0x9F..=0xA4 => {
+            Instruction::ICmp(cnd, branch) => {
                 // if_icmp<cond>
                 // comparison between integers
-                let bb1 = self.get_pc_byte(stackframe.clone());
-                let bb2 = self.get_pc_byte(stackframe.clone());
-                let branch = u16::from_be_bytes([bb1, bb2]) as i16;
 
                 let rhs = stackframe.borrow_mut().operand_stack.pop().unwrap() as i32;
                 let lhs = stackframe.borrow_mut().operand_stack.pop().unwrap() as i32;
-                let cond = match if_icmp {
-                    0x9F => lhs == rhs,
-                    0xA0 => lhs != rhs,
-                    0xA1 => lhs < rhs,
-                    0xA2 => lhs >= rhs,
-                    0xA3 => lhs > rhs,
-                    0xA4 => lhs <= rhs,
-                    _ => unreachable!(),
+                let cond = match cnd {
+                    Cmp::Eq => lhs == rhs,
+                    Cmp::Ne => lhs != rhs,
+                    Cmp::Lt => lhs < rhs,
+                    Cmp::Ge => lhs >= rhs,
+                    Cmp::Gt => lhs > rhs,
+                    Cmp::Le => lhs <= rhs,
                 };
                 if cond {
-                    self.pc_register += branch as usize - 3;
+                    self.pc_register += branch as usize;
                 }
             }
-            _if_acmp @ 0xA5..=0xA6 => {
-                todo!("if_acmp<cond>")
-            }
-            0xA7 => {
+            Instruction::Goto(goto) => {
                 // goto bb1 bb2
-                let bb1 = self.get_pc_byte(stackframe.clone());
-                let bb2 = self.get_pc_byte(stackframe);
-                let branchoffset = u16::from_be_bytes([bb1, bb2]) as i16;
-                self.pc_register += branchoffset as usize - 3;
+                self.pc_register += goto as usize;
             }
-            0xA8 => {
-                todo!("jsr")
-                // jump subroutine
-            }
-            0xA9 => {
-                todo!("ret")
-                // return from subroutine
-            }
-            0xAA => {
-                todo!("tableswitch")
-            }
-            0xAB => {
-                todo!("lookupswitch")
-            }
-            0xAC => {
-                todo!("ireturn")
-            }
-            0xAE => {
-                todo!("freturn")
-            }
-            0xAF | 0xAD => {
-                todo!("dreturn|lreturn")
-            }
-            0xB0 => {
-                todo!("areturn")
-            }
-            0xB1 => {
+            Instruction::Return0 => {
                 // return
                 // return void
                 self.return_void();
             }
-            0xB2 => {
+            Instruction::GetStatic(class, name, field_type) => {
                 // getstatic
                 // get a static field from a class
-                let ib1 = self.get_pc_byte(stackframe.clone());
-                let ib2 = self.get_pc_byte(stackframe.clone());
-                let index = u16::from_be_bytes([ib1, ib2]);
-
-                let Constant::FieldRef { class, name, field_type } = stackframe.borrow().class.constants[index as usize - 1].clone() else {
-                    return Err(format!("Error invoking GetStatic at index {index}; {:?}", stackframe.borrow().class.constants[index as usize - 1]))
-                };
-
                 let Some(class) = search_class_area(&self.class_area, class.clone()) else {
                     return Err(format!("Couldn't resolve class {class}"))
                 };
@@ -869,20 +649,9 @@ impl Thread {
                     stackframe.borrow_mut().operand_stack.extend([upper, lower]);
                 }
             }
-            0xB3 => {
-                todo!("putstatic")
-                // set a static field in a class
-            }
-            0xB4 => {
+            Instruction::GetField(class, name, field_type) => {
                 // getfield
                 // get a field from an object
-                let ib1 = self.get_pc_byte(stackframe.clone());
-                let ib2 = self.get_pc_byte(stackframe.clone());
-                let index = u16::from_be_bytes([ib1, ib2]);
-
-                let Constant::FieldRef { class, name, field_type } = stackframe.borrow().class.constants[index as usize - 1].clone() else {
-                    return Err(format!("Error invoking PutField at index {index}; {:?}", stackframe.borrow().class.constants[index as usize - 1]))
-                };
 
                 let Some(class) = search_class_area(&self.class_area, class.clone()) else {
                     return Err(format!("Couldn't resolve class {class}"))
@@ -916,16 +685,9 @@ impl Thread {
                     stackframe.borrow_mut().operand_stack.extend([upper, lower]);
                 }
             }
-            0xB5 => {
+            Instruction::PutField(class, name, field_type) => {
                 // putfield
                 // set a field in an object
-                let ib1 = self.get_pc_byte(stackframe.clone());
-                let ib2 = self.get_pc_byte(stackframe.clone());
-                let index = u16::from_be_bytes([ib1, ib2]);
-
-                let Constant::FieldRef { class, name, field_type } = stackframe.borrow().class.constants[index as usize - 1].clone() else {
-                    return Err(format!("Error invoking PutField at index {index}; {:?}", stackframe.borrow().class.constants[index as usize - 1]))
-                };
 
                 let Some(class) = search_class_area(&self.class_area, class.clone()) else {
                     return Err(format!("Couldn't resolve class {class}"))
@@ -961,17 +723,9 @@ impl Thread {
                     object_fields[field_index + 1] = value as u32;
                 }
             }
-            0xB6 => {
+            Instruction::InvokeVirtual(class, name, method_type) => {
                 // invokevirtual
                 // invoke a method virtually I guess
-
-                let ib1 = self.get_pc_byte(stackframe.clone());
-                let ib2 = self.get_pc_byte(stackframe.clone());
-                let index = u16::from_be_bytes([ib1, ib2]);
-
-                let Constant::MethodRef { class, name, method_type } = stackframe.borrow().class.constants[index as usize - 1].clone() else {
-                    return Err(String::from("Error during InvokeVirtual"))
-                };
 
                 let (class_ref, method_ref) = search_method_area(
                     &self.method_area,
@@ -1007,16 +761,9 @@ impl Thread {
                 }
                 println!("{new_locals:?}");
             }
-            0xB7 => {
+            Instruction::InvokeSpecial(class, name, method_type) => {
                 // invokespecial
                 // invoke an instance method
-                let ib1 = self.get_pc_byte(stackframe.clone());
-                let ib2 = self.get_pc_byte(stackframe.clone());
-                let index = u16::from_be_bytes([ib1, ib2]);
-
-                let Constant::MethodRef{name, class, method_type} = stackframe.borrow().class.constants[index as usize - 1].clone() else {
-                    todo!("Error during InvokeSpecial")
-                };
 
                 let (class_ref, method_ref) = search_method_area(
                     &self.method_area,
@@ -1045,16 +792,9 @@ impl Thread {
 
                 new_stackframe.borrow_mut().operand_stack.extend(args);
             }
-            0xB8 => {
+            Instruction::InvokeStatic(class, name, method_type) => {
                 // invokestatic
                 // make a static method
-                let ib1 = self.get_pc_byte(stackframe.clone());
-                let ib2 = self.get_pc_byte(stackframe.clone());
-                let index = u16::from_be_bytes([ib1, ib2]);
-
-                let Constant::MethodRef{name, class, method_type} = stackframe.borrow().class.constants[index as usize - 1].clone() else {
-                    todo!("Throw some sort of error")
-                };
                 let (class_ref, method_ref) = search_method_area(
                     &self.method_area,
                     class.clone(),
@@ -1082,23 +822,9 @@ impl Thread {
 
                 new_stackframe.borrow_mut().operand_stack.extend(args);
             }
-            0xB9 => {
-                todo!("invokeinterface")
-            }
-            0xBA => {
+            Instruction::InvokeDynamic(bootstrap_index, method_name, method_type) => {
                 // invokedynamic
                 // dynamically figure out what to do
-                let ib1 = self.get_pc_byte(stackframe.clone());
-                let ib2 = self.get_pc_byte(stackframe.clone());
-                let index = u16::from_be_bytes([ib1, ib2]);
-
-                let 0 = self.get_pc_byte(stackframe.clone()) else { return Err(String::from("Expected a zero"))};
-                let 0 = self.get_pc_byte(stackframe.clone()) else { return Err(String::from("Expected a zero"))};
-
-                let Constant::InvokeDynamic { bootstrap_index, method_name, method_type } =
-                    stackframe.borrow().class.constants[index as usize - 1].clone() else {
-                        return Err(format!("Error running InvokeDynamic - {:?}", stackframe.borrow().class.constants[index as usize - 1]))
-                    };
 
                 let mut bootstrap_object = Object::new();
                 let method_handle_class =
@@ -1118,16 +844,9 @@ impl Thread {
                 ));
                 // TODO: Finish InvokeDynamic
             }
-            0xBB => {
+            Instruction::New(class) => {
                 // new
                 // make a new object instance
-                let ib1 = self.get_pc_byte(stackframe.clone());
-                let ib2 = self.get_pc_byte(stackframe.clone());
-                let index = u16::from_be_bytes([ib1, ib2]);
-
-                let Constant::ClassRef(class) = stackframe.borrow().class.constants[index as usize - 1].clone() else {
-                    todo!("Throw some sort of error")
-                };
 
                 let Some(class) = search_class_area(&self.class_area, class.clone()) else {
                     return Err(format!("Couldn't find class {class}"))
@@ -1141,73 +860,23 @@ impl Thread {
                     heap_allocate(&mut self.heap.borrow_mut(), HeapElement::Object(new_object));
                 stackframe.borrow_mut().operand_stack.push(objectref);
             }
-            0xBC => {
-                todo!("newarray")
-                // make a new array
-            }
-            0xBD => {
-                todo!("anewarray")
-            }
-            0xBE => {
-                todo!("arraylength")
-            }
-            0xBF => {
-                todo!("athrow")
-            }
-            0xC0 => {
-                todo!("checkcast")
-            }
-            0xC1 => {
-                todo!("instanceof")
-            }
-            0xC2 => {
-                todo!("monitorenter")
-            }
-            0xC3 => {
-                todo!("monitorexit")
-            }
-            0xC4 => {
-                todo!("wide")
-                // woosh this one's gonna be tough
-            }
-            0xC5 => {
-                todo!("multianewarray")
-                // make a new multi-dimensional array
-            }
-            if_null @ 0xC6..=0xC7 => {
+            Instruction::IfNull(is_rev, branch) => {
                 // ifnull | ifnonnull
-                let bb1 = self.get_pc_byte(stackframe.clone());
-                let bb2 = self.get_pc_byte(stackframe.clone());
-                let branch = u16::from_be_bytes([bb1, bb2]) as i16;
-
                 let ptr = stackframe.borrow_mut().operand_stack.pop().unwrap();
-                if (ptr == u32::MAX) ^ (if_null == 0xC7) {
-                    self.pc_register += branch as usize - 3;
+                if (ptr == u32::MAX) ^ (is_rev) {
+                    self.pc_register += branch as usize;
                 }
             }
-            0xC8 => {
-                // goto_w bb1 bb2 bb3 bb4
-                let bb1 = self.get_pc_byte(stackframe.clone());
-                let bb2 = self.get_pc_byte(stackframe.clone());
-                let bb3 = self.get_pc_byte(stackframe.clone());
-                let bb4 = self.get_pc_byte(stackframe);
-                let branchoffset = u32::from_be_bytes([bb1, bb2, bb3, bb4]) as i32;
-                self.pc_register += branchoffset as usize - 5;
-            }
-            0xC9 => {
-                todo!("jsr_w")
-                // jump subroutine wide
-            }
-            other => return Err(format!("Invalid Opcode: 0x{other:x}")),
+            other => return Err(format!("Invalid Opcode: 0x{other:?}")),
         }
         Ok(())
     }
 
-    fn get_code(&self, stackframe: Rc<RefCell<StackFrame>>, idx: usize) -> u8 {
-        stackframe.borrow().method.code.as_ref().unwrap().code[idx]
+    fn get_code(&self, stackframe: Rc<RefCell<StackFrame>>, idx: usize) -> Instruction {
+        stackframe.borrow().method.code.as_ref().unwrap().code[idx].clone()
     }
 
-    fn get_pc_byte(&mut self, stackframe: Rc<RefCell<StackFrame>>) -> u8 {
+    fn get_pc_byte(&mut self, stackframe: Rc<RefCell<StackFrame>>) -> Instruction {
         let b = self.get_code(stackframe, self.pc_register);
         self.pc_register += 1;
         b

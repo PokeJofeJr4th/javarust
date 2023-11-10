@@ -1,14 +1,14 @@
+mod instruction;
 mod native;
 mod thread;
 
 use std::{cell::RefCell, rc::Rc};
 
-use crate::class::{AccessFlags, Class, ClassVersion, Field, FieldType, Method, MethodDescriptor};
+use crate::class::{Class, Method, MethodDescriptor};
 
-use self::{
-    native::add_native_methods,
-    thread::{heap_allocate, Thread},
-};
+use self::{native::add_native_methods, thread::Thread};
+
+pub use self::instruction::{hydrate_code, Cmp, Instruction, Op};
 
 fn search_method_area(
     method_area: &[(Rc<Class>, Rc<Method>)],

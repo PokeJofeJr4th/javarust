@@ -670,22 +670,41 @@ Class {
                     max_stack: 2,
                     max_locals: 1,
                     code: [
-                        42,
-                        183,
-                        0,
-                        1,
-                        42,
-                        3,
-                        181,
-                        0,
-                        7,
-                        42,
-                        16,
-                        10,
-                        181,
-                        0,
-                        13,
-                        177,
+                        Load1(
+                            1,
+                        ),
+                        InvokeSpecial(
+                            "java/lang/Object",
+                            "<init>",
+                            MethodDescriptor {
+                                parameter_size: 0,
+                                parameters: [],
+                                return_type: None,
+                            },
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Push1(
+                            0,
+                        ),
+                        PutField(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "beersDrank",
+                            Int,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Push1(
+                            10,
+                        ),
+                        PutField(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "PEOPLE_IN_DRINKING_GROUP",
+                            Int,
+                        ),
+                        Return0,
                     ],
                     exception_table: [],
                     attributes: [
@@ -735,21 +754,40 @@ Class {
                     max_stack: 2,
                     max_locals: 2,
                     code: [
-                        187,
-                        0,
-                        8,
-                        89,
-                        183,
-                        0,
-                        16,
-                        76,
-                        43,
-                        16,
-                        99,
-                        182,
-                        0,
-                        17,
-                        177,
+                        New(
+                            "DrunkBottlesOfBeerOnTheWall",
+                        ),
+                        Dup,
+                        InvokeSpecial(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "<init>",
+                            MethodDescriptor {
+                                parameter_size: 0,
+                                parameters: [],
+                                return_type: None,
+                            },
+                        ),
+                        Store1(
+                            2,
+                        ),
+                        Load1(
+                            2,
+                        ),
+                        Push1(
+                            99,
+                        ),
+                        InvokeVirtual(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "printLinesOfBeer",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Int,
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Return0,
                     ],
                     exception_table: [],
                     attributes: [
@@ -795,156 +833,441 @@ Class {
                     max_stack: 3,
                     max_locals: 2,
                     code: [
-                        27,
-                        157,
-                        0,
-                        30,
-                        42,
-                        18,
-                        21,
-                        182,
-                        0,
-                        23,
-                        42,
-                        18,
-                        27,
-                        182,
-                        0,
-                        23,
-                        42,
-                        18,
-                        29,
-                        182,
-                        0,
-                        23,
-                        42,
-                        18,
-                        31,
-                        182,
-                        0,
-                        23,
-                        167,
-                        0,
-                        121,
-                        27,
-                        4,
-                        160,
-                        0,
-                        55,
-                        42,
-                        27,
-                        186,
-                        0,
-                        33,
-                        0,
-                        0,
-                        182,
-                        0,
-                        23,
-                        42,
-                        27,
-                        186,
-                        0,
-                        37,
-                        0,
-                        0,
-                        182,
-                        0,
-                        23,
-                        42,
-                        18,
-                        38,
-                        182,
-                        0,
-                        23,
-                        42,
-                        89,
-                        180,
-                        0,
-                        7,
-                        4,
-                        96,
-                        181,
-                        0,
-                        7,
-                        42,
-                        18,
-                        40,
-                        182,
-                        0,
-                        23,
-                        42,
-                        27,
-                        4,
-                        100,
-                        182,
-                        0,
-                        17,
-                        167,
-                        0,
-                        64,
-                        178,
-                        0,
-                        42,
-                        182,
-                        0,
-                        48,
-                        42,
-                        27,
-                        186,
-                        0,
-                        53,
-                        0,
-                        0,
-                        182,
-                        0,
-                        23,
-                        42,
-                        27,
-                        186,
-                        0,
-                        54,
-                        0,
-                        0,
-                        182,
-                        0,
-                        23,
-                        42,
-                        18,
-                        38,
-                        182,
-                        0,
-                        23,
-                        42,
-                        89,
-                        180,
-                        0,
-                        7,
-                        4,
-                        96,
-                        181,
-                        0,
-                        7,
-                        42,
-                        27,
-                        4,
-                        100,
-                        186,
-                        0,
-                        55,
-                        0,
-                        0,
-                        182,
-                        0,
-                        23,
-                        42,
-                        27,
-                        4,
-                        100,
-                        182,
-                        0,
-                        17,
-                        177,
+                        Load1(
+                            1,
+                        ),
+                        IfCmp(
+                            Gt,
+                            30,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        LoadString(
+                            "No bottles of beer on the wall,",
+                        ),
+                        InvokeVirtual(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "printBeerLine",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        LoadString(
+                            "no bottles of beer,",
+                        ),
+                        InvokeVirtual(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "printBeerLine",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        LoadString(
+                            "ya' can't take one down, ya' can't pass it around,",
+                        ),
+                        InvokeVirtual(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "printBeerLine",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        LoadString(
+                            "'cause there are no more bottles of beer on the wall\n",
+                        ),
+                        InvokeVirtual(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "printBeerLine",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Goto(
+                            46,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Push1(
+                            1,
+                        ),
+                        ICmp(
+                            Ne,
+                            55,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        InvokeDynamic(
+                            0,
+                            "makeConcatWithConstants",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Int,
+                                ],
+                                return_type: Some(
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ),
+                            },
+                        ),
+                        InvokeVirtual(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "printBeerLine",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        InvokeDynamic(
+                            1,
+                            "makeConcatWithConstants",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Int,
+                                ],
+                                return_type: Some(
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ),
+                            },
+                        ),
+                        InvokeVirtual(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "printBeerLine",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        LoadString(
+                            "ya' take one down, ya' pass it around,",
+                        ),
+                        InvokeVirtual(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "printBeerLine",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Dup,
+                        GetField(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "beersDrank",
+                            Int,
+                        ),
+                        Push1(
+                            1,
+                        ),
+                        IOp(
+                            Add,
+                        ),
+                        PutField(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "beersDrank",
+                            Int,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        LoadString(
+                            "no more bottles of beer on the wall\n",
+                        ),
+                        InvokeVirtual(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "printBeerLine",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Push1(
+                            1,
+                        ),
+                        IOp(
+                            Sub,
+                        ),
+                        InvokeVirtual(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "printLinesOfBeer",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Int,
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Goto(
+                            -11,
+                        ),
+                        GetStatic(
+                            "java/lang/System",
+                            "out",
+                            Object(
+                                "java/io/PrintStream",
+                            ),
+                        ),
+                        InvokeVirtual(
+                            "java/io/PrintStream",
+                            "println",
+                            MethodDescriptor {
+                                parameter_size: 0,
+                                parameters: [],
+                                return_type: None,
+                            },
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        InvokeDynamic(
+                            2,
+                            "makeConcatWithConstants",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Int,
+                                ],
+                                return_type: Some(
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ),
+                            },
+                        ),
+                        InvokeVirtual(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "printBeerLine",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        InvokeDynamic(
+                            3,
+                            "makeConcatWithConstants",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Int,
+                                ],
+                                return_type: Some(
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ),
+                            },
+                        ),
+                        InvokeVirtual(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "printBeerLine",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        LoadString(
+                            "ya' take one down, ya' pass it around,",
+                        ),
+                        InvokeVirtual(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "printBeerLine",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Dup,
+                        GetField(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "beersDrank",
+                            Int,
+                        ),
+                        Push1(
+                            1,
+                        ),
+                        IOp(
+                            Add,
+                        ),
+                        PutField(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "beersDrank",
+                            Int,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Push1(
+                            1,
+                        ),
+                        IOp(
+                            Sub,
+                        ),
+                        InvokeDynamic(
+                            4,
+                            "makeConcatWithConstants",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Int,
+                                ],
+                                return_type: Some(
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ),
+                            },
+                        ),
+                        InvokeVirtual(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "printBeerLine",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Push1(
+                            1,
+                        ),
+                        IOp(
+                            Sub,
+                        ),
+                        InvokeVirtual(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "printLinesOfBeer",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Int,
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Return0,
                     ],
                     exception_table: [],
                     attributes: [
@@ -1070,38 +1393,87 @@ Class {
                     max_stack: 3,
                     max_locals: 3,
                     code: [
-                        3,
-                        61,
-                        28,
-                        42,
-                        180,
-                        0,
-                        7,
-                        16,
-                        10,
-                        108,
-                        162,
-                        0,
-                        14,
-                        43,
-                        184,
-                        0,
-                        56,
-                        76,
-                        132,
-                        2,
-                        1,
-                        167,
-                        255,
-                        237,
-                        178,
-                        0,
-                        42,
-                        43,
-                        182,
-                        0,
-                        60,
-                        177,
+                        Push1(
+                            0,
+                        ),
+                        Store1(
+                            2,
+                        ),
+                        Load1(
+                            2,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        GetField(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "beersDrank",
+                            Int,
+                        ),
+                        Push1(
+                            10,
+                        ),
+                        IOp(
+                            Div,
+                        ),
+                        ICmp(
+                            Ge,
+                            14,
+                        ),
+                        Load1(
+                            2,
+                        ),
+                        InvokeStatic(
+                            "DrunkBottlesOfBeerOnTheWall",
+                            "swapTwoLetters",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ],
+                                return_type: Some(
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ),
+                            },
+                        ),
+                        Store1(
+                            2,
+                        ),
+                        IInc(
+                            2,
+                            1,
+                        ),
+                        Goto(
+                            -19,
+                        ),
+                        GetStatic(
+                            "java/lang/System",
+                            "out",
+                            Object(
+                                "java/io/PrintStream",
+                            ),
+                        ),
+                        Load1(
+                            2,
+                        ),
+                        InvokeVirtual(
+                            "java/io/PrintStream",
+                            "println",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Return0,
                     ],
                     exception_table: [],
                     attributes: [
@@ -1175,91 +1547,232 @@ Class {
                     max_stack: 4,
                     max_locals: 6,
                     code: [
-                        42,
-                        182,
-                        0,
-                        62,
-                        60,
-                        187,
-                        0,
-                        68,
-                        89,
-                        183,
-                        0,
-                        70,
-                        77,
-                        3,
-                        62,
-                        3,
-                        54,
-                        4,
-                        27,
-                        5,
-                        161,
-                        0,
-                        25,
-                        29,
-                        21,
-                        4,
-                        160,
-                        0,
-                        19,
-                        44,
-                        27,
-                        182,
-                        0,
-                        71,
-                        62,
-                        44,
-                        27,
-                        182,
-                        0,
-                        71,
-                        54,
-                        4,
-                        167,
-                        255,
-                        232,
-                        187,
-                        0,
-                        75,
-                        89,
-                        42,
-                        183,
-                        0,
-                        77,
-                        58,
-                        5,
-                        25,
-                        5,
-                        29,
-                        42,
-                        21,
-                        4,
-                        182,
-                        0,
-                        79,
-                        182,
-                        0,
-                        83,
-                        25,
-                        5,
-                        21,
-                        4,
-                        42,
-                        29,
-                        182,
-                        0,
-                        79,
-                        182,
-                        0,
-                        83,
-                        25,
-                        5,
-                        182,
-                        0,
-                        87,
-                        176,
+                        Load1(
+                            1,
+                        ),
+                        InvokeVirtual(
+                            "java/lang/String",
+                            "length",
+                            MethodDescriptor {
+                                parameter_size: 0,
+                                parameters: [],
+                                return_type: Some(
+                                    Int,
+                                ),
+                            },
+                        ),
+                        Store1(
+                            1,
+                        ),
+                        New(
+                            "java/util/Random",
+                        ),
+                        Dup,
+                        InvokeSpecial(
+                            "java/util/Random",
+                            "<init>",
+                            MethodDescriptor {
+                                parameter_size: 0,
+                                parameters: [],
+                                return_type: None,
+                            },
+                        ),
+                        Store1(
+                            3,
+                        ),
+                        Push1(
+                            0,
+                        ),
+                        Store1(
+                            3,
+                        ),
+                        Push1(
+                            0,
+                        ),
+                        Store1(
+                            4,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Push1(
+                            2,
+                        ),
+                        ICmp(
+                            Lt,
+                            25,
+                        ),
+                        Load1(
+                            3,
+                        ),
+                        Load1(
+                            4,
+                        ),
+                        ICmp(
+                            Ne,
+                            19,
+                        ),
+                        Load1(
+                            3,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        InvokeVirtual(
+                            "java/util/Random",
+                            "nextInt",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Int,
+                                ],
+                                return_type: Some(
+                                    Int,
+                                ),
+                            },
+                        ),
+                        Store1(
+                            3,
+                        ),
+                        Load1(
+                            3,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        InvokeVirtual(
+                            "java/util/Random",
+                            "nextInt",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Int,
+                                ],
+                                return_type: Some(
+                                    Int,
+                                ),
+                            },
+                        ),
+                        Store1(
+                            4,
+                        ),
+                        Goto(
+                            -31,
+                        ),
+                        New(
+                            "java/lang/StringBuilder",
+                        ),
+                        Dup,
+                        Load1(
+                            1,
+                        ),
+                        InvokeSpecial(
+                            "java/lang/StringBuilder",
+                            "<init>",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Store1(
+                            5,
+                        ),
+                        Load1(
+                            5,
+                        ),
+                        Load1(
+                            3,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Load1(
+                            4,
+                        ),
+                        InvokeVirtual(
+                            "java/lang/String",
+                            "charAt",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Int,
+                                ],
+                                return_type: Some(
+                                    Char,
+                                ),
+                            },
+                        ),
+                        InvokeVirtual(
+                            "java/lang/StringBuilder",
+                            "setCharAt",
+                            MethodDescriptor {
+                                parameter_size: 2,
+                                parameters: [
+                                    Int,
+                                    Char,
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Load1(
+                            5,
+                        ),
+                        Load1(
+                            4,
+                        ),
+                        Load1(
+                            1,
+                        ),
+                        Load1(
+                            3,
+                        ),
+                        InvokeVirtual(
+                            "java/lang/String",
+                            "charAt",
+                            MethodDescriptor {
+                                parameter_size: 1,
+                                parameters: [
+                                    Int,
+                                ],
+                                return_type: Some(
+                                    Char,
+                                ),
+                            },
+                        ),
+                        InvokeVirtual(
+                            "java/lang/StringBuilder",
+                            "setCharAt",
+                            MethodDescriptor {
+                                parameter_size: 2,
+                                parameters: [
+                                    Int,
+                                    Char,
+                                ],
+                                return_type: None,
+                            },
+                        ),
+                        Load1(
+                            5,
+                        ),
+                        InvokeVirtual(
+                            "java/lang/StringBuilder",
+                            "toString",
+                            MethodDescriptor {
+                                parameter_size: 0,
+                                parameters: [],
+                                return_type: Some(
+                                    Object(
+                                        "java/lang/String",
+                                    ),
+                                ),
+                            },
+                        ),
+                        Return1,
                     ],
                     exception_table: [],
                     attributes: [

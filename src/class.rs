@@ -3,6 +3,8 @@ use std::fmt::Debug;
 use std::ops::{BitAnd, BitOr};
 use std::rc::Rc;
 
+use crate::virtual_machine::Instruction;
+
 #[derive(Debug)]
 pub struct Class {
     pub version: ClassVersion,
@@ -103,7 +105,7 @@ impl Constant {
             Self::Long(l) => vec![*l as u64 as u32, (*l as u64 >> 32) as u32],
             Self::Double(f) => {
                 let bits = f.to_bits();
-                vec![bits as u64 as u32, (bits as u64 >> 32) as u32]
+                vec![bits as u32, (bits >> 32) as u32]
             }
             _ => vec![u32::MAX],
         }
@@ -138,7 +140,7 @@ impl AccessFlags {
         self.0 & Self::ACC_ABSTRACT.0 != 0
     }
 
-    pub const ZERO: Self = Self(0);
+    // pub const ZERO: Self = Self(0);
     pub const ACC_PUBLIC: Self = Self(0x0001);
     // pub const ACC_PRIVATE: u16 = 0x0002;
     // pub const ACC_PROTECTED: u16 = 0x0004;
@@ -167,7 +169,7 @@ impl BitOr for AccessFlags {
 impl BitAnd for AccessFlags {
     type Output = Self;
     fn bitand(self, rhs: Self) -> Self::Output {
-        Self(self.0 | rhs.0)
+        Self(self.0 & rhs.0)
     }
 }
 
@@ -235,7 +237,7 @@ pub struct Attribute {
 pub struct Code {
     pub max_stack: u16,
     pub max_locals: u16,
-    pub code: Vec<u8>,
+    pub code: Vec<Instruction>,
     pub exception_table: Vec<(u16, u16, u16, Option<Rc<str>>)>,
     pub attributes: Vec<Attribute>,
     pub stack_map: Vec<StackMapFrame>,
