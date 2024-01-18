@@ -732,7 +732,7 @@ impl Thread {
                         || format!("Error during InvokeVirtual; {class}.{name} : {method_type:?}"),
                     )?;
                 let args_start =
-                    stackframe.borrow().operand_stack.len() - method_type.parameter_size;
+                    stackframe.borrow().operand_stack.len() - method_type.parameter_size - 1;
                 // println!("Args Start: {args_start}\nStack: {stackframe:?}");
                 let stack = &mut stackframe.borrow_mut().operand_stack;
                 let mut stack_iter = core::mem::take(stack).into_iter();
@@ -749,8 +749,9 @@ impl Thread {
                 let new_stackframe = self.stack.last().unwrap().clone();
 
                 let new_locals = &mut new_stackframe.borrow_mut().locals;
+                // TODO: .rev() might not be correct
                 for (index, value) in stack_iter.enumerate() {
-                    // println!("stack[{index}]={value:x}");
+                    println!("stack[{index}]={value}");
                     new_locals[index] = value;
                 }
                 println!("{new_locals:?}");
