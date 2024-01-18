@@ -1,9 +1,25 @@
 use std::{cell::RefCell, iter::Peekable, rc::Rc};
 
-use crate::{class::{
-    AccessFlags, Attribute, Class, ClassVersion, Code, Constant, Field, FieldType, Method,
-    MethodDescriptor, StackMapFrame, VerificationTypeInfo, BootstrapMethod,
-}, virtual_machine::hydrate_code};
+use crate::{
+    class::{
+        AccessFlags, Attribute, BootstrapMethod, Class, ClassVersion, Code, Constant, Field,
+        FieldType, Method, MethodDescriptor, MethodHandle, StackMapFrame, VerificationTypeInfo,
+    },
+    virtual_machine::hydrate_code,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MethodHandleKind {
+    GetField,
+    GetStatic,
+    PutField,
+    PutStatic,
+    InvokeVirtual,
+    InvokeStatic,
+    InvokeSpecial,
+    NewInvokeSpecial,
+    InvokeInterface,
+}
 
 /// A member of the constant pool
 #[derive(Debug, Clone)]
@@ -46,7 +62,7 @@ pub enum RawConstant {
         type_addr: u16,
     },
     MethodHandle {
-        descriptor: u8,
+        descriptor: MethodHandleKind,
         index: u16,
     },
     MethodType {
@@ -65,18 +81,22 @@ pub enum RawConstant {
     // Package {
     //     identity: u16,
     // },
+    /// Index taken up by the second part of a long or double
+    Placeholder,
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String> {
-    let 0xCAFEBABE = get_u32(bytes)? else { return Err(String::from("Invalid header")) };
+    let 0xCAFE_BABE = get_u32(bytes)? else { return Err(String::from("Invalid header")) };
     let version = ClassVersion {
         minor_version: get_u16(bytes)?,
         major_version: get_u16(bytes)?,
     };
-    let const_count = get_u16(bytes)?;
+    let mut const_count = get_u16(bytes)?;
 
     let mut raw_constants = Vec::new();
-    for _ in 1..const_count {
+    while const_count > 1 {
+        const_count -= 1;
         match bytes.next() {
             Some(1) => {
                 let strlen = get_u16(bytes)?;
@@ -93,12 +113,16 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
                 raw_constants.push(RawConstant::Float(bits));
             }
             Some(5) => {
+                const_count -= 1;
                 let bits = get_u64(bytes)? as i64;
                 raw_constants.push(RawConstant::Long(bits));
+                raw_constants.push(RawConstant::Placeholder);
             }
             Some(6) => {
+                const_count -= 1;
                 let bits = f64::from_bits(get_u64(bytes)?);
                 raw_constants.push(RawConstant::Double(bits));
+                raw_constants.push(RawConstant::Placeholder);
             }
             Some(7) => {
                 let string_addr = get_u16(bytes)?;
@@ -114,7 +138,7 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
                 raw_constants.push(RawConstant::FieldRef {
                     class_ref_addr,
                     name_type_addr,
-                })
+                });
             }
             Some(10) => {
                 let class_ref_addr = get_u16(bytes)?;
@@ -142,6 +166,18 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
             }
             Some(15) => {
                 let Some(descriptor) = bytes.next() else { return Err(String::from("Unexpected EOF"))};
+                let descriptor = match descriptor {
+                    1 => MethodHandleKind::GetField,
+                    2 => MethodHandleKind::GetStatic,
+                    3 => MethodHandleKind::PutField,
+                    4 => MethodHandleKind::PutStatic,
+                    5 => MethodHandleKind::InvokeVirtual,
+                    6 => MethodHandleKind::InvokeStatic,
+                    7 => MethodHandleKind::InvokeSpecial,
+                    8 => MethodHandleKind::NewInvokeSpecial,
+                    9 => MethodHandleKind::InvokeInterface,
+                    _ => return Err(format!("Invalid MethodHandleKind: {descriptor}")),
+                };
                 let index = get_u16(bytes)?;
                 raw_constants.push(RawConstant::MethodHandle { descriptor, index });
             }
@@ -157,15 +193,19 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
                     name_type_index,
                 });
             }
-            other => return Err(format!("Ugh, {other:?}")),
+            other => {
+                println!("{raw_constants:?}");
+                println!("{}", raw_constants.len());
+                return Err(format!("Ugh, {other:?}"));
+            }
         }
-        // println!("{constants:?}");
     }
 
     let constants = raw_constants
         .iter()
         .map(|constant| cook_constant(&raw_constants, constant))
         .collect::<Result<Vec<_>, _>>()?;
+    println!("{constants:?}");
 
     let access = AccessFlags(get_u16(bytes)?);
     let this_class = get_u16(bytes)?;
@@ -216,7 +256,7 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
             descriptor,
             attributes,
             constant_value,
-        })
+        });
     }
 
     let method_count: u16 = get_u16(bytes)?;
@@ -245,7 +285,7 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
             access.is_native() || access.is_abstract(),
             &code_attributes[..],
         ) {
-            (true, []) => None,
+            (_, []) => None,
             (false, [code]) => {
                 let bytes = code.data.clone();
                 let code = parse_code_attribute(&constants, bytes)?;
@@ -253,7 +293,6 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
             }
             (true, [_]) => return Err(String::from("Method marked as native or abstract")),
             // (false, []) => return Err(String::from("Method must contain code")),
-            (false, []) => None,
             _ => return Err(String::from("Method must only have one code attribute")),
         };
         methods.push(Rc::new(Method {
@@ -284,21 +323,23 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
             let mut bootstrap_methods = Vec::new();
             for _ in 0..num_bootstrap_methods {
                 let method_ref = get_u16(&mut bytes)?;
-                let Constant::MethodRef { class, name, method_type } = constants[method_ref as usize].clone() else {
-                    return Err(String::from("Bootstrap method needs to lead to a MethodRef"))
+                let Constant::MethodHandle(method_handle) = constants[method_ref as usize - 1].clone() else {
+                    println!("{method_ref}: {:?}", constants[method_ref as usize - 1]);
+                    return Err(String::from("Bootstrap method needs to lead to a MethodHandle"))
                 };
-                let num_args = get_u16(&mut bytes)?;
-                let mut args = Vec::new();
-                for _ in 0..num_args {
-                    let arg_index = get_u16(&mut bytes)?;
-                    args.push(constants[arg_index as usize].clone());
-                }
-                bootstrap_methods.push(BootstrapMethod {
-                    name,
-                    class,
-                    descriptor: method_type,
-                    args,
-                });
+                println!("{method_handle:?}");
+                // let num_args = get_u16(&mut bytes)?;
+                // let mut args = Vec::new();
+                // for _ in 0..num_args {
+                //     let arg_index = get_u16(&mut bytes)?;
+                //     args.push(constants[arg_index as usize].clone());
+                // }
+                // bootstrap_methods.push(BootstrapMethod {
+                //     name,
+                //     class,
+                //     descriptor: method_type,
+                //     args,
+                // });
             }
             bootstrap_methods
         }
@@ -371,6 +412,7 @@ fn get_attribute(
     })
 }
 
+#[allow(clippy::too_many_lines)]
 fn parse_code_attribute(constants: &[Constant], bytes: Vec<u8>) -> Result<Code, String> {
     let mut bytes = bytes.into_iter();
     let max_stack = get_u16(&mut bytes)?;
@@ -464,7 +506,7 @@ fn parse_code_attribute(constants: &[Constant], bytes: Vec<u8>) -> Result<Code, 
                         }
                     }
                     other => return Err(format!("Bad stackmap discriminator; {other:?}")),
-                })
+                });
             }
             stack_map
         }
@@ -533,30 +575,32 @@ fn raw_str_index(constants: &[RawConstant], idx: usize) -> Result<Rc<str>, Strin
     match constants.get(idx - 1) {
         Some(RawConstant::String(str)) => Ok(str.clone()),
         Some(other) => Err(format!("Expected a string; got `{other:?}`")),
-        None => Err(String::from("Unexpected EOF")),
+        None => Err(String::from("Constant index out of range")),
     }
 }
 
 fn raw_class_index(constants: &[RawConstant], idx: usize) -> Result<Rc<str>, String> {
     match constants.get(idx - 1) {
-        Some(RawConstant::ClassRef { string_addr }) => raw_str_index(constants, *string_addr as usize),
-        Some(other) => Err(format!("Expected a string; got `{other:?}`")),
-        None => Err(String::from("Unexpected EOF")),
+        Some(RawConstant::ClassRef { string_addr }) => {
+            raw_str_index(constants, *string_addr as usize)
+        }
+        Some(other) => Err(format!("Expected a class reference; got `{other:?}`")),
+        None => Err(String::from("Constant index out of range")),
     }
 }
 fn str_index(constants: &[Constant], idx: usize) -> Result<Rc<str>, String> {
     match constants.get(idx - 1) {
         Some(Constant::String(str)) => Ok(str.clone()),
         Some(other) => Err(format!("Expected a string; got `{other:?}`")),
-        None => Err(String::from("Unexpected EOF")),
+        None => Err(String::from("Constant index out of range")),
     }
 }
 
 fn class_index(constants: &[Constant], idx: usize) -> Result<Rc<str>, String> {
     match constants.get(idx - 1) {
         Some(Constant::ClassRef(str)) => Ok(str.clone()),
-        Some(other) => Err(format!("Expected a string; got `{other:?}`")),
-        None => Err(String::from("Unexpected EOF")),
+        Some(other) => Err(format!("Expected a class reference; got `{other:?}`")),
+        None => Err(String::from("Constant index out of range")),
     }
 }
 
@@ -595,6 +639,7 @@ fn parse_java_string(bytes: Vec<u8>) -> Result<String, String> {
     Ok(str)
 }
 
+#[allow(clippy::too_many_lines)]
 fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Constant, String> {
     Ok(match constant {
         RawConstant::ClassRef { string_addr } => {
@@ -645,7 +690,77 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
         }
         RawConstant::Long(l) => Constant::Long(*l),
         &RawConstant::MethodHandle { descriptor, index } => {
-            Constant::MethodHandle { descriptor, index }
+            match (descriptor, &constants[index as usize - 1]) {
+                (
+                    handle_kind @ (MethodHandleKind::GetField
+                    | MethodHandleKind::GetStatic
+                    | MethodHandleKind::PutField
+                    | MethodHandleKind::PutStatic),
+                    RawConstant::FieldRef {
+                        class_ref_addr,
+                        name_type_addr,
+                    },
+                ) => {
+                    let class = raw_class_index(constants, *class_ref_addr as usize)?;
+                    let (name, field_type) =
+                        raw_name_type_index(constants, *name_type_addr as usize)?;
+                    let field_type = parse_field_type(&mut field_type.chars().peekable())?;
+                    Constant::MethodHandle(match handle_kind {
+                        MethodHandleKind::GetField => MethodHandle::GetField {
+                            class,
+                            name,
+                            field_type,
+                        },
+                        MethodHandleKind::GetStatic => MethodHandle::GetStatic {
+                            class,
+                            name,
+                            field_type,
+                        },
+                        MethodHandleKind::PutField => MethodHandle::PutField {
+                            class,
+                            name,
+                            field_type,
+                        },
+                        MethodHandleKind::PutStatic => MethodHandle::PutStatic {
+                            class,
+                            name,
+                            field_type,
+                        },
+                        _ => unreachable!(),
+                    })
+                }
+                (
+                    handle_kind
+                    @ (MethodHandleKind::InvokeStatic | MethodHandleKind::InvokeSpecial),
+                    RawConstant::MethodRef {
+                        class_ref_addr,
+                        name_type_addr,
+                    },
+                ) => {
+                    let class = raw_class_index(constants, *class_ref_addr as usize)?;
+                    let (name, method_type) =
+                        raw_name_type_index(constants, *name_type_addr as usize)?;
+                    let method_type = parse_method_descriptor(&method_type)?;
+                    Constant::MethodHandle(match handle_kind {
+                        MethodHandleKind::InvokeStatic => MethodHandle::InvokeStatic {
+                            class,
+                            name,
+                            method_type,
+                        },
+                        MethodHandleKind::InvokeSpecial => MethodHandle::InvokeSpecial {
+                            class,
+                            name,
+                            method_type,
+                        },
+                        _ => unreachable!(),
+                    })
+                }
+                (descriptor, constant) => {
+                    return Err(format!(
+                        "Invalid constant {constant:?} for method handle {descriptor:?}"
+                    ))
+                }
+            }
         }
         RawConstant::MethodRef {
             class_ref_addr,
@@ -679,12 +794,16 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
             let string = raw_str_index(constants, *string_addr as usize)?;
             Constant::StringRef(string)
         }
+        RawConstant::Placeholder => Constant::Placeholder,
     })
 }
 
-fn raw_name_type_index(constants: &[RawConstant], idx: usize) -> Result<(Rc<str>, Rc<str>), String> {
+fn raw_name_type_index(
+    constants: &[RawConstant],
+    idx: usize,
+) -> Result<(Rc<str>, Rc<str>), String> {
     let Some(RawConstant::NameTypeDescriptor { name_desc_addr, type_addr }) = constants.get(idx - 1) else {
-        return Err(String::from("Invalid NameTypeDescriptor for FieldRef"))
+        return Err(String::from("Invalid NameTypeDescriptor"))
     };
     let name = raw_str_index(constants, *name_desc_addr as usize)?;
     let type_name = raw_str_index(constants, *type_addr as usize)?;

@@ -45,6 +45,55 @@ impl Class {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum MethodHandle {
+    GetField {
+        class: Rc<str>,
+        name: Rc<str>,
+        field_type: FieldType,
+    },
+    GetStatic {
+        class: Rc<str>,
+        name: Rc<str>,
+        field_type: FieldType,
+    },
+    PutField {
+        class: Rc<str>,
+        name: Rc<str>,
+        field_type: FieldType,
+    },
+    PutStatic {
+        class: Rc<str>,
+        name: Rc<str>,
+        field_type: FieldType,
+    },
+    InvokeVirtual {
+        class: Rc<str>,
+        name: Rc<str>,
+        method_type: MethodDescriptor,
+    },
+    InvokeStatic {
+        class: Rc<str>,
+        name: Rc<str>,
+        method_type: MethodDescriptor,
+    },
+    InvokeSpecial {
+        class: Rc<str>,
+        name: Rc<str>,
+        method_type: MethodDescriptor,
+    },
+    NewInvokeSpecial {
+        class: Rc<str>,
+        name: Rc<str>,
+        method_type: MethodDescriptor,
+    },
+    InvokeInterface {
+        class: Rc<str>,
+        name: Rc<str>,
+        method_type: MethodDescriptor,
+    },
+}
+
 /// A member of the constant pool
 #[derive(Debug, Clone)]
 pub enum Constant {
@@ -74,10 +123,7 @@ pub enum Constant {
         name: Rc<str>,
         type_descriptor: Rc<str>,
     },
-    MethodHandle {
-        descriptor: u8,
-        index: u16,
-    },
+    MethodHandle(MethodHandle),
     MethodType {
         index: u16,
     },
@@ -95,6 +141,7 @@ pub enum Constant {
     // Package {
     //     identity: u16,
     // },
+    Placeholder,
 }
 
 impl Constant {
@@ -114,19 +161,19 @@ impl Constant {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Flag Name           Value   Interpretation
-/// ACC_PUBLIC          0x0001  Declared public; may be accessed from outside its package.
-/// ACC_PRIVATE         0x0002  Declared private; usable only within the defining class.
-/// ACC_PROTECTED       0x0004  Declared protected; may be accessed within subclasses.
-/// ACC_STATIC          0x0008  Declared static.
-/// ACC_FINAL           0x0010  Declared final; never directly assigned to after object construction (JLS §17.5).
-/// ACC_SYNCHRONIZED    0x0020  Declared synchronized; invocation is wrapped by a monitor use.
-/// ACC_VOLATILE        0x0040  Declared volatile; cannot be cached.
-/// ACC_TRANSIENT       0x0080  Declared transient; not written or read by a persistent object manager.
-/// ACC_NATIVE          0x0100  Declared native; implemented in a language other than Java.
-/// ACC_ABSTRACT        0x0400  Declared abstract; no implementation is provided.
-/// ACC_STRICT          0x0800  Declared strictfp; floating-point mode is FP-strict.
-/// ACC_SYNTHETIC       0x1000  Declared synthetic; not present in the source code.
-/// ACC_ENUM            0x4000  Declared as an element of an enum.
+/// `ACC_PUBLIC`          0x0001  Declared public; may be accessed from outside its package.
+/// `ACC_PRIVATE`         0x0002  Declared private; usable only within the defining class.
+/// `ACC_PROTECTED`       0x0004  Declared protected; may be accessed within subclasses.
+/// `ACC_STATIC`          0x0008  Declared static.
+/// `ACC_FINAL`           0x0010  Declared final; never directly assigned to after object construction (JLS §17.5).
+/// `ACC_SYNCHRONIZED`    0x0020  Declared synchronized; invocation is wrapped by a monitor use.
+/// `ACC_VOLATILE`        0x0040  Declared volatile; cannot be cached.
+/// `ACC_TRANSIENT`       0x0080  Declared transient; not written or read by a persistent object manager.
+/// `ACC_NATIVE`          0x0100  Declared native; implemented in a language other than Java.
+/// `ACC_ABSTRACT`        0x0400  Declared abstract; no implementation is provided.
+/// `ACC_STRICT`          0x0800  Declared strictfp; floating-point mode is FP-strict.
+/// `ACC_SYNTHETIC`       0x1000  Declared synthetic; not present in the source code.
+/// `ACC_ENUM`            0x4000  Declared as an element of an enum.
 pub struct AccessFlags(pub u16);
 
 impl AccessFlags {
@@ -219,7 +266,7 @@ pub enum FieldType {
 }
 
 impl FieldType {
-    pub fn get_size(&self) -> usize {
+    pub const fn get_size(&self) -> usize {
         match self {
             Self::Double | Self::Long => 2,
             _ => 1,

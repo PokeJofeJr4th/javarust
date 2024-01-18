@@ -12,13 +12,13 @@ pub use self::instruction::{hydrate_code, Cmp, Instruction, Op};
 
 fn search_method_area(
     method_area: &[(Rc<Class>, Rc<Method>)],
-    class: Rc<str>,
-    method: Rc<str>,
+    class: &str,
+    method: &str,
     method_type: &MethodDescriptor,
 ) -> Option<(Rc<Class>, Rc<Method>)> {
     for (possible_class, possible_method) in method_area {
-        if possible_class.this == class
-            && possible_method.name == method
+        if &*possible_class.this == class
+            && &*possible_method.name == method
             && &possible_method.descriptor == method_type
         {
             return Some((possible_class.clone(), possible_method.clone()));
@@ -37,10 +37,7 @@ struct StackFrame {
 
 impl StackFrame {
     pub fn from_method(method: Rc<Method>, class: Rc<Class>) -> Self {
-        let locals = match method.code.as_ref() {
-            Some(code) => code.max_locals,
-            _ => 0,
-        };
+        let locals = method.code.as_ref().map_or(0, |code| code.max_locals);
         Self {
             locals: (0..=locals).map(|_| 0).collect(),
             operand_stack: Vec::new(),
@@ -50,23 +47,26 @@ impl StackFrame {
     }
 }
 
+#[derive(Debug)]
 enum HeapElement {
     Object(Object),
     String(String),
     Array(Vec<u32>),
     Class(Rc<Class>),
+    Method(Rc<Method>),
 }
 
+#[derive(Debug)]
 struct Object {
     fields: Vec<(Rc<str>, Vec<u32>)>,
 }
 
 impl Object {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { fields: Vec::new() }
     }
 
-    pub fn class_mut_or_insert(&mut self, class: Rc<Class>) -> &mut Vec<u32> {
+    pub fn class_mut_or_insert(&mut self, class: &Class) -> &mut Vec<u32> {
         let name = class.this.clone();
         &mut if self
             .fields
@@ -119,6 +119,9 @@ pub fn start_vm(src: Class) {
         //     primary_thread.stack.last().unwrap().borrow().operand_stack
         // );
         // println!("{}", primary_thread.pc_register);
+        if primary_thread.stack.is_empty() {
+            return;
+        }
         primary_thread.tick().unwrap();
     }
 }

@@ -4,6 +4,7 @@ use crate::class::{AccessFlags, Class, Field, FieldType, Method, MethodDescripto
 
 use super::{thread::heap_allocate, HeapElement, Object};
 
+#[allow(clippy::too_many_lines)]
 pub(super) fn add_native_methods(
     method_area: &mut Vec<(Rc<Class>, Rc<Method>)>,
     class_area: &mut Vec<Rc<Class>>,
@@ -66,7 +67,7 @@ pub(super) fn add_native_methods(
     let printstream = Rc::new(printstream);
 
     let mut system_out = Object::new();
-    system_out.class_mut_or_insert(printstream.clone());
+    system_out.class_mut_or_insert(&printstream);
     let system_out_idx = heap_allocate(heap, HeapElement::Object(system_out));
 
     let mut system = Class::new(
@@ -130,10 +131,39 @@ pub(super) fn add_native_methods(
     );
     let call_site = Rc::new(call_site);
 
+    let make_concat_with_constants = Rc::new(Method {
+        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
+        name: "makeConcatWithConstants".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 5,
+            parameters: vec![
+                FieldType::Object("java/lang/invoke/MethodHandles$Lookup".into()),
+                FieldType::Object("java/lang/String".into()),
+                FieldType::Object("java/lang/invoke/MethodType".into()),
+                FieldType::Object("java/lang/String".into()),
+                FieldType::Array(Box::new(FieldType::Object("java/lang/Object".into()))),
+            ],
+            return_type: Some(FieldType::Object("java/lang/invoke/CallSite".into())),
+        },
+        attributes: Vec::new(),
+        code: None,
+    });
+
+    let mut string_concat_factory = Class::new(
+        AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE,
+        "java/lang/invoke/StringConcatFactory".into(),
+        object_name,
+    );
+    string_concat_factory
+        .methods
+        .push(make_concat_with_constants.clone());
+    let string_concat_factory = Rc::new(string_concat_factory);
+
     method_area.extend([
         (object.clone(), init),
         (printstream.clone(), println),
         (printstream.clone(), println_empty),
+        (string_concat_factory.clone(), make_concat_with_constants),
     ]);
     class_area.extend([
         object,
@@ -142,5 +172,6 @@ pub(super) fn add_native_methods(
         method_handle,
         method_type,
         call_site,
+        string_concat_factory,
     ]);
 }

@@ -1,6 +1,6 @@
 use std::{iter::Peekable, rc::Rc};
 
-use crate::class::{Constant, FieldType, MethodDescriptor};
+use crate::class::{BootstrapMethod, Constant, FieldType, MethodDescriptor};
 
 #[derive(Clone, Debug)]
 pub enum Instruction {
@@ -47,6 +47,12 @@ pub enum Instruction {
     IfNull(bool, i16),
 }
 
+impl Instruction {
+    pub const fn push_2(bytes: u64) -> Self {
+        Self::Push2((bytes >> 32) as u32, (bytes & u32::MAX as u64) as u32)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Op {
     Add,
@@ -85,33 +91,51 @@ pub enum Cmp {
 }
 
 pub fn hydrate_code(constants: &[Constant], code: Vec<u8>) -> Result<Vec<Instruction>, String> {
+    for byte in &code {
+        print!("{byte:<02X} ");
+    }
+    println!();
     let mut bytes = code.into_iter().enumerate().peekable();
     let mut code = Vec::new();
     while let Some(&(index, _)) = bytes.peek() {
-        code.push((
-            index,
-            parse_instruction(constants, &mut (&mut bytes).map(|(_, b)| b).peekable())?,
-        ));
+        code.push((index, parse_instruction(constants, &mut bytes)?));
     }
+    println!("{code:?}");
     Ok(code
         .iter()
         .cloned()
         .map(|(idx, instr)| match instr {
             Instruction::Goto(goto) => {
-                let target = idx.wrapping_add(goto as usize);
+                let target = (idx as i32).wrapping_add(goto) as usize;
                 let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
-                Instruction::Goto(goto as i32 - idx as i32)
+                Instruction::Goto(goto as i32)
+            }
+            Instruction::IfCmp(cmp, goto) => {
+                let target = (idx as i16).wrapping_add(goto) as usize;
+                let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
+                Instruction::IfCmp(cmp, goto as i16)
+            }
+            Instruction::IfNull(cmp, goto) => {
+                let target = (idx as i16).wrapping_add(goto) as usize;
+                let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
+                Instruction::IfNull(cmp, goto as i16)
+            }
+            Instruction::ICmp(cmp, goto) => {
+                let target = (idx as i16).wrapping_add(goto) as usize;
+                let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
+                Instruction::ICmp(cmp, goto as i16)
             }
             other => other,
         })
         .collect())
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn parse_instruction(
     constants: &[Constant],
-    bytes: &mut Peekable<impl Iterator<Item = u8>>,
+    bytes: &mut Peekable<impl Iterator<Item = (usize, u8)>>,
 ) -> Result<Instruction, String> {
-    match bytes.next().unwrap() {
+    match bytes.next().unwrap().1 {
         0x0 => Ok(Instruction::Noop),
         0x01 => {
             // aconst_null
@@ -148,15 +172,15 @@ pub fn parse_instruction(
         0x10 => {
             // bipush byte
             // push a byte onto the operand stack
-            let byte = bytes.next().unwrap() as i8;
+            let byte = bytes.next().unwrap().1 as i8;
             // I think this will sign-extend it, not entirely sure tho
             let value = byte as i32 as u32;
             Ok(Instruction::Push1(value))
         }
         0x11 => {
             // sipush b1 b2
-            let upper = bytes.next().unwrap();
-            let lower = bytes.next().unwrap();
+            let upper = bytes.next().unwrap().1;
+            let lower = bytes.next().unwrap().1;
             let short = u16::from_be_bytes([upper, lower]) as i16 as i32 as u32;
             Ok(Instruction::Push1(short))
         }
@@ -164,33 +188,45 @@ pub fn parse_instruction(
             // ldc
             // push item from constant pool
 
-            let index = bytes.next().unwrap();
+            let index = bytes.next().unwrap().1;
 
-            let constant = constants[index as usize].clone();
+            let constant = constants[index as usize - 1].clone();
 
             match constant {
                 Constant::Int(i) => Ok(Instruction::Push1(i as u32)),
                 Constant::Float(i) => Ok(Instruction::Push1(i.to_bits())),
                 Constant::String(str) => Ok(Instruction::LoadString(str)),
-                other => Err(format!("Error during lcd; can't load {other:?}")),
+                other => Err(format!("Error during ldc; can't load {other:?}")),
             }
         }
         0x13 => {
             todo!("ldc_w")
         }
         0x14 => {
-            todo!("ldc2_w")
+            // ldc2_w
+            // load a 2-wide constant
+            let upper = bytes.next().unwrap().1;
+            let lower = bytes.next().unwrap().1;
+
+            let index = ((upper as u16) << 8) | lower as u16;
+
+            let constant = constants[index as usize - 1].clone();
+            match constant {
+                Constant::Double(d) => Ok(Instruction::push_2(d.to_bits())),
+                Constant::Long(l) => Ok(Instruction::push_2(l as u64)),
+                other => Err(format!("Error during ldc2_w; can't load {other:?}")),
+            }
         }
         0x18 | 0x16 => {
             // dload|lload index
             // load a double from locals to stack
-            let index = bytes.next().unwrap();
+            let index = bytes.next().unwrap().1;
             Ok(Instruction::Load2(index as usize))
         }
         0x19 | 0x17 | 0x15 => {
             // aload|fload|iload index
             // load one item from locals to stack
-            let index = bytes.next().unwrap();
+            let index = bytes.next().unwrap().1;
             Ok(Instruction::Load1(index as usize))
         }
         iload_n @ 0x1A..=0x1D => {
@@ -220,7 +256,7 @@ pub fn parse_instruction(
         aload_n @ 0x2A..=0x2D => {
             // aload_<n>
             // load one item from locals to stack
-            let index = aload_n - 0x29;
+            let index = aload_n - 0x2A;
             Ok(Instruction::Load1(index as usize))
         }
         0x31 | 0x2F => {
@@ -241,13 +277,13 @@ pub fn parse_instruction(
         0x39 | 0x37 => {
             // dstore|lstore index
             // put two values into a local
-            let index = bytes.next().unwrap();
+            let index = bytes.next().unwrap().1;
             Ok(Instruction::Store2(index as usize))
         }
         0x3A | 0x38 | 0x36 => {
             // astore|fstore|istore index
             // put one reference into a local
-            let index = bytes.next().unwrap();
+            let index = bytes.next().unwrap().1;
             Ok(Instruction::Store1(index as usize))
         }
         istore_n @ 0x3B..=0x3E => {
@@ -521,8 +557,8 @@ pub fn parse_instruction(
         0x84 => {
             // iinc
             // int increment
-            let index = bytes.next().unwrap() as usize;
-            let inc = bytes.next().unwrap() as i8 as i32;
+            let index = bytes.next().unwrap().1 as usize;
+            let inc = bytes.next().unwrap().1 as i8 as i32;
             Ok(Instruction::IInc(index, inc))
         }
         0x85 => {
@@ -618,8 +654,8 @@ pub fn parse_instruction(
         if_cnd @ 0x99..=0x9E => {
             // if<cond>
             // integer comparison to zero
-            let bb1 = bytes.next().unwrap();
-            let bb2 = bytes.next().unwrap();
+            let bb1 = bytes.next().unwrap().1;
+            let bb2 = bytes.next().unwrap().1;
             let branch = u16::from_be_bytes([bb1, bb2]) as i16;
 
             let cond = match if_cnd {
@@ -636,8 +672,8 @@ pub fn parse_instruction(
         if_icmp @ 0x9F..=0xA4 => {
             // if_icmp<cond>
             // comparison between integers
-            let bb1 = bytes.next().unwrap();
-            let bb2 = bytes.next().unwrap();
+            let bb1 = bytes.next().unwrap().1;
+            let bb2 = bytes.next().unwrap().1;
             let branch = u16::from_be_bytes([bb1, bb2]) as i16;
 
             let cond = match if_icmp {
@@ -656,8 +692,8 @@ pub fn parse_instruction(
         }
         0xA7 => {
             // goto bb1 bb2
-            let bb1 = bytes.next().unwrap();
-            let bb2 = bytes.next().unwrap();
+            let bb1 = bytes.next().unwrap().1;
+            let bb2 = bytes.next().unwrap().1;
             let branchoffset = u16::from_be_bytes([bb1, bb2]) as i16 as i32;
             Ok(Instruction::Goto(branchoffset))
         }
@@ -685,8 +721,8 @@ pub fn parse_instruction(
         0xB2 => {
             // getstatic
             // get a static field from a class
-            let ib1 = bytes.next().unwrap();
-            let ib2 = bytes.next().unwrap();
+            let ib1 = bytes.next().unwrap().1;
+            let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
             let Constant::FieldRef { class, name, field_type } = constants[index as usize - 1].clone() else {
@@ -701,8 +737,8 @@ pub fn parse_instruction(
         0xB4 => {
             // getfield
             // get a field from an object
-            let ib1 = bytes.next().unwrap();
-            let ib2 = bytes.next().unwrap();
+            let ib1 = bytes.next().unwrap().1;
+            let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
             let Constant::FieldRef { class, name, field_type } = constants[index as usize - 1].clone() else {
@@ -714,8 +750,8 @@ pub fn parse_instruction(
         0xB5 => {
             // putfield
             // set a field in an object
-            let ib1 = bytes.next().unwrap();
-            let ib2 = bytes.next().unwrap();
+            let ib1 = bytes.next().unwrap().1;
+            let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
             let Constant::FieldRef { class, name, field_type } = constants[index as usize - 1].clone() else {
@@ -728,8 +764,8 @@ pub fn parse_instruction(
             // invokevirtual
             // invoke a method virtually I guess
 
-            let ib1 = bytes.next().unwrap();
-            let ib2 = bytes.next().unwrap();
+            let ib1 = bytes.next().unwrap().1;
+            let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
             let Constant::MethodRef { class, name, method_type } = constants[index as usize - 1].clone() else {
@@ -741,8 +777,8 @@ pub fn parse_instruction(
         0xB7 => {
             // invokespecial
             // invoke an instance method
-            let ib1 = bytes.next().unwrap();
-            let ib2 = bytes.next().unwrap();
+            let ib1 = bytes.next().unwrap().1;
+            let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
             let Constant::MethodRef{name, class, method_type} = constants[index as usize - 1].clone() else {
@@ -754,8 +790,8 @@ pub fn parse_instruction(
         0xB8 => {
             // invokestatic
             // make a static method
-            let ib1 = bytes.next().unwrap();
-            let ib2 = bytes.next().unwrap();
+            let ib1 = bytes.next().unwrap().1;
+            let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
             let Constant::MethodRef{name, class, method_type} = constants[index as usize - 1].clone() else {
@@ -769,12 +805,12 @@ pub fn parse_instruction(
         0xBA => {
             // invokedynamic
             // dynamically figure out what to do
-            let ib1 = bytes.next().unwrap();
-            let ib2 = bytes.next().unwrap();
+            let ib1 = bytes.next().unwrap().1;
+            let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
-            let 0 = bytes.next().unwrap() else { return Err(String::from("Expected a zero"))};
-            let 0 =  bytes.next().unwrap() else { return Err(String::from("Expected a zero"))};
+            let 0 = bytes.next().unwrap().1 else { return Err(String::from("Expected a zero"))};
+            let 0 =  bytes.next().unwrap().1 else { return Err(String::from("Expected a zero"))};
 
             let Constant::InvokeDynamic { bootstrap_index, method_name, method_type } =
                     constants[index as usize - 1].clone() else {
@@ -790,8 +826,8 @@ pub fn parse_instruction(
         0xBB => {
             // new
             // make a new object instance
-            let ib1 = bytes.next().unwrap();
-            let ib2 = bytes.next().unwrap();
+            let ib1 = bytes.next().unwrap().1;
+            let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
             let Constant::ClassRef(class) = constants[index as usize - 1].clone() else {
@@ -835,18 +871,18 @@ pub fn parse_instruction(
         }
         if_null @ 0xC6..=0xC7 => {
             // ifnull | ifnonnull
-            let bb1 = bytes.next().unwrap();
-            let bb2 = bytes.next().unwrap();
+            let bb1 = bytes.next().unwrap().1;
+            let bb2 = bytes.next().unwrap().1;
             let branch = u16::from_be_bytes([bb1, bb2]) as i16;
 
             Ok(Instruction::IfNull(if_null == 0xC6, branch))
         }
         0xC8 => {
             // goto_w bb1 bb2 bb3 bb4
-            let bb1 = bytes.next().unwrap();
-            let bb2 = bytes.next().unwrap();
-            let bb3 = bytes.next().unwrap();
-            let bb4 = bytes.next().unwrap();
+            let bb1 = bytes.next().unwrap().1;
+            let bb2 = bytes.next().unwrap().1;
+            let bb3 = bytes.next().unwrap().1;
+            let bb4 = bytes.next().unwrap().1;
             let branchoffset = u32::from_be_bytes([bb1, bb2, bb3, bb4]) as i32;
             Ok(Instruction::Goto(branchoffset))
         }

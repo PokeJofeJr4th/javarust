@@ -1,7 +1,7 @@
 use std::{cell::RefCell, cmp::Ordering, rc::Rc};
 
 use crate::{
-    class::{Class, Method},
+    class::{Class, Constant, Method},
     virtual_machine::search_method_area,
 };
 
@@ -16,13 +16,15 @@ pub(super) struct Thread {
 }
 
 impl Thread {
+    #[allow(clippy::too_many_lines)]
     pub fn tick(&mut self) -> Result<(), String> {
         // this way we can mutate the stack frame without angering the borrow checker
         let stackframe = self.stack.last().unwrap().clone();
         if stackframe.borrow().method.access_flags.is_native() {
-            return self.invoke_native(stackframe);
+            return self.invoke_native(&stackframe);
         }
-        let opcode = self.get_pc_byte(stackframe.clone());
+        let opcode = self.get_pc_byte(&stackframe);
+        println!("{opcode:?}");
         match opcode {
             Instruction::Noop => {
                 // nop
@@ -38,26 +40,26 @@ impl Thread {
                 operand_stack.push(b);
             }
             Instruction::LoadString(str) => {
-                let str_obj = String::from(&*str.clone());
+                let str_obj = String::from(&*str);
                 let str_ptr =
                     heap_allocate(&mut self.heap.borrow_mut(), HeapElement::String(str_obj));
                 stackframe.borrow_mut().operand_stack.push(str_ptr);
             }
             Instruction::Load2(index) => {
                 // load a double from locals to stack
-                long_load(stackframe, index);
+                long_load(&stackframe, index);
             }
             Instruction::Load1(index) => {
                 // load one item from locals to stack
-                value_load(stackframe, index);
+                value_load(&stackframe, index);
             }
             Instruction::Store2(index) => {
                 // put two values into a local
-                long_store(stackframe, index);
+                long_store(&stackframe, index);
             }
             Instruction::Store1(index) => {
                 // put one reference into a local
-                value_store(stackframe, index);
+                value_store(&stackframe, index);
             }
             Instruction::Pop => {
                 stackframe.borrow_mut().operand_stack.pop();
@@ -581,7 +583,6 @@ impl Thread {
             Instruction::IfCmp(cmp, branch) => {
                 // if<cond>
                 // integer comparison to zero
-
                 let lhs = stackframe.borrow_mut().operand_stack.pop().unwrap() as i32;
                 let cond = match cmp {
                     Cmp::Eq => lhs == 0,
@@ -592,40 +593,41 @@ impl Thread {
                     Cmp::Le => lhs <= 0,
                 };
                 if cond {
-                    self.pc_register += branch as usize;
+                    self.pc_register = branch as usize;
                 }
             }
             Instruction::ICmp(cnd, branch) => {
                 // if_icmp<cond>
                 // comparison between integers
-
                 let rhs = stackframe.borrow_mut().operand_stack.pop().unwrap() as i32;
                 let lhs = stackframe.borrow_mut().operand_stack.pop().unwrap() as i32;
-                let cond = match cnd {
+                if match cnd {
                     Cmp::Eq => lhs == rhs,
                     Cmp::Ne => lhs != rhs,
                     Cmp::Lt => lhs < rhs,
                     Cmp::Ge => lhs >= rhs,
                     Cmp::Gt => lhs > rhs,
                     Cmp::Le => lhs <= rhs,
-                };
-                if cond {
-                    self.pc_register += branch as usize;
+                } {
+                    self.pc_register = branch as usize;
                 }
             }
             Instruction::Goto(goto) => {
                 // goto bb1 bb2
-                self.pc_register += goto as usize;
+                self.pc_register = goto as usize;
             }
             Instruction::Return0 => {
-                // return
                 // return void
                 self.return_void();
+            }
+            Instruction::Return1 => {
+                // return one thing
+                self.return_one();
             }
             Instruction::GetStatic(class, name, field_type) => {
                 // getstatic
                 // get a static field from a class
-                let Some(class) = search_class_area(&self.class_area, class.clone()) else {
+                let Some(class) = search_class_area(&self.class_area, &class) else {
                     return Err(format!("Couldn't resolve class {class}"))
                 };
 
@@ -650,10 +652,8 @@ impl Thread {
                 }
             }
             Instruction::GetField(class, name, field_type) => {
-                // getfield
                 // get a field from an object
-
-                let Some(class) = search_class_area(&self.class_area, class.clone()) else {
+                let Some(class) = search_class_area(&self.class_area, &class) else {
                     return Err(format!("Couldn't resolve class {class}"))
                 };
 
@@ -674,7 +674,7 @@ impl Thread {
                 };
 
                 println!("Getting Field {name} of {}", class.this);
-                let object_fields = object_borrow.class_mut_or_insert(class);
+                let object_fields = object_borrow.class_mut_or_insert(&class);
 
                 if field_type.get_size() == 1 {
                     let value = object_fields[field_index];
@@ -689,7 +689,7 @@ impl Thread {
                 // putfield
                 // set a field in an object
 
-                let Some(class) = search_class_area(&self.class_area, class.clone()) else {
+                let Some(class) = search_class_area(&self.class_area, &class) else {
                     return Err(format!("Couldn't resolve class {class}"))
                 };
 
@@ -714,7 +714,7 @@ impl Thread {
                     return Err(String::from("Expected an object pointer"))
                 };
 
-                let object_fields = object_borrow.class_mut_or_insert(class);
+                let object_fields = object_borrow.class_mut_or_insert(&class);
 
                 if field_type.get_size() == 1 {
                     object_fields[field_index] = value as u32;
@@ -726,21 +726,13 @@ impl Thread {
             Instruction::InvokeVirtual(class, name, method_type) => {
                 // invokevirtual
                 // invoke a method virtually I guess
-
-                let (class_ref, method_ref) = search_method_area(
-                    &self.method_area,
-                    class.clone(),
-                    name.clone(),
-                    &method_type,
-                )
-                .ok_or_else(|| {
-                    format!(
-                        "Error during InvokeVirtual; {}.{} : {:?}",
-                        class, name, method_type
-                    )
-                })?;
+                let (class_ref, method_ref) =
+                    search_method_area(&self.method_area, &class, &name, &method_type).ok_or_else(
+                        || format!("Error during InvokeVirtual; {class}.{name} : {method_type:?}"),
+                    )?;
                 let args_start =
-                    stackframe.borrow().operand_stack.len() - method_type.parameter_size - 1;
+                    stackframe.borrow().operand_stack.len() - method_type.parameter_size;
+                // println!("Args Start: {args_start}\nStack: {stackframe:?}");
                 let stack = &mut stackframe.borrow_mut().operand_stack;
                 let mut stack_iter = core::mem::take(stack).into_iter();
                 stack.extend((&mut stack_iter).take(args_start));
@@ -757,21 +749,16 @@ impl Thread {
 
                 let new_locals = &mut new_stackframe.borrow_mut().locals;
                 for (index, value) in stack_iter.enumerate() {
+                    // println!("stack[{index}]={value:x}");
                     new_locals[index] = value;
                 }
                 println!("{new_locals:?}");
             }
             Instruction::InvokeSpecial(class, name, method_type) => {
-                // invokespecial
                 // invoke an instance method
-
-                let (class_ref, method_ref) = search_method_area(
-                    &self.method_area,
-                    class.clone(),
-                    name.clone(),
-                    &method_type,
-                )
-                .ok_or_else(|| format!("Error during InvokeSpecial; {}.{}", class, name))?;
+                let (class_ref, method_ref) =
+                    search_method_area(&self.method_area, &class, &name, &method_type)
+                        .ok_or_else(|| format!("Error during InvokeSpecial; {class}.{name}"))?;
                 let args_start =
                     stackframe.borrow().operand_stack.len() - method_type.parameter_size - 1;
                 let stack = &mut stackframe.borrow_mut().operand_stack;
@@ -793,15 +780,10 @@ impl Thread {
                 new_stackframe.borrow_mut().operand_stack.extend(args);
             }
             Instruction::InvokeStatic(class, name, method_type) => {
-                // invokestatic
                 // make a static method
-                let (class_ref, method_ref) = search_method_area(
-                    &self.method_area,
-                    class.clone(),
-                    name.clone(),
-                    &method_type,
-                )
-                .ok_or_else(|| format!("Error during InvokeStatic; {}.{}", class, name))?;
+                let (class_ref, method_ref) =
+                    search_method_area(&self.method_area, &class, &name, &method_type)
+                        .ok_or_else(|| format!("Error during InvokeStatic; {class}.{name}"))?;
                 println!(
                     "Invoking Static Method {} on {}",
                     method_ref.name, class_ref.this,
@@ -823,14 +805,11 @@ impl Thread {
                 new_stackframe.borrow_mut().operand_stack.extend(args);
             }
             Instruction::InvokeDynamic(bootstrap_index, method_name, method_type) => {
-                // invokedynamic
                 // dynamically figure out what to do
-
                 let mut bootstrap_object = Object::new();
                 let method_handle_class =
-                    search_class_area(&self.class_area, "java/lang/invoke/MethodHandle".into())
-                        .unwrap();
-                bootstrap_object.class_mut_or_insert(method_handle_class)[0] =
+                    search_class_area(&self.class_area, "java/lang/invoke/MethodHandle").unwrap();
+                bootstrap_object.class_mut_or_insert(&method_handle_class)[0] =
                     bootstrap_index as u32;
                 let bootstrap_pointer = heap_allocate(
                     &mut self.heap.borrow_mut(),
@@ -839,23 +818,30 @@ impl Thread {
                 let bootstrap_method =
                     stackframe.borrow().class.bootstrap_methods[bootstrap_index as usize].clone();
 
+                // start grabbing stuff
+                let stack = &mut stackframe.borrow_mut().operand_stack;
+                stack.push(self.pc_register as u32);
+                // reference to current class name
+                // reference to method name
+                // reference to method type
+                // rest of args
+                // push to stack
+                // get original stack size
+                // tick until we have the method
+                // invoke the method we got
+
                 return Err(format!(
                     "Invoking Dynamic {bootstrap_method:?} - {method_name} : {method_type:?}"
                 ));
                 // TODO: Finish InvokeDynamic
             }
             Instruction::New(class) => {
-                // new
                 // make a new object instance
-
-                let Some(class) = search_class_area(&self.class_area, class.clone()) else {
+                let Some(class) = search_class_area(&self.class_area, &class) else {
                     return Err(format!("Couldn't find class {class}"))
                 };
-
                 let mut new_object = Object::new();
-
-                new_object.class_mut_or_insert(class);
-
+                new_object.class_mut_or_insert(&class);
                 let objectref =
                     heap_allocate(&mut self.heap.borrow_mut(), HeapElement::Object(new_object));
                 stackframe.borrow_mut().operand_stack.push(objectref);
@@ -872,12 +858,12 @@ impl Thread {
         Ok(())
     }
 
-    fn get_code(&self, stackframe: Rc<RefCell<StackFrame>>, idx: usize) -> Instruction {
+    fn get_code(stackframe: &RefCell<StackFrame>, idx: usize) -> Instruction {
         stackframe.borrow().method.code.as_ref().unwrap().code[idx].clone()
     }
 
-    fn get_pc_byte(&mut self, stackframe: Rc<RefCell<StackFrame>>) -> Instruction {
-        let b = self.get_code(stackframe, self.pc_register);
+    fn get_pc_byte(&mut self, stackframe: &RefCell<StackFrame>) -> Instruction {
+        let b = Self::get_code(stackframe, self.pc_register);
         self.pc_register += 1;
         b
     }
@@ -887,7 +873,7 @@ impl Thread {
         self.stack.push(Rc::new(RefCell::new(stackframe)));
     }
 
-    fn invoke_native(&mut self, stackframe: Rc<RefCell<StackFrame>>) -> Result<(), String> {
+    fn invoke_native(&mut self, stackframe: &RefCell<StackFrame>) -> Result<(), String> {
         let name = stackframe.borrow().method.name.clone();
         let class = stackframe.borrow().class.this.clone();
         match (&*class, &*name) {
@@ -897,7 +883,8 @@ impl Thread {
                 if args == 0 {
                     println!();
                 } else {
-                    let arg = stackframe.borrow_mut().operand_stack.pop().unwrap();
+                    println!("{stackframe:?}");
+                    let arg = stackframe.borrow_mut().locals[0];
                     let heap_borrow = self.heap.borrow();
                     let reference = heap_borrow.get(arg as usize);
                     match &*reference.unwrap().borrow() {
@@ -907,6 +894,65 @@ impl Thread {
                     drop(heap_borrow);
                 }
                 self.return_void();
+            }
+            ("java/lang/invoke/StringConcatFactory", "makeConcatWithConstants") => {
+                let stack_ref = &mut stackframe.borrow_mut().operand_stack;
+
+                let constants = stack_ref.pop().unwrap();
+
+                let constants = if constants == u32::MAX {
+                    Vec::new()
+                } else if let HeapElement::Array(arr) =
+                    &*self.heap.borrow().get(constants as usize).unwrap().borrow()
+                {
+                    arr.clone()
+                } else {
+                    return Err(format!(
+                        "Expected array of objects; got `{:?}`",
+                        self.heap.borrow().get(constants as usize)
+                    ));
+                };
+
+                let recipe = stack_ref.pop().unwrap();
+                let recipe = if let HeapElement::String(recipe) =
+                    &*self.heap.borrow().get(recipe as usize).unwrap().borrow()
+                {
+                    recipe.clone()
+                } else {
+                    return Err(String::from("Expected string format recipe"));
+                };
+
+                let concat_type = stack_ref.pop().unwrap();
+
+                let name = stack_ref.pop().unwrap();
+                let name = if let HeapElement::String(name) =
+                    &*self.heap.borrow().get(name as usize).unwrap().borrow()
+                {
+                    name.clone()
+                } else {
+                    return Err(String::from("Expected a method name pointer"));
+                };
+
+                let method_handles = stack_ref.pop().unwrap();
+                let class_name = if let HeapElement::String(class_name) = &*self
+                    .heap
+                    .borrow()
+                    .get(method_handles as usize)
+                    .unwrap()
+                    .borrow()
+                {
+                    class_name.clone()
+                } else {
+                    return Err(String::from("Expected a class name pointer"));
+                };
+                let class = search_class_area(&self.class_area, &class_name)
+                    .ok_or_else(|| format!("couldn't resolve class `{class_name}`"))?;
+
+                let Constant::InvokeDynamic { method_type, .. } = class.constants[concat_type as usize].clone() else {
+                    return Err(String::from("Expected method signature reference"))
+                };
+
+                println!("{constants:?} {recipe:?} {name} {method_type:?}");
             }
             (class, name) => return Err(format!("Error invoking native method; {class}.{name}")),
         }
@@ -921,6 +967,15 @@ impl Thread {
         let stackframe = self.stack.last().unwrap();
         let return_address = stackframe.borrow_mut().operand_stack.pop().unwrap();
         self.pc_register = return_address as usize;
+    }
+
+    fn return_one(&mut self) {
+        let old_stackframe = self.stack.pop().unwrap();
+        let ret_value = old_stackframe.borrow_mut().operand_stack.pop().unwrap();
+        let stackframe = self.stack.last().unwrap();
+        let ret_address = stackframe.borrow_mut().operand_stack.pop().unwrap();
+        self.pc_register = ret_address as usize;
+        stackframe.borrow_mut().operand_stack.push(ret_value);
     }
 }
 
@@ -937,24 +992,24 @@ fn push_long(stack: &mut Vec<u32>, l: u64) {
     stack.push(lower);
 }
 
-fn value_store(stackframe: Rc<RefCell<StackFrame>>, index: usize) {
+fn value_store(stackframe: &RefCell<StackFrame>, index: usize) {
     let value = stackframe.borrow_mut().operand_stack.pop().unwrap();
     stackframe.borrow_mut().locals[index] = value;
 }
 
-fn value_load(stackframe: Rc<RefCell<StackFrame>>, index: usize) {
+fn value_load(stackframe: &RefCell<StackFrame>, index: usize) {
     let value = stackframe.borrow().locals[index];
     stackframe.borrow_mut().operand_stack.push(value);
 }
 
-fn long_store(stackframe: Rc<RefCell<StackFrame>>, index: usize) {
+fn long_store(stackframe: &RefCell<StackFrame>, index: usize) {
     let lower = stackframe.borrow_mut().operand_stack.pop().unwrap();
     let upper = stackframe.borrow_mut().operand_stack.pop().unwrap();
     stackframe.borrow_mut().locals[index] = upper;
     stackframe.borrow_mut().locals[index + 1] = lower;
 }
 
-fn long_load(stackframe: Rc<RefCell<StackFrame>>, index: usize) {
+fn long_load(stackframe: &RefCell<StackFrame>, index: usize) {
     let value_upper = stackframe.borrow().locals[index];
     let value_lower = stackframe.borrow().locals[index + 1];
     stackframe
@@ -963,9 +1018,9 @@ fn long_load(stackframe: Rc<RefCell<StackFrame>>, index: usize) {
         .extend([value_upper, value_lower]);
 }
 
-fn search_class_area(class_area: &[Rc<Class>], class: Rc<str>) -> Option<Rc<Class>> {
+fn search_class_area(class_area: &[Rc<Class>], class: &str) -> Option<Rc<Class>> {
     for possible_class in class_area {
-        if possible_class.this == class {
+        if &*possible_class.this == class {
             return Some(possible_class.clone());
         }
     }
