@@ -336,8 +336,6 @@ pub enum VerificationTypeInfo {
 
 #[derive(Debug, Clone)]
 pub struct BootstrapMethod {
-    pub name: Rc<str>,
-    pub class: Rc<str>,
-    pub descriptor: MethodDescriptor,
+    pub method: MethodHandle,
     pub args: Vec<Constant>,
 }

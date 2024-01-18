@@ -670,6 +670,7 @@ impl Thread {
                 let object = self.heap.borrow()[object_index as usize].clone();
 
                 let HeapElement::Object(ref mut object_borrow) = *object.borrow_mut() else {
+                    println!("{:#?}[{object_index}] = {object:?}", self.heap);
                     return Err(String::from("Expected an object pointer"))
                 };
 

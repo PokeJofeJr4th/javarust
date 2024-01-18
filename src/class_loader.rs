@@ -328,18 +328,16 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
                     return Err(String::from("Bootstrap method needs to lead to a MethodHandle"))
                 };
                 println!("{method_handle:?}");
-                // let num_args = get_u16(&mut bytes)?;
-                // let mut args = Vec::new();
-                // for _ in 0..num_args {
-                //     let arg_index = get_u16(&mut bytes)?;
-                //     args.push(constants[arg_index as usize].clone());
-                // }
-                // bootstrap_methods.push(BootstrapMethod {
-                //     name,
-                //     class,
-                //     descriptor: method_type,
-                //     args,
-                // });
+                let num_args = get_u16(&mut bytes)?;
+                let mut args = Vec::new();
+                for _ in 0..num_args {
+                    let arg_index = get_u16(&mut bytes)?;
+                    args.push(constants[arg_index as usize].clone());
+                }
+                bootstrap_methods.push(BootstrapMethod {
+                    method: method_handle,
+                    args,
+                });
             }
             bootstrap_methods
         }

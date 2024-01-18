@@ -195,7 +195,9 @@ pub fn parse_instruction(
             match constant {
                 Constant::Int(i) => Ok(Instruction::Push1(i as u32)),
                 Constant::Float(i) => Ok(Instruction::Push1(i.to_bits())),
-                Constant::String(str) => Ok(Instruction::LoadString(str)),
+                Constant::String(str) | Constant::StringRef(str) => {
+                    Ok(Instruction::LoadString(str))
+                }
                 other => Err(format!("Error during ldc; can't load {other:?}")),
             }
         }
