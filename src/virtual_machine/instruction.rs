@@ -90,17 +90,25 @@ pub enum Cmp {
     Ge,
 }
 
-pub fn hydrate_code(constants: &[Constant], code: Vec<u8>) -> Result<Vec<Instruction>, String> {
-    for byte in &code {
-        print!("{byte:<02X} ");
+pub fn hydrate_code(
+    constants: &[Constant],
+    code: Vec<u8>,
+    verbose: bool,
+) -> Result<Vec<Instruction>, String> {
+    if verbose {
+        for byte in &code {
+            print!("{byte:<02X} ");
+        }
+        println!();
     }
-    println!();
     let mut bytes = code.into_iter().enumerate().peekable();
     let mut code = Vec::new();
     while let Some(&(index, _)) = bytes.peek() {
         code.push((index, parse_instruction(constants, &mut bytes)?));
     }
-    println!("{code:?}");
+    if verbose {
+        println!("{code:?}");
+    }
     Ok(code
         .iter()
         .cloned()

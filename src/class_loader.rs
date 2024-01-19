@@ -86,7 +86,7 @@ pub enum RawConstant {
 }
 
 #[allow(clippy::too_many_lines)]
-pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String> {
+pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result<Class, String> {
     let 0xCAFE_BABE = get_u32(bytes)? else { return Err(String::from("Invalid header")) };
     let version = ClassVersion {
         minor_version: get_u16(bytes)?,
@@ -205,7 +205,9 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
         .iter()
         .map(|constant| cook_constant(&raw_constants, constant))
         .collect::<Result<Vec<_>, _>>()?;
-    println!("{constants:?}");
+    if verbose {
+        println!("{constants:?}");
+    }
 
     let access = AccessFlags(get_u16(bytes)?);
     let this_class = get_u16(bytes)?;
@@ -288,7 +290,7 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
             (_, []) => None,
             (false, [code]) => {
                 let bytes = code.data.clone();
-                let code = parse_code_attribute(&constants, bytes)?;
+                let code = parse_code_attribute(&constants, bytes, verbose)?;
                 Some(code)
             }
             (true, [_]) => return Err(String::from("Method marked as native or abstract")),
@@ -332,7 +334,9 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
                     println!("{method_ref}: {:?}", constants[method_ref as usize - 1]);
                     return Err(String::from("Bootstrap method needs to lead to a MethodHandle"))
                 };
-                println!("{method_handle:?}");
+                if verbose {
+                    println!("{method_handle:?}");
+                }
                 let num_args = get_u16(&mut bytes)?;
                 let mut args = Vec::new();
                 for _ in 0..num_args {
@@ -416,7 +420,11 @@ fn get_attribute(
 }
 
 #[allow(clippy::too_many_lines)]
-fn parse_code_attribute(constants: &[Constant], bytes: Vec<u8>) -> Result<(Code, u16), String> {
+fn parse_code_attribute(
+    constants: &[Constant],
+    bytes: Vec<u8>,
+    verbose: bool,
+) -> Result<(Code, u16), String> {
     let mut bytes = bytes.into_iter();
     let max_stack = get_u16(&mut bytes)?;
     let max_locals = get_u16(&mut bytes)?;
@@ -517,7 +525,7 @@ fn parse_code_attribute(constants: &[Constant], bytes: Vec<u8>) -> Result<(Code,
         _ => return Err(String::from("Only one `StackMapTable` attribute expected")),
     };
 
-    let code = hydrate_code(constants, code)?;
+    let code = hydrate_code(constants, code, verbose)?;
 
     Ok((
         Code {

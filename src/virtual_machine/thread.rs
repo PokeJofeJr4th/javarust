@@ -1037,7 +1037,7 @@ impl Thread {
                 self.return_one(verbose);
             }
             ("java/util/Random", "<init>", _) => {
-                let obj_ref = stackframe.borrow_mut().locals[0];
+                let obj_ref = *stackframe.borrow_mut().operand_stack.last().unwrap();
                 let heap_borrow = self.heap.borrow();
                 let mut heap_element = heap_borrow.get(obj_ref as usize).unwrap().borrow_mut();
                 let HeapElement::Object(random_obj) = &mut *heap_element else {
@@ -1047,7 +1047,9 @@ impl Thread {
                     .class_mut_or_insert(&stackframe.borrow().class)
                     .native_fields
                     .push(Box::new(thread_rng()));
-                stackframe.borrow_mut().operand_stack.push(obj_ref);
+                if verbose {
+                    println!("heap[{obj_ref}] = {random_obj:?}");
+                }
                 drop(heap_element);
                 drop(heap_borrow);
                 self.return_void();

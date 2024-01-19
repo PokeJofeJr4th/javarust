@@ -32,8 +32,10 @@ fn main() {
     //     0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 0, 0, 3, 1, 0, 2, 0x30, 0x30, 3, 0, 0, 0, 0xFF, 0, 0, 0,
     //     1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     // ];
-    let class = class_loader::load_class(&mut bytes.into_iter()).unwrap();
-    println!("{class:#?}");
+    let class = class_loader::load_class(&mut bytes.into_iter(), args.verbose).unwrap();
+    if args.verbose {
+        println!("{class:#?}");
+    }
     if args.run {
         virtual_machine::start_vm(class, args.verbose);
     }
