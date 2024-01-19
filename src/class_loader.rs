@@ -1,4 +1,7 @@
-use std::{cell::RefCell, iter::Peekable, rc::Rc};
+use std::{
+    iter::Peekable,
+    sync::{Arc, Mutex},
+};
 
 use crate::{
     class::{
@@ -24,7 +27,7 @@ pub enum MethodHandleKind {
 /// A member of the constant pool
 #[derive(Debug, Clone)]
 pub enum RawConstant {
-    String(Rc<str>),
+    String(Arc<str>),
     Int(i32),
     Float(f32),
     Long(i64),
@@ -301,7 +304,7 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
             Some((code, max_locals)) => (Some(code), max_locals),
             None => (None, 0),
         };
-        methods.push(Rc::new(Method {
+        methods.push(Arc::new(Method {
             max_locals,
             access_flags,
             name,
@@ -398,7 +401,7 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
         field_size,
         fields,
         statics,
-        static_data: RefCell::new(static_data),
+        static_data: Mutex::new(static_data),
         methods,
         bootstrap_methods,
         version,
@@ -584,7 +587,7 @@ fn get_u64(bytes: &mut impl Iterator<Item = u8>) -> Result<u64, String> {
     Ok(u64::from_be_bytes(bytes))
 }
 
-fn raw_str_index(constants: &[RawConstant], idx: usize) -> Result<Rc<str>, String> {
+fn raw_str_index(constants: &[RawConstant], idx: usize) -> Result<Arc<str>, String> {
     match constants.get(idx - 1) {
         Some(RawConstant::String(str)) => Ok(str.clone()),
         Some(other) => Err(format!("Expected a string; got `{other:?}`")),
@@ -592,7 +595,7 @@ fn raw_str_index(constants: &[RawConstant], idx: usize) -> Result<Rc<str>, Strin
     }
 }
 
-fn raw_class_index(constants: &[RawConstant], idx: usize) -> Result<Rc<str>, String> {
+fn raw_class_index(constants: &[RawConstant], idx: usize) -> Result<Arc<str>, String> {
     match constants.get(idx - 1) {
         Some(RawConstant::ClassRef { string_addr }) => {
             raw_str_index(constants, *string_addr as usize)
@@ -601,7 +604,7 @@ fn raw_class_index(constants: &[RawConstant], idx: usize) -> Result<Rc<str>, Str
         None => Err(String::from("Constant index out of range")),
     }
 }
-fn str_index(constants: &[Constant], idx: usize) -> Result<Rc<str>, String> {
+fn str_index(constants: &[Constant], idx: usize) -> Result<Arc<str>, String> {
     match constants.get(idx - 1) {
         Some(Constant::String(str)) => Ok(str.clone()),
         Some(other) => Err(format!("Expected a string; got `{other:?}`")),
@@ -609,7 +612,7 @@ fn str_index(constants: &[Constant], idx: usize) -> Result<Rc<str>, String> {
     }
 }
 
-fn class_index(constants: &[Constant], idx: usize) -> Result<Rc<str>, String> {
+fn class_index(constants: &[Constant], idx: usize) -> Result<Arc<str>, String> {
     match constants.get(idx - 1) {
         Some(Constant::ClassRef(str)) => Ok(str.clone()),
         Some(other) => Err(format!("Expected a class reference; got `{other:?}`")),
@@ -814,7 +817,7 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
 fn raw_name_type_index(
     constants: &[RawConstant],
     idx: usize,
-) -> Result<(Rc<str>, Rc<str>), String> {
+) -> Result<(Arc<str>, Arc<str>), String> {
     let Some(RawConstant::NameTypeDescriptor { name_desc_addr, type_addr }) = constants.get(idx - 1) else {
         return Err(String::from("Invalid NameTypeDescriptor"))
     };

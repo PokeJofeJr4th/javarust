@@ -1,4 +1,4 @@
-use std::{iter::Peekable, rc::Rc};
+use std::{iter::Peekable, sync::Arc};
 
 use crate::class::{BootstrapMethod, Constant, FieldType, MethodDescriptor};
 
@@ -7,7 +7,7 @@ pub enum Instruction {
     Noop,
     Push1(u32),
     Push2(u32, u32),
-    LoadString(Rc<str>),
+    LoadString(Arc<str>),
     Load1(usize),
     Load2(usize),
     Store1(usize),
@@ -36,14 +36,14 @@ pub enum Instruction {
     Return0,
     Return1,
     Return2,
-    GetStatic(Rc<str>, Rc<str>, FieldType),
-    GetField(Rc<str>, Rc<str>, FieldType),
-    PutField(Rc<str>, Rc<str>, FieldType),
-    InvokeVirtual(Rc<str>, Rc<str>, MethodDescriptor),
-    InvokeSpecial(Rc<str>, Rc<str>, MethodDescriptor),
-    InvokeStatic(Rc<str>, Rc<str>, MethodDescriptor),
-    InvokeDynamic(u16, Rc<str>, MethodDescriptor),
-    New(Rc<str>),
+    GetStatic(Arc<str>, Arc<str>, FieldType),
+    GetField(Arc<str>, Arc<str>, FieldType),
+    PutField(Arc<str>, Arc<str>, FieldType),
+    InvokeVirtual(Arc<str>, Arc<str>, MethodDescriptor),
+    InvokeSpecial(Arc<str>, Arc<str>, MethodDescriptor),
+    InvokeStatic(Arc<str>, Arc<str>, MethodDescriptor),
+    InvokeDynamic(u16, Arc<str>, MethodDescriptor),
+    New(Arc<str>),
     IfNull(bool, i16),
 }
 

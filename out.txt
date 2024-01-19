@@ -649,7 +649,7 @@ Class {
             1,
         ),
     ],
-    static_data: RefCell {
+    static_data: Mutex {
         value: [],
     },
     statics: [],

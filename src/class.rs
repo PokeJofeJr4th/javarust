@@ -1,7 +1,6 @@
-use std::cell::RefCell;
 use std::fmt::Debug;
 use std::ops::{BitAnd, BitOr};
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use crate::virtual_machine::Instruction;
 
@@ -10,20 +9,20 @@ pub struct Class {
     pub version: ClassVersion,
     pub constants: Vec<Constant>,
     pub access: AccessFlags,
-    pub this: Rc<str>,
-    pub super_class: Rc<str>,
+    pub this: Arc<str>,
+    pub super_class: Arc<str>,
     pub interfaces: Vec<u16>,
     pub field_size: usize,
     pub fields: Vec<(Field, usize)>,
-    pub static_data: RefCell<Vec<u32>>,
+    pub static_data: Mutex<Vec<u32>>,
     pub statics: Vec<(Field, usize)>,
-    pub methods: Vec<Rc<Method>>,
+    pub methods: Vec<Arc<Method>>,
     pub bootstrap_methods: Vec<BootstrapMethod>,
     pub attributes: Vec<Attribute>,
 }
 
 impl Class {
-    pub fn new(access: AccessFlags, this: Rc<str>, super_class: Rc<str>) -> Self {
+    pub fn new(access: AccessFlags, this: Arc<str>, super_class: Arc<str>) -> Self {
         Self {
             version: ClassVersion {
                 minor_version: 0,
@@ -36,7 +35,7 @@ impl Class {
             interfaces: Vec::new(),
             field_size: 0,
             fields: Vec::new(),
-            static_data: RefCell::new(Vec::new()),
+            static_data: Mutex::new(Vec::new()),
             statics: Vec::new(),
             methods: Vec::new(),
             bootstrap_methods: Vec::new(),
@@ -48,48 +47,48 @@ impl Class {
 #[derive(Debug, Clone)]
 pub enum MethodHandle {
     GetField {
-        class: Rc<str>,
-        name: Rc<str>,
+        class: Arc<str>,
+        name: Arc<str>,
         field_type: FieldType,
     },
     GetStatic {
-        class: Rc<str>,
-        name: Rc<str>,
+        class: Arc<str>,
+        name: Arc<str>,
         field_type: FieldType,
     },
     PutField {
-        class: Rc<str>,
-        name: Rc<str>,
+        class: Arc<str>,
+        name: Arc<str>,
         field_type: FieldType,
     },
     PutStatic {
-        class: Rc<str>,
-        name: Rc<str>,
+        class: Arc<str>,
+        name: Arc<str>,
         field_type: FieldType,
     },
     InvokeVirtual {
-        class: Rc<str>,
-        name: Rc<str>,
+        class: Arc<str>,
+        name: Arc<str>,
         method_type: MethodDescriptor,
     },
     InvokeStatic {
-        class: Rc<str>,
-        name: Rc<str>,
+        class: Arc<str>,
+        name: Arc<str>,
         method_type: MethodDescriptor,
     },
     InvokeSpecial {
-        class: Rc<str>,
-        name: Rc<str>,
+        class: Arc<str>,
+        name: Arc<str>,
         method_type: MethodDescriptor,
     },
     NewInvokeSpecial {
-        class: Rc<str>,
-        name: Rc<str>,
+        class: Arc<str>,
+        name: Arc<str>,
         method_type: MethodDescriptor,
     },
     InvokeInterface {
-        class: Rc<str>,
-        name: Rc<str>,
+        class: Arc<str>,
+        name: Arc<str>,
         method_type: MethodDescriptor,
     },
 }
@@ -97,31 +96,31 @@ pub enum MethodHandle {
 /// A member of the constant pool
 #[derive(Debug, Clone)]
 pub enum Constant {
-    String(Rc<str>),
+    String(Arc<str>),
     Int(i32),
     Float(f32),
     Long(i64),
     Double(f64),
-    ClassRef(Rc<str>),
-    StringRef(Rc<str>),
+    ClassRef(Arc<str>),
+    StringRef(Arc<str>),
     FieldRef {
-        class: Rc<str>,
-        name: Rc<str>,
+        class: Arc<str>,
+        name: Arc<str>,
         field_type: FieldType,
     },
     MethodRef {
-        class: Rc<str>,
-        name: Rc<str>,
+        class: Arc<str>,
+        name: Arc<str>,
         method_type: MethodDescriptor,
     },
     InterfaceRef {
-        class: Rc<str>,
-        name: Rc<str>,
-        interface_type: Rc<str>,
+        class: Arc<str>,
+        name: Arc<str>,
+        interface_type: Arc<str>,
     },
     NameTypeDescriptor {
-        name: Rc<str>,
-        type_descriptor: Rc<str>,
+        name: Arc<str>,
+        type_descriptor: Arc<str>,
     },
     MethodHandle(MethodHandle),
     MethodType {
@@ -132,7 +131,7 @@ pub enum Constant {
     // },
     InvokeDynamic {
         bootstrap_index: u16,
-        method_name: Rc<str>,
+        method_name: Arc<str>,
         method_type: MethodDescriptor,
     },
     // Module {
@@ -229,7 +228,7 @@ pub struct ClassVersion {
 #[derive(Debug)]
 pub struct Field {
     pub access_flags: AccessFlags,
-    pub name: Rc<str>,
+    pub name: Arc<str>,
     pub descriptor: FieldType,
     pub attributes: Vec<Attribute>,
     pub constant_value: Option<Constant>,
@@ -239,7 +238,7 @@ pub struct Field {
 pub struct Method {
     pub max_locals: u16,
     pub access_flags: AccessFlags,
-    pub name: Rc<str>,
+    pub name: Arc<str>,
     pub descriptor: MethodDescriptor,
     pub attributes: Vec<Attribute>,
     pub code: Option<Code>,
@@ -260,7 +259,7 @@ pub enum FieldType {
     Float,
     Int,
     Long,
-    Object(Rc<str>),
+    Object(Arc<str>),
     Short,
     Boolean,
     Array(Box<FieldType>),
@@ -277,7 +276,7 @@ impl FieldType {
 
 #[derive(Debug)]
 pub struct Attribute {
-    pub name: Rc<str>,
+    pub name: Arc<str>,
     pub data: Vec<u8>,
 }
 
@@ -285,7 +284,7 @@ pub struct Attribute {
 pub struct Code {
     pub max_stack: u16,
     pub code: Vec<Instruction>,
-    pub exception_table: Vec<(u16, u16, u16, Option<Rc<str>>)>,
+    pub exception_table: Vec<(u16, u16, u16, Option<Arc<str>>)>,
     pub attributes: Vec<Attribute>,
     pub stack_map: Vec<StackMapFrame>,
 }
@@ -328,7 +327,7 @@ pub enum VerificationTypeInfo {
     Float,
     Null,
     UninitializedThis,
-    Object { class_name: Rc<str> },
+    Object { class_name: Arc<str> },
     Uninitialized { offset: u16 },
     Long,
     Double,
