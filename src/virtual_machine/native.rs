@@ -158,6 +158,18 @@ pub(super) fn add_native_methods(
         attributes: Vec::new(),
         code: None,
     });
+    let println_int = Rc::new(Method {
+        max_locals: 2,
+        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        name: "println".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 1,
+            parameters: vec![FieldType::Int],
+            return_type: None,
+        },
+        attributes: Vec::new(),
+        code: None,
+    });
     let println_float = Rc::new(Method {
         max_locals: 2,
         access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -191,6 +203,7 @@ pub(super) fn add_native_methods(
         println.clone(),
         println_empty.clone(),
         println_float.clone(),
+        println_int.clone(),
     ]);
 
     let printstream = Rc::new(printstream);
@@ -320,6 +333,7 @@ pub(super) fn add_native_methods(
         (random.clone(), next_int),
         (printstream.clone(), println),
         (printstream.clone(), println_float),
+        (printstream.clone(), println_int),
         (printstream.clone(), println_empty),
         (string_concat_factory.clone(), make_concat_with_constants),
         (math.clone(), sqrt_double),

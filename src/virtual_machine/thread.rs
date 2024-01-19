@@ -806,9 +806,15 @@ impl Thread {
 
                 let new_stackframe = self.stack.last().unwrap().clone();
 
-                new_stackframe.borrow_mut().operand_stack.extend(stack_iter);
+                let new_locals = &mut new_stackframe.borrow_mut().locals;
+                for (index, value) in stack_iter.rev().enumerate() {
+                    if verbose {
+                        println!("new_locals[{index}]={value}");
+                    }
+                    new_locals[index] = value;
+                }
                 if verbose {
-                    println!("new stackframe: {new_stackframe:?}");
+                    println!("new locals: {new_locals:?}");
                 }
             }
             Instruction::InvokeStatic(class, name, method_type) => {
@@ -916,7 +922,7 @@ impl Thread {
                     args,
                 },
                 MethodDescriptor {
-                    parameter_size: _,
+                    parameter_size,
                     parameters,
                     return_type: Some(FieldType::Object(obj)),
                 },
@@ -932,6 +938,13 @@ impl Thread {
                     };
                 let mut output = String::new();
                 let mut parameters_iter = parameters.iter();
+
+                let mut stackframe_borrow = stackframe.borrow_mut();
+                let mut args_iter = (0..parameter_size)
+                    .map(|_| stackframe_borrow.operand_stack.pop().unwrap())
+                    .collect::<Vec<_>>();
+                drop(stackframe_borrow);
+
                 for c in str.chars() {
                     if c != '\u{1}' {
                         output.push(c);
@@ -941,7 +954,7 @@ impl Thread {
                         return Err(format!("Not enough parameters for java/lang/invoke/StringConcatFactory.makeConcatWithConstants: {str:?} {parameters:?}"))
                     };
                     if field_type.get_size() == 2 {
-                        let value = pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap();
+                        let value = pop_long(&mut args_iter).unwrap();
                         match field_type {
                             FieldType::Long => {
                                 write!(output, "{}", value as i64)
@@ -954,7 +967,7 @@ impl Thread {
                             _ => unreachable!(),
                         }
                     } else {
-                        let value = stackframe.borrow_mut().operand_stack.pop().unwrap();
+                        let value = args_iter.pop().unwrap();
                         match field_type {
                             FieldType::Boolean => {
                                 write!(output, "{}", value == 1)
@@ -963,6 +976,9 @@ impl Thread {
                             FieldType::Int | FieldType::Short | FieldType::Byte => {
                                 write!(output, "{}", value as i32)
                                     .map_err(|err| format!("{err:?}"))?;
+                            }
+                            FieldType::Char => {
+                                output.push(char::from_u32(value).unwrap());
                             }
                             FieldType::Float => {
                                 write!(output, "{}", f32::from_bits(value))
@@ -1107,13 +1123,12 @@ impl Thread {
                 let arg_type = stackframe.borrow().method.descriptor.parameters[0].clone();
                 match arg_type {
                     FieldType::Double => {
+                        let mut stackframe = stackframe.borrow_mut();
                         let param = f64::from_bits(
-                            pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap(),
+                            (stackframe.locals[0] as u64) << 32 | (stackframe.locals[1] as u64),
                         );
-                        push_long(
-                            &mut stackframe.borrow_mut().operand_stack,
-                            param.sqrt().to_bits(),
-                        );
+                        push_long(&mut stackframe.operand_stack, param.sqrt().to_bits());
+                        drop(stackframe);
                         self.return_two(verbose);
                     }
                     other => return Err(format!("java/lang/Math.sqrt({other:?}) is not defined")),
@@ -1250,6 +1265,9 @@ impl Thread {
                     FieldType::Float => {
                         println!("{}", f32::from_bits(arg));
                     }
+                    FieldType::Int => {
+                        println!("{}", arg as i32);
+                    }
                     _ => {
                         return Err(format!(
                             "Unimplemented println argument type: {:?}",
@@ -1310,8 +1328,8 @@ fn pop_long(stack: &mut Vec<u32>) -> Option<u64> {
 }
 
 fn push_long(stack: &mut Vec<u32>, l: u64) {
-    let lower = (l & 0x0000_FFFF) as u32;
-    let upper = (l >> 16) as u32;
+    let lower = (l & 0xFFFF_FFFF) as u32;
+    let upper = (l >> 32) as u32;
     stack.push(upper);
     stack.push(lower);
 }
