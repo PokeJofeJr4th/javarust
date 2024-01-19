@@ -6,7 +6,7 @@ use crate::{
     virtual_machine::search_method_area,
 };
 
-use super::{instruction::Type, Cmp, HeapElement, Instruction, Object, Op, StackFrame};
+use super::{instruction::Type, native, Cmp, HeapElement, Instruction, Object, Op, StackFrame};
 
 pub(super) struct Thread {
     pub pc_register: usize,
@@ -901,6 +901,7 @@ impl Thread {
         self.stack.push(Rc::new(RefCell::new(stackframe)));
     }
 
+    #[allow(clippy::too_many_lines)]
     fn invoke_dynamic(
         &mut self,
         method_name: &str,
@@ -955,6 +956,8 @@ impl Thread {
                     };
                     if field_type.get_size() == 2 {
                         let value = pop_long(&mut args_iter).unwrap();
+                        // since the stack is reversed, this stuff is goofy
+                        let value = value >> 32 | value << 32;
                         match field_type {
                             FieldType::Long => {
                                 write!(output, "{}", value as i64)
@@ -1053,7 +1056,7 @@ impl Thread {
                 self.return_one(verbose);
             }
             ("java/util/Random", "<init>", _) => {
-                let obj_ref = *stackframe.borrow_mut().operand_stack.last().unwrap();
+                let obj_ref = stackframe.borrow_mut().locals[0];
                 let heap_borrow = self.heap.borrow();
                 let mut heap_element = heap_borrow.get(obj_ref as usize).unwrap().borrow_mut();
                 let HeapElement::Object(random_obj) = &mut *heap_element else {
@@ -1144,76 +1147,29 @@ impl Thread {
                 },
             ) => {
                 // println!("{stackframe:?}");
-                let str_ref = stackframe.borrow_mut().operand_stack.pop().unwrap();
-                let obj_ref = stackframe.borrow_mut().operand_stack.pop().unwrap();
-
-                let heap_borrow = self.heap.borrow();
-                let heap_element = heap_borrow.get(str_ref as usize).unwrap().borrow();
-                let HeapElement::String(init_string) = &*heap_element else {
-                    return Err(format!("Expected a java/lang/String instance for java/lang/StringBuilder.<init>; got {heap_element:?}"));
-                };
-                let init_string = init_string.clone();
-                drop(heap_element);
-                drop(heap_borrow);
-
-                let heap_borrow = self.heap.borrow();
-                let mut heap_element = heap_borrow.get(obj_ref as usize).unwrap().borrow_mut();
-                let HeapElement::Object(random_obj) = &mut *heap_element else {
-                    return Err(format!("Expected a java/lang/StringBuilder instance for java/lang/StringBuilder.<init>; got {heap_element:?}"));
-                };
-                random_obj
-                    .class_mut_or_insert(&stackframe.borrow().class)
-                    .native_fields
-                    .push(Box::new(init_string));
-                drop(heap_element);
-                drop(heap_borrow);
+                native::StringBuilder::init(&self.heap.borrow(), stackframe)?;
                 self.return_void();
             }
             ("java/lang/StringBuilder", "setCharAt", _) => {
                 let builder_ref = stackframe.borrow_mut().locals[0];
                 let index = stackframe.borrow_mut().locals[1];
                 let char = stackframe.borrow_mut().locals[2];
-
-                let heap_borrow = self.heap.borrow();
-                let mut heap_element = heap_borrow.get(builder_ref as usize).unwrap().borrow_mut();
-                let HeapElement::Object(random_obj) = &mut *heap_element else {
-                    return Err(format!("Expected a java/lang/StringBuilder instance for java/lang/StringBuilder.<init>; got {heap_element:?}"));
-                };
-                let string_ref = random_obj
-                    .class_mut_or_insert(&stackframe.borrow().class)
-                    .native_fields[0]
-                    .downcast_mut::<String>()
-                    .unwrap();
-                string_ref.replace_range(
-                    string_ref
-                        .char_indices()
-                        .nth(index as usize)
-                        .map(|(pos, ch)| (pos..pos + ch.len_utf8()))
-                        .unwrap(),
-                    &String::from(char::from_u32(char).unwrap()),
-                );
-                // println!("{string_ref}");
-                drop(heap_element);
-                drop(heap_borrow);
+                native::StringBuilder::set_char_at(
+                    &self.heap.borrow(),
+                    stackframe,
+                    builder_ref as usize,
+                    index as usize,
+                    char::from_u32(char).unwrap(),
+                )?;
                 self.return_void();
             }
             ("java/lang/StringBuilder", "toString", _) => {
                 let builder_ref = stackframe.borrow_mut().locals[0];
-                let heap_borrow = self.heap.borrow();
-                let mut heap_element = heap_borrow.get(builder_ref as usize).unwrap().borrow_mut();
-                let HeapElement::Object(builder_obj) = &mut *heap_element else {
-                    return Err(format!("Expected a java/lang/StringBuilder instance for java/lang/StringBuilder.<init>; got {heap_element:?}"));
-                };
-                let string = builder_obj
-                    .class_mut_or_insert(&stackframe.borrow().class)
-                    .native_fields[0]
-                    .downcast_ref::<String>()
-                    .unwrap()
-                    .clone();
-
-                drop(heap_element);
-                drop(heap_borrow);
-
+                let string = native::StringBuilder::to_string(
+                    &self.heap.borrow(),
+                    stackframe,
+                    builder_ref as usize,
+                )?;
                 let string_ref =
                     heap_allocate(&mut self.heap.borrow_mut(), HeapElement::String(string));
 

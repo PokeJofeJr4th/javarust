@@ -4,6 +4,9 @@ use crate::class::{AccessFlags, Class, Field, FieldType, Method, MethodDescripto
 
 use super::{thread::heap_allocate, HeapElement, Object};
 
+#[allow(non_snake_case)]
+pub mod StringBuilder;
+
 #[allow(clippy::too_many_lines)]
 pub(super) fn add_native_methods(
     method_area: &mut Vec<(Rc<Class>, Rc<Method>)>,
@@ -67,7 +70,7 @@ pub(super) fn add_native_methods(
     let string = Rc::new(string);
 
     let builder_init = Rc::new(Method {
-        max_locals: 0,
+        max_locals: 1,
         access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         name: "<init>".into(),
         descriptor: MethodDescriptor {

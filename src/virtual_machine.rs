@@ -28,7 +28,7 @@ fn search_method_area(
 }
 
 #[derive(Debug)]
-struct StackFrame {
+pub struct StackFrame {
     locals: Vec<u32>,
     operand_stack: Vec<u32>,
     method: Rc<Method>,
@@ -47,7 +47,7 @@ impl StackFrame {
 }
 
 #[derive(Debug)]
-enum HeapElement {
+pub enum HeapElement {
     Object(Object),
     String(String),
     Array(Vec<u32>),
@@ -71,7 +71,7 @@ impl Instance {
 }
 
 #[derive(Debug)]
-struct Object {
+pub struct Object {
     fields: Vec<(Rc<str>, Instance)>,
 }
 
