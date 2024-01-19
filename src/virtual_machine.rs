@@ -2,7 +2,7 @@ mod instruction;
 mod native;
 mod thread;
 
-use std::{cell::RefCell, rc::Rc};
+use std::{any::Any, cell::RefCell, rc::Rc};
 
 use crate::class::{Class, Method, MethodDescriptor};
 
@@ -37,9 +37,8 @@ struct StackFrame {
 
 impl StackFrame {
     pub fn from_method(method: Rc<Method>, class: Rc<Class>) -> Self {
-        let locals = method.code.as_ref().map_or(0, |code| code.max_locals);
         Self {
-            locals: (0..=locals).map(|_| 0).collect(),
+            locals: (0..=method.max_locals).map(|_| 0).collect(),
             operand_stack: Vec::new(),
             class,
             method,
@@ -57,8 +56,23 @@ enum HeapElement {
 }
 
 #[derive(Debug)]
+pub struct Instance {
+    pub fields: Vec<u32>,
+    pub native_fields: Vec<Box<dyn Any>>,
+}
+
+impl Instance {
+    pub const fn new() -> Self {
+        Self {
+            fields: Vec::new(),
+            native_fields: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct Object {
-    fields: Vec<(Rc<str>, Vec<u32>)>,
+    fields: Vec<(Rc<str>, Instance)>,
 }
 
 impl Object {
@@ -66,7 +80,7 @@ impl Object {
         Self { fields: Vec::new() }
     }
 
-    pub fn class_mut_or_insert(&mut self, class: &Class) -> &mut Vec<u32> {
+    pub fn class_mut_or_insert(&mut self, class: &Class) -> &mut Instance {
         let name = class.this.clone();
         &mut if self
             .fields
@@ -79,14 +93,20 @@ impl Object {
                 .unwrap()
         } else {
             let vec = vec![0; class.field_size];
-            self.fields.push((class.this.clone(), vec));
+            self.fields.push((
+                class.this.clone(),
+                Instance {
+                    fields: vec,
+                    native_fields: Vec::new(),
+                },
+            ));
             self.fields.last_mut().unwrap()
         }
         .1
     }
 }
 
-pub fn start_vm(src: Class) {
+pub fn start_vm(src: Class, verbose: bool) {
     let class = Rc::new(src);
     let mut method_area = class
         .methods
@@ -122,6 +142,6 @@ pub fn start_vm(src: Class) {
         if primary_thread.stack.is_empty() {
             return;
         }
-        primary_thread.tick().unwrap();
+        primary_thread.tick(verbose).unwrap();
     }
 }

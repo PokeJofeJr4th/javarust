@@ -295,7 +295,12 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>) -> Result<Class, String>
             // (false, []) => return Err(String::from("Method must contain code")),
             _ => return Err(String::from("Method must only have one code attribute")),
         };
+        let (code, max_locals) = match code {
+            Some((code, max_locals)) => (Some(code), max_locals),
+            None => (None, 0),
+        };
         methods.push(Rc::new(Method {
+            max_locals,
             access_flags,
             name,
             descriptor,
@@ -411,7 +416,7 @@ fn get_attribute(
 }
 
 #[allow(clippy::too_many_lines)]
-fn parse_code_attribute(constants: &[Constant], bytes: Vec<u8>) -> Result<Code, String> {
+fn parse_code_attribute(constants: &[Constant], bytes: Vec<u8>) -> Result<(Code, u16), String> {
     let mut bytes = bytes.into_iter();
     let max_stack = get_u16(&mut bytes)?;
     let max_locals = get_u16(&mut bytes)?;
@@ -514,14 +519,16 @@ fn parse_code_attribute(constants: &[Constant], bytes: Vec<u8>) -> Result<Code, 
 
     let code = hydrate_code(constants, code)?;
 
-    Ok(Code {
-        max_stack,
+    Ok((
+        Code {
+            max_stack,
+            code,
+            exception_table,
+            attributes,
+            stack_map,
+        },
         max_locals,
-        code,
-        exception_table,
-        attributes,
-        stack_map,
-    })
+    ))
 }
 
 fn parse_verification_type(

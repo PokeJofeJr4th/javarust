@@ -21,6 +21,8 @@ struct Args {
     filename: PathBuf,
     #[clap(short, long)]
     run: bool,
+    #[clap(short, long)]
+    verbose: bool,
 }
 
 fn main() {
@@ -33,6 +35,6 @@ fn main() {
     let class = class_loader::load_class(&mut bytes.into_iter()).unwrap();
     println!("{class:#?}");
     if args.run {
-        virtual_machine::start_vm(class);
+        virtual_machine::start_vm(class, args.verbose);
     }
 }

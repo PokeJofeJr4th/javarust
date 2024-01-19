@@ -237,6 +237,7 @@ pub struct Field {
 
 #[derive(Debug)]
 pub struct Method {
+    pub max_locals: u16,
     pub access_flags: AccessFlags,
     pub name: Rc<str>,
     pub descriptor: MethodDescriptor,
@@ -283,7 +284,6 @@ pub struct Attribute {
 #[derive(Debug)]
 pub struct Code {
     pub max_stack: u16,
-    pub max_locals: u16,
     pub code: Vec<Instruction>,
     pub exception_table: Vec<(u16, u16, u16, Option<Rc<str>>)>,
     pub attributes: Vec<Attribute>,

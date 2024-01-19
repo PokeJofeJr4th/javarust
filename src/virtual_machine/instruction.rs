@@ -315,7 +315,7 @@ pub fn parse_instruction(
         astore_n @ 0x4B..=0x4E => {
             // astore_<n>
             // store one item from stack into locals
-            let index = astore_n - 0x4A;
+            let index = astore_n - 0x4B;
             Ok(Instruction::Store1(index as usize))
         }
         0x52 | 0x50 => {

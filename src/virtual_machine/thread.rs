@@ -1,7 +1,8 @@
-use std::{cell::RefCell, cmp::Ordering, rc::Rc};
+use rand::{rngs::ThreadRng, thread_rng, Rng};
+use std::{cell::RefCell, cmp::Ordering, fmt::Write, rc::Rc};
 
 use crate::{
-    class::{Class, Constant, Method},
+    class::{BootstrapMethod, Class, Constant, FieldType, Method, MethodDescriptor, MethodHandle},
     virtual_machine::search_method_area,
 };
 
@@ -17,14 +18,16 @@ pub(super) struct Thread {
 
 impl Thread {
     #[allow(clippy::too_many_lines)]
-    pub fn tick(&mut self) -> Result<(), String> {
+    pub fn tick(&mut self, verbose: bool) -> Result<(), String> {
         // this way we can mutate the stack frame without angering the borrow checker
         let stackframe = self.stack.last().unwrap().clone();
         if stackframe.borrow().method.access_flags.is_native() {
-            return self.invoke_native(&stackframe);
+            return self.invoke_native(&stackframe, verbose);
         }
         let opcode = self.get_pc_byte(&stackframe);
-        println!("{opcode:?}");
+        if verbose {
+            println!("{opcode:?}");
+        }
         match opcode {
             Instruction::Noop => {
                 // nop
@@ -52,6 +55,9 @@ impl Thread {
             Instruction::Load1(index) => {
                 // load one item from locals to stack
                 value_load(&stackframe, index);
+                if verbose {
+                    println!("stack {:?}", stackframe.borrow().operand_stack);
+                }
             }
             Instruction::Store2(index) => {
                 // put two values into a local
@@ -60,6 +66,9 @@ impl Thread {
             Instruction::Store1(index) => {
                 // put one reference into a local
                 value_store(&stackframe, index);
+                if verbose {
+                    println!("locals {:?}", stackframe.borrow().locals);
+                }
             }
             Instruction::Pop => {
                 stackframe.borrow_mut().operand_stack.pop();
@@ -622,7 +631,7 @@ impl Thread {
             }
             Instruction::Return1 => {
                 // return one thing
-                self.return_one();
+                self.return_one(verbose);
             }
             Instruction::GetStatic(class, name, field_type) => {
                 // getstatic
@@ -639,7 +648,9 @@ impl Thread {
                         format!("Couldn't find static `{name}` on class `{}`", class.this)
                     })?
                     .1;
-                println!("Getting Static {name} of {}", class.this);
+                if verbose {
+                    println!("Getting Static {name} of {}", class.this);
+                }
                 let static_fields = class.static_data.borrow();
 
                 if field_type.get_size() == 1 {
@@ -670,19 +681,21 @@ impl Thread {
                 let object = self.heap.borrow()[object_index as usize].clone();
 
                 let HeapElement::Object(ref mut object_borrow) = *object.borrow_mut() else {
-                    println!("{:#?}[{object_index}] = {object:?}", self.heap);
+                    println!("heap{:#?}[{object_index}] = {object:?}", self.heap);
                     return Err(String::from("Expected an object pointer"))
                 };
 
-                println!("Getting Field {name} of {}", class.this);
+                if verbose {
+                    println!("Getting Field {name} of {} at {object_index}", class.this);
+                }
                 let object_fields = object_borrow.class_mut_or_insert(&class);
 
                 if field_type.get_size() == 1 {
-                    let value = object_fields[field_index];
+                    let value = object_fields.fields[field_index];
                     stackframe.borrow_mut().operand_stack.push(value);
                 } else {
-                    let upper = object_fields[field_index];
-                    let lower = object_fields[field_index + 1];
+                    let upper = object_fields.fields[field_index];
+                    let lower = object_fields.fields[field_index + 1];
                     stackframe.borrow_mut().operand_stack.extend([upper, lower]);
                 }
             }
@@ -718,10 +731,10 @@ impl Thread {
                 let object_fields = object_borrow.class_mut_or_insert(&class);
 
                 if field_type.get_size() == 1 {
-                    object_fields[field_index] = value as u32;
+                    object_fields.fields[field_index] = value as u32;
                 } else {
-                    object_fields[field_index] = (value >> 32) as u32;
-                    object_fields[field_index + 1] = value as u32;
+                    object_fields.fields[field_index] = (value >> 32) as u32;
+                    object_fields.fields[field_index + 1] = value as u32;
                 }
             }
             Instruction::InvokeVirtual(class, name, method_type) => {
@@ -733,16 +746,23 @@ impl Thread {
                     )?;
                 let args_start =
                     stackframe.borrow().operand_stack.len() - method_type.parameter_size - 1;
-                // println!("Args Start: {args_start}\nStack: {stackframe:?}");
+                if verbose {
+                    println!(
+                        "Args Start: {args_start}\nStack: {:?}",
+                        stackframe.borrow().operand_stack
+                    );
+                }
                 let stack = &mut stackframe.borrow_mut().operand_stack;
                 let mut stack_iter = core::mem::take(stack).into_iter();
                 stack.extend((&mut stack_iter).take(args_start));
                 stack.push(self.pc_register as u32);
 
-                println!(
-                    "Invoking Virtual Method {} on {}",
-                    method_ref.name, class_ref.this
-                );
+                if verbose {
+                    println!(
+                        "Invoking Virtual Method {} on {}",
+                        method_ref.name, class_ref.this
+                    );
+                }
                 self.invoke_method(method_ref, class_ref);
                 self.pc_register = 0;
 
@@ -751,10 +771,14 @@ impl Thread {
                 let new_locals = &mut new_stackframe.borrow_mut().locals;
                 // TODO: .rev() might not be correct
                 for (index, value) in stack_iter.enumerate() {
-                    println!("stack[{index}]={value}");
+                    if verbose {
+                        println!("new_locals[{index}]={value}");
+                    }
                     new_locals[index] = value;
                 }
-                println!("{new_locals:?}");
+                if verbose {
+                    println!("new locals: {new_locals:?}");
+                }
             }
             Instruction::InvokeSpecial(class, name, method_type) => {
                 // invoke an instance method
@@ -764,32 +788,40 @@ impl Thread {
                 let args_start =
                     stackframe.borrow().operand_stack.len() - method_type.parameter_size - 1;
                 let stack = &mut stackframe.borrow_mut().operand_stack;
+                if verbose {
+                    println!("arg start: {args_start} stack: {stack:?}");
+                }
                 let mut stack_iter = core::mem::take(stack).into_iter();
                 stack.extend((&mut stack_iter).take(args_start));
                 stack.push(self.pc_register as u32);
 
-                let args = stack_iter.collect::<Vec<_>>();
-
-                println!(
-                    "Invoking Special Method {} on {}",
-                    method_ref.name, class_ref.this
-                );
+                if verbose {
+                    println!(
+                        "Invoking Special Method {} on {}",
+                        method_ref.name, class_ref.this
+                    );
+                }
                 self.invoke_method(method_ref, class_ref);
                 self.pc_register = 0;
 
                 let new_stackframe = self.stack.last().unwrap().clone();
 
-                new_stackframe.borrow_mut().operand_stack.extend(args);
+                new_stackframe.borrow_mut().operand_stack.extend(stack_iter);
+                if verbose {
+                    println!("new stackframe: {new_stackframe:?}");
+                }
             }
             Instruction::InvokeStatic(class, name, method_type) => {
                 // make a static method
                 let (class_ref, method_ref) =
                     search_method_area(&self.method_area, &class, &name, &method_type)
                         .ok_or_else(|| format!("Error during InvokeStatic; {class}.{name}"))?;
-                println!(
-                    "Invoking Static Method {} on {}",
-                    method_ref.name, class_ref.this,
-                );
+                if verbose {
+                    println!(
+                        "Invoking Static Method {} on {}",
+                        method_ref.name, class_ref.this,
+                    );
+                }
                 let args_start =
                     stackframe.borrow().operand_stack.len() - method_type.parameter_size;
                 let stack = &mut stackframe.borrow_mut().operand_stack;
@@ -797,45 +829,33 @@ impl Thread {
                 stack.extend((&mut stack_iter).take(args_start));
                 stack.push(self.pc_register as u32);
 
-                let args = stack_iter.collect::<Vec<_>>();
-
                 self.invoke_method(method_ref, class_ref);
                 self.pc_register = 0;
 
                 let new_stackframe = self.stack.last().unwrap().clone();
 
-                new_stackframe.borrow_mut().operand_stack.extend(args);
+                let new_locals = &mut new_stackframe.borrow_mut().locals;
+                // TODO: .rev() might not be correct
+                for (index, value) in stack_iter.enumerate() {
+                    if verbose {
+                        println!("new_locals[{index}]={value}");
+                    }
+                    new_locals[index] = value;
+                }
+                if verbose {
+                    println!("new locals: {new_locals:?}");
+                }
             }
             Instruction::InvokeDynamic(bootstrap_index, method_name, method_type) => {
-                // dynamically figure out what to do
-                let mut bootstrap_object = Object::new();
-                let method_handle_class =
-                    search_class_area(&self.class_area, "java/lang/invoke/MethodHandle").unwrap();
-                bootstrap_object.class_mut_or_insert(&method_handle_class)[0] =
-                    bootstrap_index as u32;
-                let bootstrap_pointer = heap_allocate(
-                    &mut self.heap.borrow_mut(),
-                    HeapElement::Object(bootstrap_object),
-                );
                 let bootstrap_method =
                     stackframe.borrow().class.bootstrap_methods[bootstrap_index as usize].clone();
-
-                // start grabbing stuff
-                let stack = &mut stackframe.borrow_mut().operand_stack;
-                stack.push(self.pc_register as u32);
-                // reference to current class name
-                // reference to method name
-                // reference to method type
-                // rest of args
-                // push to stack
-                // get original stack size
-                // tick until we have the method
-                // invoke the method we got
-
-                return Err(format!(
-                    "Invoking Dynamic {bootstrap_method:?} - {method_name} : {method_type:?}"
-                ));
-                // TODO: Finish InvokeDynamic
+                self.invoke_dynamic(
+                    &method_name,
+                    bootstrap_method,
+                    method_type,
+                    &stackframe,
+                    verbose,
+                )?;
             }
             Instruction::New(class) => {
                 // make a new object instance
@@ -855,7 +875,7 @@ impl Thread {
                     self.pc_register += branch as usize;
                 }
             }
-            other => return Err(format!("Invalid Opcode: 0x{other:?}")),
+            other => return Err(format!("Invalid Opcode: {other:?}")),
         }
         Ok(())
     }
@@ -875,88 +895,373 @@ impl Thread {
         self.stack.push(Rc::new(RefCell::new(stackframe)));
     }
 
-    fn invoke_native(&mut self, stackframe: &RefCell<StackFrame>) -> Result<(), String> {
-        let name = stackframe.borrow().method.name.clone();
-        let class = stackframe.borrow().class.this.clone();
-        match (&*class, &*name) {
-            ("java/lang/Object", "<init>") => self.return_void(),
-            ("java/io/PrintStream", "println") => {
-                let args = stackframe.borrow().method.descriptor.parameter_size;
-                if args == 0 {
-                    println!();
-                } else {
-                    println!("{stackframe:?}");
-                    let arg = stackframe.borrow_mut().locals[0];
-                    let heap_borrow = self.heap.borrow();
-                    let reference = heap_borrow.get(arg as usize);
-                    match &*reference.unwrap().borrow() {
-                        HeapElement::String(str) => println!("{str}"),
-                        _ => todo!(),
+    fn invoke_dynamic(
+        &mut self,
+        method_name: &str,
+        method_handle: BootstrapMethod,
+        method_descriptor: MethodDescriptor,
+        stackframe: &RefCell<StackFrame>,
+        verbose: bool,
+    ) -> Result<(), String> {
+        match (method_name, method_handle, method_descriptor) {
+            (
+                "makeConcatWithConstants",
+                BootstrapMethod {
+                    method:
+                        MethodHandle::InvokeStatic {
+                            class,
+                            name,
+                            method_type: _,
+                        },
+                    args,
+                },
+                MethodDescriptor {
+                    parameter_size: _,
+                    parameters,
+                    return_type: Some(FieldType::Object(obj)),
+                },
+            ) if &*class == "java/lang/invoke/StringConcatFactory"
+                && &*name == "makeConcatWithConstants"
+                && &*obj == "java/lang/String" =>
+            {
+                if verbose {
+                    println!("{:?}", self.heap);
+                }
+                let [Constant::String(str) | Constant::StringRef(str)] = &args[..] else {
+                        return Err(format!("Expected a single template string; got {args:?}"))
+                    };
+                let mut output = String::new();
+                let mut parameters_iter = parameters.iter();
+                for c in str.chars() {
+                    if c != '\u{1}' {
+                        output.push(c);
+                        continue;
                     }
-                    drop(heap_borrow);
+                    let Some(field_type) = parameters_iter.next() else {
+                        return Err(format!("Not enough parameters for java/lang/invoke/StringConcatFactory.makeConcatWithConstants: {str:?} {parameters:?}"))
+                    };
+                    if field_type.get_size() == 2 {
+                        let value = pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap();
+                        match field_type {
+                            FieldType::Long => {
+                                write!(output, "{}", value as i64)
+                                    .map_err(|err| format!("{err:?}"))?;
+                            }
+                            FieldType::Double => {
+                                write!(output, "{}", f64::from_bits(value))
+                                    .map_err(|err| format!("{err:?}"))?;
+                            }
+                            _ => unreachable!(),
+                        }
+                    } else {
+                        let value = stackframe.borrow_mut().operand_stack.pop().unwrap();
+                        match field_type {
+                            FieldType::Boolean => {
+                                write!(output, "{}", value == 1)
+                                    .map_err(|err| format!("{err:?}"))?;
+                            }
+                            FieldType::Int | FieldType::Short | FieldType::Byte => {
+                                write!(output, "{}", value as i32)
+                                    .map_err(|err| format!("{err:?}"))?;
+                            }
+                            FieldType::Float => {
+                                write!(output, "{}", f32::from_bits(value))
+                                    .map_err(|err| format!("{err:?}"))?;
+                            }
+                            FieldType::Object(class) if &**class == "java/lang/String" => {
+                let heap_borrow = self.heap.borrow();
+                if verbose {
+                    println!("{value}");
+                }
+                let heap_element = heap_borrow.get(value as usize).unwrap().borrow();
+                let HeapElement::String(str) = &*heap_element else {
+                    return Err(format!("Expected a java/lang/String instance for java/lang/invoke/StringConcatFactory.makeConcatWithConstants; got {heap_element:?}"));
+                };
+                write!(output, "{str}").map_err(|err| format!("{err:?}"))?;
+                drop(heap_element);
+                drop(heap_borrow);
+                            }
+                            other => return Err(format!("Unsupported item for java/lang/invoke/StringConcatFactory.makeConcatWithConstants: {other:?}")),
+                        }
+                    }
+                }
+                let heap_pointer =
+                    heap_allocate(&mut self.heap.borrow_mut(), HeapElement::String(output));
+                stackframe.borrow_mut().operand_stack.push(heap_pointer);
+                if verbose {
+                    println!("makeConcatWithConstants: {heap_pointer}");
+                }
+            }
+            (n, h, d) => return Err(format!("Error during InvokeDynamic: {n}: {d:?}; {h:?}")),
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn invoke_native(
+        &mut self,
+        stackframe: &RefCell<StackFrame>,
+        verbose: bool,
+    ) -> Result<(), String> {
+        let name = stackframe.borrow().method.name.clone();
+        let method_type = stackframe.borrow().method.descriptor.clone();
+        let class = stackframe.borrow().class.this.clone();
+        match (&*class, &*name, method_type) {
+            ("java/lang/Object", "<init>", _) => self.return_void(),
+            ("java/lang/String", "length", _) => {
+                let string_ref = stackframe.borrow_mut().locals[0];
+                let heap_borrow = self.heap.borrow();
+                let heap_element = heap_borrow.get(string_ref as usize).unwrap().borrow();
+                let HeapElement::String(str) = &*heap_element else {
+                    return Err(format!("Expected a string for java/lang/String.length(); got {heap_element:?}"));
+                };
+                stackframe.borrow_mut().operand_stack.push(str.len() as u32);
+                drop(heap_element);
+                drop(heap_borrow);
+                self.return_one(verbose);
+            }
+            ("java/lang/String", "charAt", _) => {
+                let string_ref = stackframe.borrow_mut().locals[0];
+                let char = stackframe.borrow_mut().locals[1];
+                let heap_borrow = self.heap.borrow();
+                let heap_element = heap_borrow.get(string_ref as usize).unwrap().borrow();
+                let HeapElement::String(str) = &*heap_element else {
+                    return Err(format!("Expected a string for java/lang/String.length(); got {heap_element:?}"));
+                };
+                stackframe
+                    .borrow_mut()
+                    .operand_stack
+                    .push(str.chars().nth(char as usize).unwrap_or(0 as char) as u32);
+                drop(heap_element);
+                drop(heap_borrow);
+                self.return_one(verbose);
+            }
+            ("java/util/Random", "<init>", _) => {
+                let obj_ref = stackframe.borrow_mut().locals[0];
+                let heap_borrow = self.heap.borrow();
+                let mut heap_element = heap_borrow.get(obj_ref as usize).unwrap().borrow_mut();
+                let HeapElement::Object(random_obj) = &mut *heap_element else {
+                    return Err(format!("Expected a java/util/Random instance for java/util/Random.<init>; got {heap_element:?}"));
+                };
+                random_obj
+                    .class_mut_or_insert(&stackframe.borrow().class)
+                    .native_fields
+                    .push(Box::new(thread_rng()));
+                stackframe.borrow_mut().operand_stack.push(obj_ref);
+                drop(heap_element);
+                drop(heap_borrow);
+                self.return_void();
+            }
+            (
+                "java/util/Random",
+                "nextInt",
+                MethodDescriptor {
+                    parameter_size: 0, ..
+                },
+            ) => {
+                let obj_ref = stackframe.borrow_mut().locals[0];
+                let heap_borrow = self.heap.borrow();
+                let mut heap_element = heap_borrow.get(obj_ref as usize).unwrap().borrow_mut();
+                let HeapElement::Object(random_obj) = &mut *heap_element else {
+                    return Err(format!("Expected a java/util/Random instance for java/util/Random.<init>; got {heap_element:?}"));
+                };
+                let result = random_obj
+                    .class_mut_or_insert(&stackframe.borrow().class)
+                    .native_fields[0]
+                    .downcast_mut::<ThreadRng>()
+                    .unwrap()
+                    .gen();
+                drop(heap_element);
+                drop(heap_borrow);
+                stackframe.borrow_mut().operand_stack.push(result);
+                self.return_one(verbose);
+            }
+            (
+                "java/util/Random",
+                "nextInt",
+                MethodDescriptor {
+                    parameter_size: 1, ..
+                },
+            ) => {
+                let obj_ref = stackframe.borrow().locals[0];
+                let heap_borrow = self.heap.borrow();
+                let mut heap_element = heap_borrow.get(obj_ref as usize).unwrap().borrow_mut();
+                let HeapElement::Object(random_obj) = &mut *heap_element else {
+                    return Err(format!("Expected a java/util/Random instance for java/util/Random.<init>; got {heap_element:?}"));
+                };
+                let right_bound = stackframe.borrow().locals[1];
+                let result = random_obj
+                    .class_mut_or_insert(&stackframe.borrow().class)
+                    .native_fields[0]
+                    .downcast_mut::<ThreadRng>()
+                    .unwrap()
+                    .gen_range(0..right_bound);
+                drop(heap_element);
+                drop(heap_borrow);
+                stackframe.borrow_mut().operand_stack.push(result);
+                self.return_one(verbose);
+            }
+            ("java/lang/Math", "sqrt", _) => {
+                let arg_type = stackframe.borrow().method.descriptor.parameters[0].clone();
+                match arg_type {
+                    FieldType::Double => {
+                        let param = f64::from_bits(
+                            pop_long(&mut stackframe.borrow_mut().operand_stack).unwrap(),
+                        );
+                        push_long(
+                            &mut stackframe.borrow_mut().operand_stack,
+                            param.sqrt().to_bits(),
+                        );
+                        self.return_two(verbose);
+                    }
+                    other => return Err(format!("java/lang/Math.sqrt({other:?}) is not defined")),
+                }
+            }
+            (
+                "java/lang/StringBuilder",
+                "<init>",
+                MethodDescriptor {
+                    parameter_size: 1,
+                    parameters: _,
+                    return_type: None,
+                },
+            ) => {
+                // println!("{stackframe:?}");
+                let str_ref = stackframe.borrow_mut().operand_stack.pop().unwrap();
+                let obj_ref = stackframe.borrow_mut().operand_stack.pop().unwrap();
+
+                let heap_borrow = self.heap.borrow();
+                let heap_element = heap_borrow.get(str_ref as usize).unwrap().borrow();
+                let HeapElement::String(init_string) = &*heap_element else {
+                    return Err(format!("Expected a java/lang/String instance for java/lang/StringBuilder.<init>; got {heap_element:?}"));
+                };
+                let init_string = init_string.clone();
+                drop(heap_element);
+                drop(heap_borrow);
+
+                let heap_borrow = self.heap.borrow();
+                let mut heap_element = heap_borrow.get(obj_ref as usize).unwrap().borrow_mut();
+                let HeapElement::Object(random_obj) = &mut *heap_element else {
+                    return Err(format!("Expected a java/lang/StringBuilder instance for java/lang/StringBuilder.<init>; got {heap_element:?}"));
+                };
+                random_obj
+                    .class_mut_or_insert(&stackframe.borrow().class)
+                    .native_fields
+                    .push(Box::new(init_string));
+                drop(heap_element);
+                drop(heap_borrow);
+                self.return_void();
+            }
+            ("java/lang/StringBuilder", "setCharAt", _) => {
+                let builder_ref = stackframe.borrow_mut().locals[0];
+                let index = stackframe.borrow_mut().locals[1];
+                let char = stackframe.borrow_mut().locals[2];
+
+                let heap_borrow = self.heap.borrow();
+                let mut heap_element = heap_borrow.get(builder_ref as usize).unwrap().borrow_mut();
+                let HeapElement::Object(random_obj) = &mut *heap_element else {
+                    return Err(format!("Expected a java/lang/StringBuilder instance for java/lang/StringBuilder.<init>; got {heap_element:?}"));
+                };
+                let string_ref = random_obj
+                    .class_mut_or_insert(&stackframe.borrow().class)
+                    .native_fields[0]
+                    .downcast_mut::<String>()
+                    .unwrap();
+                string_ref.replace_range(
+                    string_ref
+                        .char_indices()
+                        .nth(index as usize)
+                        .map(|(pos, ch)| (pos..pos + ch.len_utf8()))
+                        .unwrap(),
+                    &String::from(char::from_u32(char).unwrap()),
+                );
+                // println!("{string_ref}");
+                drop(heap_element);
+                drop(heap_borrow);
+                self.return_void();
+            }
+            ("java/lang/StringBuilder", "toString", _) => {
+                let builder_ref = stackframe.borrow_mut().locals[0];
+                let heap_borrow = self.heap.borrow();
+                let mut heap_element = heap_borrow.get(builder_ref as usize).unwrap().borrow_mut();
+                let HeapElement::Object(builder_obj) = &mut *heap_element else {
+                    return Err(format!("Expected a java/lang/StringBuilder instance for java/lang/StringBuilder.<init>; got {heap_element:?}"));
+                };
+                let string = builder_obj
+                    .class_mut_or_insert(&stackframe.borrow().class)
+                    .native_fields[0]
+                    .downcast_ref::<String>()
+                    .unwrap()
+                    .clone();
+
+                drop(heap_element);
+                drop(heap_borrow);
+
+                let string_ref =
+                    heap_allocate(&mut self.heap.borrow_mut(), HeapElement::String(string));
+
+                stackframe.borrow_mut().operand_stack.push(string_ref);
+                self.return_one(verbose);
+            }
+            (
+                "java/io/PrintStream",
+                "println",
+                MethodDescriptor {
+                    parameter_size: 0, ..
+                },
+            ) => {
+                println!();
+                self.return_void();
+            }
+            (
+                "java/io/PrintStream",
+                "println",
+                MethodDescriptor {
+                    parameter_size: 1,
+                    parameters,
+                    ..
+                },
+            ) if matches!(&parameters[..], [FieldType::Object(_)]) => {
+                // println!("{stackframe:?}");
+                let arg = stackframe.borrow_mut().locals[1];
+                let heap_borrow = self.heap.borrow();
+                let reference = heap_borrow.get(arg as usize);
+                match &*reference.unwrap().borrow() {
+                    HeapElement::String(str) => println!("{str}"),
+                    other => todo!("{other:?}"),
+                }
+                drop(heap_borrow);
+                self.return_void();
+            }
+            (
+                "java/io/PrintStream",
+                "println",
+                MethodDescriptor {
+                    parameter_size: 1,
+                    parameters,
+                    ..
+                },
+            ) => {
+                // println!("{stackframe:?}");
+                let arg = stackframe.borrow_mut().locals[1];
+                match parameters[0] {
+                    FieldType::Float => {
+                        println!("{}", f32::from_bits(arg));
+                    }
+                    _ => {
+                        return Err(format!(
+                            "Unimplemented println argument type: {:?}",
+                            parameters[0]
+                        ))
+                    }
                 }
                 self.return_void();
             }
-            ("java/lang/invoke/StringConcatFactory", "makeConcatWithConstants") => {
-                let stack_ref = &mut stackframe.borrow_mut().operand_stack;
-
-                let constants = stack_ref.pop().unwrap();
-
-                let constants = if constants == u32::MAX {
-                    Vec::new()
-                } else if let HeapElement::Array(arr) =
-                    &*self.heap.borrow().get(constants as usize).unwrap().borrow()
-                {
-                    arr.clone()
-                } else {
-                    return Err(format!(
-                        "Expected array of objects; got `{:?}`",
-                        self.heap.borrow().get(constants as usize)
-                    ));
-                };
-
-                let recipe = stack_ref.pop().unwrap();
-                let recipe = if let HeapElement::String(recipe) =
-                    &*self.heap.borrow().get(recipe as usize).unwrap().borrow()
-                {
-                    recipe.clone()
-                } else {
-                    return Err(String::from("Expected string format recipe"));
-                };
-
-                let concat_type = stack_ref.pop().unwrap();
-
-                let name = stack_ref.pop().unwrap();
-                let name = if let HeapElement::String(name) =
-                    &*self.heap.borrow().get(name as usize).unwrap().borrow()
-                {
-                    name.clone()
-                } else {
-                    return Err(String::from("Expected a method name pointer"));
-                };
-
-                let method_handles = stack_ref.pop().unwrap();
-                let class_name = if let HeapElement::String(class_name) = &*self
-                    .heap
-                    .borrow()
-                    .get(method_handles as usize)
-                    .unwrap()
-                    .borrow()
-                {
-                    class_name.clone()
-                } else {
-                    return Err(String::from("Expected a class name pointer"));
-                };
-                let class = search_class_area(&self.class_area, &class_name)
-                    .ok_or_else(|| format!("couldn't resolve class `{class_name}`"))?;
-
-                let Constant::InvokeDynamic { method_type, .. } = class.constants[concat_type as usize].clone() else {
-                    return Err(String::from("Expected method signature reference"))
-                };
-
-                println!("{constants:?} {recipe:?} {name} {method_type:?}");
+            (class, name, method_type) => {
+                return Err(format!(
+                    "Error invoking native method; {class}.{name} {method_type:?}"
+                ))
             }
-            (class, name) => return Err(format!("Error invoking native method; {class}.{name}")),
         }
         Ok(())
     }
@@ -971,13 +1276,28 @@ impl Thread {
         self.pc_register = return_address as usize;
     }
 
-    fn return_one(&mut self) {
+    fn return_one(&mut self, verbose: bool) {
         let old_stackframe = self.stack.pop().unwrap();
         let ret_value = old_stackframe.borrow_mut().operand_stack.pop().unwrap();
+        if verbose {
+            println!("{ret_value}");
+        }
         let stackframe = self.stack.last().unwrap();
         let ret_address = stackframe.borrow_mut().operand_stack.pop().unwrap();
         self.pc_register = ret_address as usize;
         stackframe.borrow_mut().operand_stack.push(ret_value);
+    }
+
+    fn return_two(&mut self, verbose: bool) {
+        let old_stackframe = self.stack.pop().unwrap();
+        let ret_value = pop_long(&mut old_stackframe.borrow_mut().operand_stack).unwrap();
+        if verbose {
+            println!("{ret_value}");
+        }
+        let stackframe = self.stack.last().unwrap();
+        let ret_address = stackframe.borrow_mut().operand_stack.pop().unwrap();
+        self.pc_register = ret_address as usize;
+        push_long(&mut stackframe.borrow_mut().operand_stack, ret_value);
     }
 }
 
