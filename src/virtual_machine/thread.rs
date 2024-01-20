@@ -13,7 +13,7 @@ use crate::{
 use super::{
     instruction::Type,
     native,
-    object::{AnyObj, Object, ObjectFinder, StringObj},
+    object::{AnyObj, Array1, Array2, Object, ObjectFinder, StringObj},
     Cmp, Instruction, Op, StackFrame,
 };
 
@@ -919,8 +919,9 @@ impl Thread {
             Instruction::InvokeStatic(class, name, method_type) => {
                 // make a static method
                 let (class_ref, method_ref) =
-                    search_method_area(&self.method_area, &class, &name, &method_type)
-                        .ok_or_else(|| format!("Error during InvokeStatic; {class}.{name}"))?;
+                    search_method_area(&self.method_area, &class, &name, &method_type).ok_or_else(
+                        || format!("Error during InvokeStatic; {class}.{name}: {method_type:?}"),
+                    )?;
                 if verbose {
                     println!(
                         "Invoking Static Method {} on {}",
@@ -979,6 +980,76 @@ impl Thread {
                 if (ptr == u32::MAX) ^ (is_rev) {
                     self.pc_register += branch as usize;
                 }
+            }
+            Instruction::NewArray1 => {
+                // {ty}newarray
+                let count = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                let new_array = Array1::new(count as usize);
+                let objectref = heap_allocate(&mut self.heap.lock().unwrap(), new_array);
+                stackframe.lock().unwrap().operand_stack.push(objectref);
+            }
+            Instruction::NewArray2 => {
+                // {ty}newarray
+                let count = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                let new_array = Array2::new(count as usize);
+                let objectref = heap_allocate(&mut self.heap.lock().unwrap(), new_array);
+                stackframe.lock().unwrap().operand_stack.push(objectref);
+            }
+            Instruction::ArrayStore1 => {
+                // store 1 value into an array
+                let value = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                let index = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                let array_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+
+                Array1.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
+                    arr[index as usize] = value;
+                })?;
+            }
+            Instruction::ArrayStore2 => {
+                // store 2 values into an array
+                let value = pop_long(&mut stackframe.lock().unwrap().operand_stack).unwrap();
+                let index = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                let array_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+
+                Array2.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
+                    arr[index as usize] = value;
+                })?;
+            }
+            Instruction::ArrayLoad1 => {
+                // load 1 value from an array
+                let index = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                let array_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+
+                let value =
+                    Array1.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
+                        arr[index as usize]
+                    })?;
+                stackframe.lock().unwrap().operand_stack.push(value);
+            }
+            Instruction::ArrayLoad2 => {
+                // load 2 values from an array
+                let index = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                let array_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+
+                let value =
+                    Array2.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
+                        arr[index as usize]
+                    })?;
+                push_long(&mut stackframe.lock().unwrap().operand_stack, value);
+            }
+            Instruction::NewMultiArray(is_long, dimensions) => {
+                let mut stackframe_ref = stackframe.lock().unwrap();
+                let dimension_sizes = (0..dimensions)
+                    .map(|_| stackframe_ref.operand_stack.pop().unwrap())
+                    .collect::<Vec<_>>();
+                drop(stackframe_ref);
+                // make all the thingies
+                let allocation = allocate_multi_array(
+                    &mut self.heap.lock().unwrap(),
+                    &dimension_sizes,
+                    is_long,
+                )?;
+                stackframe.lock().unwrap().operand_stack.push(allocation);
             }
             other => return Err(format!("Invalid Opcode: {other:?}")),
         }
@@ -1133,6 +1204,71 @@ impl Thread {
         let class = stackframe.lock().unwrap().class.this.clone();
         match (&*class, &*name, method_type) {
             ("java/lang/Object", "<init>", _) => self.return_void(),
+            (
+                "java/util/Arrays",
+                "toString",
+                MethodDescriptor {
+                    parameter_size,
+                    parameters,
+                    return_type,
+                },
+            ) => {
+                let arr_ref = stackframe.lock().unwrap().locals[0];
+
+                let [field_type] = &parameters[..] else {
+                    return Err(format!("java/util/Arrays.toString Expected one parameter; got {parameters:?}"));
+                };
+                let value = if field_type.get_size() == 2 {
+                    Array2.get(
+                        &self.heap.lock().unwrap(),
+                        arr_ref as usize,
+                        match field_type {
+                            FieldType::Double => |arr: &_| {
+                                format!("{:?}", unsafe {
+                                    &*(arr as *const Vec<u64>).cast::<Vec<f64>>()
+                                })
+                            },
+                            FieldType::Long => |arr: &_| {
+                                format!("{:?}", unsafe {
+                                    &*(arr as *const Vec<u64>).cast::<Vec<i64>>()
+                                })
+                            },
+                            _ => unreachable!(),
+                        },
+                    )?
+                } else {
+                    Array1.get(
+                        &self.heap.lock().unwrap(),
+                        arr_ref as usize,
+                        match field_type {
+                            FieldType::Int => |arr: &_| {
+                                format!("{:?}", unsafe {
+                                    &*(arr as *const Vec<u32>).cast::<Vec<i32>>()
+                                })
+                            },
+                            FieldType::Float => |arr: &_| {
+                                format!("{:?}", unsafe {
+                                    &*(arr as *const Vec<u32>).cast::<Vec<f32>>()
+                                })
+                            },
+                            _ => |arr: &Vec<_>| {
+                                format!(
+                                    "{:?}",
+                                    arr.iter()
+                                        .map(|item| format!("&{item}"))
+                                        .collect::<Vec<_>>()
+                                )
+                            },
+                        },
+                    )?
+                };
+                let string_ref = heap_allocate(
+                    &mut self.heap.lock().unwrap(),
+                    StringObj::new(Arc::from(&*value)),
+                );
+                stackframe.lock().unwrap().operand_stack.push(string_ref);
+                self.return_one(verbose);
+            }
             ("java/lang/String", "length", _) => {
                 let string_ref = stackframe.lock().unwrap().locals[0];
                 StringObj
@@ -1383,6 +1519,30 @@ impl Thread {
         let ret_address = stackframe.lock().unwrap().operand_stack.pop().unwrap();
         self.pc_register = ret_address as usize;
         push_long(&mut stackframe.lock().unwrap().operand_stack, ret_value);
+    }
+}
+
+fn allocate_multi_array(
+    heap: &mut Vec<Arc<Mutex<Object>>>,
+    depth: &[u32],
+    is_long: bool,
+) -> Result<u32, String> {
+    match depth {
+        [size] => Ok(heap_allocate(
+            heap,
+            if is_long {
+                Array2::new(*size as usize)
+            } else {
+                Array1::new(*size as usize)
+            },
+        )),
+        [size, rest @ ..] => {
+            let current_array = (0..*size)
+                .map(|_| allocate_multi_array(heap, rest, is_long))
+                .collect::<Result<Vec<_>, String>>()?;
+            Ok(heap_allocate(heap, Array1::from_vec(current_array)))
+        }
+        [] => Err(String::from("Can't create 0-dimensional array")),
     }
 }
 

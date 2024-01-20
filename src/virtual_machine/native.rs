@@ -7,10 +7,10 @@ use super::{object::Object, thread::heap_allocate};
 #[allow(non_snake_case)]
 pub mod StringBuilder;
 
-pub static mut object_class: Option<Arc<Class>> = None;
-pub static mut string_class: Option<Arc<Class>> = None;
-pub static mut string_builder_class: Option<Arc<Class>> = None;
-pub static mut array_class: Option<Arc<Class>> = None;
+pub static mut OBJECT_CLASS: Option<Arc<Class>> = None;
+pub static mut STRING_CLASS: Option<Arc<Class>> = None;
+pub static mut STRING_BUILDER_CLASS: Option<Arc<Class>> = None;
+pub static mut ARRAY_CLASS: Option<Arc<Class>> = None;
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn add_native_methods(
@@ -39,6 +39,33 @@ pub(super) fn add_native_methods(
     );
     object.methods.push(init.clone());
     let object = Arc::new(object);
+
+    let mut array = Class::new(
+        AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        "java/lang/Array".into(),
+        object_name.clone(),
+    );
+    let array = Arc::new(array);
+
+    let arrays_to_string = Arc::new(Method {
+        max_locals: 0,
+        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
+        name: "toString".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 1,
+            parameters: vec![FieldType::Array(Box::new(FieldType::Int))],
+            return_type: Some(FieldType::Object("java/lang/String".into())),
+        },
+        attributes: Vec::new(),
+        code: None,
+    });
+    let mut arrays = Class::new(
+        AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        "java/util/Arrays".into(),
+        object_name.clone(),
+    );
+    arrays.methods.push(arrays_to_string.clone());
+    let arrays = Arc::new(arrays);
 
     let string_length = Arc::new(Method {
         max_locals: 1,
@@ -331,12 +358,14 @@ pub(super) fn add_native_methods(
     let math = Arc::new(math);
 
     unsafe {
-        object_class = Some(object.clone());
-        string_class = Some(string.clone());
-        string_builder_class = Some(string_builder.clone());
+        OBJECT_CLASS = Some(object.clone());
+        STRING_CLASS = Some(string.clone());
+        STRING_BUILDER_CLASS = Some(string_builder.clone());
+        ARRAY_CLASS = Some(array.clone());
     }
     method_area.extend([
         (object.clone(), init),
+        (arrays.clone(), arrays_to_string),
         (string.clone(), string_length),
         (string.clone(), char_at),
         (string_builder.clone(), builder_init),
@@ -353,6 +382,8 @@ pub(super) fn add_native_methods(
     ]);
     class_area.extend([
         object,
+        array,
+        arrays,
         string,
         string_builder,
         random,

@@ -1,6 +1,9 @@
 use std::{iter::Peekable, sync::Arc};
 
-use crate::class::{BootstrapMethod, Constant, FieldType, MethodDescriptor};
+use crate::{
+    class::{BootstrapMethod, Constant, FieldType, MethodDescriptor},
+    class_loader::parse_field_type,
+};
 
 #[derive(Clone, Debug)]
 pub enum Instruction {
@@ -44,6 +47,13 @@ pub enum Instruction {
     InvokeStatic(Arc<str>, Arc<str>, MethodDescriptor),
     InvokeDynamic(u16, Arc<str>, MethodDescriptor),
     New(Arc<str>),
+    NewArray1,
+    NewArray2,
+    NewMultiArray(bool, u8),
+    ArrayStore1,
+    ArrayStore2,
+    ArrayLoad1,
+    ArrayLoad2,
     IfNull(bool, i16),
 }
 
@@ -269,21 +279,8 @@ pub fn parse_instruction(
             let index = aload_n - 0x2A;
             Ok(Instruction::Load1(index as usize))
         }
-        0x31 | 0x2F => {
-            todo!("daload | laload")
-        }
-        0x32 | 0x30 | 0x2E => {
-            todo!("aaload | faload | iaload")
-        }
-        0x33 => {
-            todo!("baload")
-        }
-        0x34 => {
-            todo!("caload")
-        }
-        0x35 => {
-            todo!("saload")
-        }
+        0x31 | 0x2F => Ok(Instruction::ArrayLoad2),
+        0x35 | 0x34 | 0x33 | 0x32 | 0x30 | 0x2E => Ok(Instruction::ArrayLoad1),
         0x39 | 0x37 => {
             // dstore|lstore index
             // put two values into a local
@@ -326,21 +323,8 @@ pub fn parse_instruction(
             let index = astore_n - 0x4B;
             Ok(Instruction::Store1(index as usize))
         }
-        0x52 | 0x50 => {
-            todo!("dastore | lastore")
-        }
-        0x53 | 0x51 | 0x4F => {
-            todo!("aastore | fastore | iastore")
-        }
-        0x54 => {
-            todo!("bastore")
-        }
-        0x55 => {
-            todo!("castore")
-        }
-        0x56 => {
-            todo!("sastore")
-        }
+        0x52 | 0x50 => Ok(Instruction::ArrayStore2),
+        0x56 | 0x55 | 0x54 | 0x53 | 0x51 | 0x4F => Ok(Instruction::ArrayStore1),
         0x57 => {
             // pop
             Ok(Instruction::Pop)
@@ -847,8 +831,13 @@ pub fn parse_instruction(
             Ok(Instruction::New(class))
         }
         0xBC => {
-            todo!("newarray")
             // make a new array
+            let atype = bytes.next().unwrap().1;
+            match atype {
+                4..=6 | 8..=10 => Ok(Instruction::NewArray1),
+                7 | 11 => Ok(Instruction::NewArray2),
+                other => Err(format!("Invalid `atype` for `anewarray`: {other}")),
+            }
         }
         0xBD => {
             todo!("anewarray")
@@ -876,8 +865,27 @@ pub fn parse_instruction(
             // woosh this one's gonna be tough
         }
         0xC5 => {
-            todo!("multianewarray")
             // make a new multi-dimensional array
+            let ib1 = bytes.next().unwrap().1;
+            let ib2 = bytes.next().unwrap().1;
+            let dimensions = bytes.next().unwrap().1;
+
+            // constant index to a type
+            let index = (ib1 as u16) << 8 | ib2 as u16;
+            let Some(Constant::ClassRef(class_ref)) = constants.get(index as usize - 1) else {
+                return Err(format!("Invalid Constant for multianewarray: {:?}", constants.get(index as usize - 1)));
+            };
+
+            let mut array_type = parse_field_type(&mut class_ref.chars().peekable())?;
+            for _ in 0..dimensions {
+                let FieldType::Array(inner) = array_type else {
+                    return Err(String::from("Array is too shallow"));
+                };
+                array_type = *inner;
+            }
+            let is_long = array_type.get_size() == 2;
+
+            Ok(Instruction::NewMultiArray(is_long, dimensions))
         }
         if_null @ 0xC6..=0xC7 => {
             // ifnull | ifnonnull

@@ -826,7 +826,7 @@ fn raw_name_type_index(
     Ok((name, type_name))
 }
 
-fn parse_method_descriptor(src: &str) -> Result<MethodDescriptor, String> {
+pub fn parse_method_descriptor(src: &str) -> Result<MethodDescriptor, String> {
     let mut chars = src.chars().peekable();
     let chars = &mut chars;
     let Some('(') = chars.next() else {
@@ -849,7 +849,7 @@ fn parse_method_descriptor(src: &str) -> Result<MethodDescriptor, String> {
     })
 }
 
-fn parse_field_type(chars: &mut Peekable<impl Iterator<Item = char>>) -> Result<FieldType, String> {
+pub fn parse_field_type(chars: &mut Peekable<impl Iterator<Item = char>>) -> Result<FieldType, String> {
     match chars.next() {
         Some('B') => Ok(FieldType::Byte),
         Some('C') => Ok(FieldType::Char),

@@ -107,9 +107,10 @@ pub trait ObjectFinder {
 pub struct StringObj;
 
 impl StringObj {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(str: Arc<str>) -> Object {
         let mut obj = Object::new();
-        obj.class_mut_or_insert(&unsafe { native::string_class.clone() }.unwrap())
+        obj.class_mut_or_insert(&unsafe { native::STRING_CLASS.clone() }.unwrap())
             .native_fields
             .push(Box::new(str));
         obj
@@ -124,7 +125,7 @@ impl ObjectFinder for StringObj {
         object: &Object,
         func: impl FnOnce(&Self::Target) -> T,
     ) -> Result<T, String> {
-        unsafe { native::string_class.clone() }
+        unsafe { native::STRING_CLASS.clone() }
             .ok_or_else(|| String::from("String class not found"))
             .and_then(|string_class| {
                 object
@@ -144,7 +145,7 @@ impl ObjectFinder for StringObj {
         object: &mut Object,
         func: impl FnOnce(&mut Self::Target) -> T,
     ) -> Result<T, String> {
-        unsafe { native::string_class.clone() }
+        unsafe { native::STRING_CLASS.clone() }
             .ok_or_else(|| String::from("String class not found"))
             .and_then(|string_class| {
                 object
@@ -211,7 +212,7 @@ impl ObjectFinder for StringBuilder {
         object: &Object,
         func: impl FnOnce(&Self::Target) -> T,
     ) -> Result<T, String> {
-        unsafe { native::string_builder_class.clone() }
+        unsafe { native::STRING_BUILDER_CLASS.clone() }
             .ok_or_else(|| String::from("Couldn't find StringBuilder class"))
             .and_then(|class| {
                 object
@@ -233,7 +234,7 @@ impl ObjectFinder for StringBuilder {
         object: &mut Object,
         func: impl FnOnce(&mut Self::Target) -> T,
     ) -> Result<T, String> {
-        unsafe { native::string_builder_class.clone() }
+        unsafe { native::STRING_BUILDER_CLASS.clone() }
             .ok_or_else(|| String::from("Couldn't find StringBuilder class"))
             .and_then(|class| {
                 object
@@ -243,6 +244,126 @@ impl ObjectFinder for StringBuilder {
                     .ok_or_else(|| String::from("StringBuilder native field missing"))?
                     .downcast_mut::<String>()
                     .ok_or_else(|| String::from("StringBuilder native field is the wrong type"))
+            })
+            .map(func)
+    }
+}
+
+pub struct Array1;
+
+impl Array1 {
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(count: usize) -> Object {
+        Self::from_vec(vec![0u32; count])
+    }
+
+    pub fn from_vec(vec: Vec<u32>) -> Object {
+        let mut obj = Object::new();
+        obj.class_mut_or_insert(&unsafe { native::ARRAY_CLASS.clone() }.unwrap())
+            .native_fields
+            .push(Box::new(vec));
+        obj
+    }
+}
+
+impl ObjectFinder for Array1 {
+    type Target = Vec<u32>;
+
+    fn extract<T>(
+        &self,
+        object: &Object,
+        func: impl FnOnce(&Self::Target) -> T,
+    ) -> Result<T, String> {
+        unsafe { native::ARRAY_CLASS.clone() }
+            .ok_or_else(|| String::from("Array class isn't defined"))
+            .and_then(|array| {
+                object
+                    .class(&array)
+                    .ok_or_else(|| String::from("Object isn't an array"))?
+                    .native_fields
+                    .get(0)
+                    .ok_or_else(|| String::from("Native field missing"))?
+                    .downcast_ref::<Vec<u32>>()
+                    .ok_or_else(|| String::from("Native field is the wrong type"))
+            })
+            .map(func)
+    }
+
+    fn extract_mut<T>(
+        &self,
+        object: &mut Object,
+        func: impl FnOnce(&mut Self::Target) -> T,
+    ) -> Result<T, String> {
+        unsafe { native::ARRAY_CLASS.clone() }
+            .ok_or_else(|| String::from("Array class isn't defined"))
+            .and_then(|array| {
+                object
+                    .class_mut_or_insert(&array)
+                    .native_fields
+                    .get_mut(0)
+                    .ok_or_else(|| String::from("Native field missing"))?
+                    .downcast_mut::<Vec<u32>>()
+                    .ok_or_else(|| String::from("Native field is the wrong type"))
+            })
+            .map(func)
+    }
+}
+
+pub struct Array2;
+
+impl Array2 {
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(count: usize) -> Object {
+        Self::from_vec(vec![0u64; count])
+    }
+
+    pub fn from_vec(vec: Vec<u64>) -> Object {
+        let mut obj = Object::new();
+        obj.class_mut_or_insert(&unsafe { native::ARRAY_CLASS.clone() }.unwrap())
+            .native_fields
+            .push(Box::new(vec));
+        obj
+    }
+}
+
+impl ObjectFinder for Array2 {
+    type Target = Vec<u64>;
+
+    fn extract<T>(
+        &self,
+        object: &Object,
+        func: impl FnOnce(&Self::Target) -> T,
+    ) -> Result<T, String> {
+        unsafe { native::ARRAY_CLASS.clone() }
+            .ok_or_else(|| String::from("Array class isn't defined"))
+            .and_then(|array| {
+                object
+                    .class(&array)
+                    .ok_or_else(|| String::from("Object isn't an array"))?
+                    .native_fields
+                    .get(0)
+                    .ok_or_else(|| String::from("Native field missing"))?
+                    .downcast_ref::<Vec<u64>>()
+                    .ok_or_else(|| String::from("Native field is the wrong type"))
+            })
+            .map(func)
+    }
+
+    fn extract_mut<T>(
+        &self,
+        object: &mut Object,
+        func: impl FnOnce(&mut Self::Target) -> T,
+    ) -> Result<T, String> {
+        unsafe { native::ARRAY_CLASS.clone() }
+            .ok_or_else(|| String::from("Array class isn't defined"))
+            .and_then(|array| {
+                object
+                    .class_mut_or_insert(&array)
+                    .native_fields
+                    .get_mut(0)
+                    .ok_or_else(|| String::from("Native field missing"))?
+                    .downcast_mut::<Vec<u64>>()
+                    .ok_or_else(|| String::from("Native field is the wrong type"))
             })
             .map(func)
     }
