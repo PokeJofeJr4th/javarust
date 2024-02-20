@@ -17,7 +17,9 @@ pub struct Class {
     pub statics: Vec<(Field, usize)>,
     pub methods: Vec<Arc<Method>>,
     pub bootstrap_methods: Vec<BootstrapMethod>,
+    pub source_file: Option<Arc<str>>,
     pub signature: Option<Arc<str>>,
+    pub inner_classes: Vec<InnerClass>,
     pub attributes: Vec<Attribute>,
 }
 
@@ -40,6 +42,8 @@ impl Class {
             methods: Vec::new(),
             bootstrap_methods: Vec::new(),
             signature: None,
+            source_file: None,
+            inner_classes: Vec::new(),
             attributes: Vec::new(),
         }
     }
@@ -66,6 +70,12 @@ impl Debug for Class {
             .field("statics", &self.statics)
             .field("methods", &self.methods)
             .field("bootstrap_methods", &self.bootstrap_methods);
+        if !self.inner_classes.is_empty() {
+            s.field("inner_classes", &self.inner_classes);
+        }
+        if let Some(source_file) = &self.source_file {
+            s.field("source_file", source_file);
+        }
         for Attribute { name, data } in &self.attributes {
             s.field(name, &data);
         }
@@ -123,7 +133,7 @@ pub enum MethodHandle {
 }
 
 /// A member of the constant pool
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Constant {
     String(Arc<str>),
     Int(i32),
@@ -183,6 +193,50 @@ impl Constant {
                 vec![bits as u32, (bits >> 32) as u32]
             }
             _ => vec![u32::MAX],
+        }
+    }
+}
+
+impl Debug for Constant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::String(s) => write!(f, "{s:?}"),
+            Self::Int(i) => write!(f, "{i}"),
+            Self::Float(fl) => write!(f, "{fl}"),
+            Self::Long(l) => write!(f, "{l}"),
+            Self::Double(d) => write!(f, "{d}"),
+            Self::ClassRef(c) => write!(f, "class {c}"),
+            Self::StringRef(s) => write!(f, "&{s:?}"),
+            Self::FieldRef {
+                class,
+                name,
+                field_type,
+            } => write!(f, "Field({field_type} {class}.{name})"),
+            Self::MethodRef {
+                class,
+                name,
+                method_type,
+            } => write!(f, "Method({method_type:?} {class}.{name})"),
+            Self::InterfaceRef {
+                class,
+                name,
+                interface_type,
+            } => write!(f, "InterfaceMethod({interface_type:?} {class}.{name})"),
+            Self::NameTypeDescriptor {
+                name,
+                type_descriptor,
+            } => write!(f, "NameTypeDescriptor({type_descriptor} {name})"),
+            Self::MethodHandle(handle) => write!(f, "MethodHandle({handle:?})"),
+            Self::MethodType { index } => write!(f, "MethodType(#{index})"),
+            Self::InvokeDynamic {
+                bootstrap_index,
+                method_name,
+                method_type,
+            } => write!(
+                f,
+                "InvokeDynamic(#{bootstrap_index} {method_type:?} {method_name})"
+            ),
+            Self::Placeholder => write!(f, "Placeholder"),
         }
     }
 }
@@ -435,12 +489,73 @@ pub struct Attribute {
     pub data: Vec<u8>,
 }
 
+#[derive(Clone, Copy)]
+pub struct LineTableEntry {
+    pub line: u16,
+    pub pc: u16,
+}
+
+impl Debug for LineTableEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Line {} => PC {}", self.line, self.pc)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct LocalVarTypeEntry {
+    pub pc: u16,
+    pub length: u16,
+    pub name: Arc<str>,
+    pub ty: Arc<str>,
+    pub index: u16,
+}
+
+impl Debug for LocalVarTypeEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} ({}..{})@{}",
+            self.ty,
+            self.name,
+            self.pc,
+            self.pc + self.length,
+            self.index,
+        )
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct LocalVarEntry {
+    pub pc: u16,
+    pub length: u16,
+    pub name: Arc<str>,
+    pub ty: FieldType,
+    pub index: u16,
+}
+
+impl Debug for LocalVarEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} ({}..{})@{}",
+            self.ty,
+            self.name,
+            self.pc,
+            self.pc + self.length,
+            self.index,
+        )
+    }
+}
+
 pub struct Code {
     pub max_stack: u16,
     pub code: Vec<Instruction>,
     pub exception_table: Vec<(u16, u16, u16, Option<Arc<str>>)>,
-    pub attributes: Vec<Attribute>,
+    pub line_number_table: Vec<LineTableEntry>,
+    pub local_type_table: Vec<LocalVarTypeEntry>,
+    pub local_var_table: Vec<LocalVarEntry>,
     pub stack_map: Vec<StackMapFrame>,
+    pub attributes: Vec<Attribute>,
 }
 
 impl Debug for Code {
@@ -448,8 +563,19 @@ impl Debug for Code {
         let mut s = f.debug_struct("Code");
         s.field("max_stack", &self.max_stack)
             .field("code", &self.code)
-            .field("stack_map", &self.stack_map)
-            .field("exception_table", &self.exception_table);
+            .field("stack_map", &self.stack_map);
+        if !self.exception_table.is_empty() {
+            s.field("exception_table", &self.exception_table);
+        }
+        if !self.line_number_table.is_empty() {
+            s.field("line_number_table", &self.line_number_table);
+        }
+        if !self.local_type_table.is_empty() {
+            s.field("local_variable_type_table", &self.local_type_table);
+        }
+        if !self.local_var_table.is_empty() {
+            s.field("local_variable_table", &self.local_var_table);
+        }
         for Attribute { name, data } in &self.attributes {
             s.field(name, data);
         }
@@ -505,4 +631,12 @@ pub enum VerificationTypeInfo {
 pub struct BootstrapMethod {
     pub method: MethodHandle,
     pub args: Vec<Constant>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InnerClass {
+    pub this: Arc<str>,
+    pub outer: Option<Arc<str>>,
+    pub name: Option<Arc<str>>,
+    pub flags: AccessFlags,
 }

@@ -6,7 +6,8 @@ use std::{
 use crate::{
     class::{
         AccessFlags, Attribute, BootstrapMethod, Class, ClassVersion, Code, Constant, Field,
-        FieldType, Method, MethodDescriptor, MethodHandle, StackMapFrame, VerificationTypeInfo,
+        FieldType, InnerClass, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, Method,
+        MethodDescriptor, MethodHandle, StackMapFrame, VerificationTypeInfo,
     },
     virtual_machine::hydrate_code,
 };
@@ -384,6 +385,70 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
 
     let (signature, attributes) = get_signature(&constants, attributes)?;
 
+    let (source_file, attributes) = split_attributes(attributes, "SourceFile");
+
+    let source_file = match &source_file[..] {
+        [source_file] => {
+            let mut bytes = source_file.data.iter().copied().peekable();
+            Some(str_index(&constants, get_u16(&mut bytes)? as usize)?)
+        }
+        [] => None,
+        _ => {
+            return Err(String::from(
+                "A class should only have one 'SourceFile' attribute",
+            ))
+        }
+    };
+
+    let (inner_classes, attributes) = split_attributes(attributes, "InnerClasses");
+
+    let inner_classes = match &inner_classes[..] {
+        [inner_classes] => {
+            let mut bytes = inner_classes.data.iter().copied().peekable();
+            let count = get_u16(&mut bytes)?;
+            (0..count)
+                .map(|_| {
+                    let this_idx = get_u16(&mut bytes)? as usize;
+                    let outer_idx = get_u16(&mut bytes)? as usize;
+                    let name_idx = get_u16(&mut bytes)? as usize;
+                    let flags = AccessFlags(get_u16(&mut bytes)?);
+                    Ok(InnerClass {
+                        this: if let Constant::ClassRef(class) = constants[this_idx - 1].clone() {
+                            class
+                        } else {
+                            return Err(format!(
+                            "Expected class ref for InnerClass.inner_class_info_index; got {:?}",
+                            constants[this_idx - 1]
+                            ));
+                        },
+                        outer: if outer_idx == 0 {
+                            None
+                        } else if let Constant::ClassRef(class) = constants[outer_idx - 1].clone() {
+                            Some(class)
+                        } else {
+                            return Err(format!(
+                            "Expected class ref for InnerClass.outer_class_info_index; got {:?}",
+                            constants[outer_idx - 1]
+                            ));
+                        },
+                        name: if name_idx == 0 {
+                            None
+                        } else {
+                            Some(str_index(&constants, name_idx)?)
+                        },
+                        flags,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        [] => Vec::new(),
+        _ => {
+            return Err(String::from(
+                "A class should only have one 'InnerClasses' attribute",
+            ))
+        }
+    };
+
     let (statics, fields): (Vec<_>, Vec<_>) = fields
         .into_iter()
         .partition(|field| field.access_flags.is_static());
@@ -429,6 +494,8 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
         bootstrap_methods,
         version,
         signature,
+        inner_classes,
+        source_file,
         attributes,
     })
 }
@@ -584,6 +651,83 @@ fn parse_code_attribute(
         _ => return Err(String::from("Only one `StackMapTable` attribute expected")),
     };
 
+    let (line_table, attributes) = split_attributes(attributes, "LineNumberTable");
+
+    let line_number_table = match &line_table[..] {
+        [line_table] => {
+            let mut bytes = line_table.data.iter().copied().peekable();
+            let table_count = get_u16(&mut bytes)?;
+            (0..table_count)
+                .map(|_| Ok::<(u16, u16), String>((get_u16(&mut bytes)?, get_u16(&mut bytes)?)))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .map(|(pc, line)| LineTableEntry { line, pc })
+                .collect()
+        }
+        [] => Vec::new(),
+        _ => {
+            return Err(String::from(
+                "A Code attribute may only have one 'LineNumberTable' attribute",
+            ))
+        }
+    };
+
+    let (local_ty_table, attributes) = split_attributes(attributes, "LocalVariableTypeTable");
+
+    let local_type_table = match &local_ty_table[..] {
+        [ty_table] => {
+            let mut bytes = ty_table.data.iter().copied().peekable();
+            let table_count = get_u16(&mut bytes)?;
+            (0..table_count)
+                .map(|_| {
+                    Ok::<LocalVarTypeEntry, String>(LocalVarTypeEntry {
+                        pc: get_u16(&mut bytes)?,
+                        length: get_u16(&mut bytes)?,
+                        name: str_index(constants, get_u16(&mut bytes)? as usize)?,
+                        ty: str_index(constants, get_u16(&mut bytes)? as usize)?,
+                        index: get_u16(&mut bytes)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        [] => Vec::new(),
+        _ => {
+            return Err(String::from(
+                "A Code attribute may only have one 'LocalVariableTypeTable' attribute",
+            ))
+        }
+    };
+
+    let (local_var_table, attributes) = split_attributes(attributes, "LocalVariableTable");
+
+    let local_var_table = match &local_var_table[..] {
+        [var_table] => {
+            let mut bytes = var_table.data.iter().copied().peekable();
+            let table_count = get_u16(&mut bytes)?;
+            (0..table_count)
+                .map(|_| {
+                    Ok::<LocalVarEntry, String>(LocalVarEntry {
+                        pc: get_u16(&mut bytes)?,
+                        length: get_u16(&mut bytes)?,
+                        name: str_index(constants, get_u16(&mut bytes)? as usize)?,
+                        ty: parse_field_type(
+                            &mut str_index(constants, get_u16(&mut bytes)? as usize)?
+                                .chars()
+                                .peekable(),
+                        )?,
+                        index: get_u16(&mut bytes)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        [] => Vec::new(),
+        _ => {
+            return Err(String::from(
+                "A Code attribute may only have one 'LocalVariableTypeTable' attribute",
+            ))
+        }
+    };
+
     let code = hydrate_code(constants, code, verbose)?;
 
     Ok((
@@ -591,8 +735,11 @@ fn parse_code_attribute(
             max_stack,
             code,
             exception_table,
-            attributes,
+            line_number_table,
+            local_type_table,
+            local_var_table,
             stack_map,
+            attributes,
         },
         max_locals,
     ))

@@ -26,7 +26,7 @@ pub(super) struct Thread {
 }
 
 impl Thread {
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     pub fn tick(&mut self, verbose: bool) -> Result<(), String> {
         // this way we can mutate the stack frame without angering the borrow checker
         let stackframe = self.stack.last().unwrap().clone();
@@ -645,7 +645,7 @@ impl Thread {
                 let lhs = f32::from_bits(stackframe.lock().unwrap().operand_stack.pop().unwrap());
                 let value = if lhs > rhs {
                     1
-                } else if lhs == rhs {
+                } else if (lhs - rhs).abs() < f32::EPSILON {
                     0
                 } else if lhs < rhs || is_rev {
                     -1
@@ -665,7 +665,7 @@ impl Thread {
                 );
                 let value = if lhs > rhs {
                     1
-                } else if lhs == rhs {
+                } else if (lhs - rhs).abs() < f64::EPSILON {
                     0
                 } else if lhs < rhs || is_rev {
                     -1
@@ -1036,7 +1036,7 @@ impl Thread {
                     })?;
                 push_long(&mut stackframe.lock().unwrap().operand_stack, value);
             }
-            Instruction::NewMultiArray(is_long, dimensions, arr_type) => {
+            Instruction::NewMultiArray(dimensions, arr_type) => {
                 let mut stackframe_ref = stackframe.lock().unwrap();
                 let dimension_sizes = (0..dimensions)
                     .map(|_| stackframe_ref.operand_stack.pop().unwrap())
@@ -1046,7 +1046,6 @@ impl Thread {
                 let allocation = allocate_multi_array(
                     &mut self.heap.lock().unwrap(),
                     &dimension_sizes,
-                    is_long,
                     arr_type,
                 )?;
                 stackframe.lock().unwrap().operand_stack.push(allocation);
@@ -1208,9 +1207,9 @@ impl Thread {
                 "java/util/Arrays",
                 "toString",
                 MethodDescriptor {
-                    parameter_size,
+                    parameter_size: _,
                     parameters,
-                    return_type,
+                    return_type: _,
                 },
             ) => {
                 let arr_ref = stackframe.lock().unwrap().locals[0];
@@ -1541,13 +1540,12 @@ impl Thread {
 fn allocate_multi_array(
     heap: &mut Vec<Arc<Mutex<Object>>>,
     depth: &[u32],
-    is_long: bool,
     arr_type: FieldType,
 ) -> Result<u32, String> {
     match depth {
         [size] => Ok(heap_allocate(
             heap,
-            if is_long {
+            if arr_type.get_size() == 2 {
                 Array2::new(*size as usize, arr_type)
             } else {
                 Array1::new(*size as usize, arr_type)
@@ -1558,7 +1556,7 @@ fn allocate_multi_array(
                 return Err(format!("Expected an array type; got {arr_type:?}"));
             };
             let current_array = (0..*size)
-                .map(|_| allocate_multi_array(heap, rest, is_long, *inner_type.clone()))
+                .map(|_| allocate_multi_array(heap, rest, *inner_type.clone()))
                 .collect::<Result<Vec<_>, String>>()?;
             Ok(heap_allocate(
                 heap,

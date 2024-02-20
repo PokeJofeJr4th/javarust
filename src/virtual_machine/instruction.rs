@@ -1,11 +1,11 @@
-use std::{iter::Peekable, sync::Arc};
+use std::{fmt::Debug, iter::Peekable, sync::Arc};
 
 use crate::{
     class::{Constant, FieldType, MethodDescriptor},
     class_loader::parse_field_type,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Instruction {
     AThrow,
     Noop,
@@ -32,6 +32,7 @@ pub enum Instruction {
     DOp(Op),
     Convert(Type, Type),
     LCmp,
+    /// if true, dcmpl. if false, dcmpg
     DCmp(bool),
     FCmp(bool),
     ICmp(Cmp, i16),
@@ -51,7 +52,7 @@ pub enum Instruction {
     New(Arc<str>),
     NewArray1(FieldType),
     NewArray2(FieldType),
-    NewMultiArray(bool, u8, FieldType),
+    NewMultiArray(u8, FieldType),
     ArrayLength,
     ArrayStore1,
     ArrayStore2,
@@ -65,6 +66,77 @@ pub enum Instruction {
 impl Instruction {
     pub const fn push_2(bytes: u64) -> Self {
         Self::Push2((bytes >> 32) as u32, (bytes & u32::MAX as u64) as u32)
+    }
+}
+
+impl Debug for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AThrow => write!(f, "athrow"),
+            Self::Noop => write!(f, "noop"),
+            Self::Push1(x) => write!(f, "push {x}"),
+            Self::Push2(x, y) => write!(f, "push {x} {y}"),
+            Self::LoadString(s) => write!(f, "load {s:?}"),
+            Self::Load1(x) => write!(f, "load {x}"),
+            Self::Load2(x) => write!(f, "load2 {x}"),
+            Self::Store1(y) => write!(f, "store {y}"),
+            Self::Store2(y) => write!(f, "store2 {y}"),
+            Self::Pop => write!(f, "pop"),
+            Self::Pop2 => write!(f, "pop2"),
+            Self::Dup => write!(f, "dup"),
+            Self::Dupx1 => write!(f, "dupx1"),
+            Self::Dupx2 => write!(f, "dupx2"),
+            Self::Dup2 => write!(f, "dup2"),
+            Self::Dup2x1 => write!(f, "dup2x1"),
+            Self::Dup2x2 => write!(f, "dup2x2"),
+            Self::Swap => write!(f, "swap"),
+            Self::IOp(op) => write!(f, "i{op:?}"),
+            Self::IInc(idx, i) => write!(f, "iinc {idx} {i:+}"),
+            Self::LOp(op) => write!(f, "l{op:?}"),
+            Self::FOp(op) => write!(f, "f{op:?}"),
+            Self::DOp(op) => write!(f, "d{op:?}"),
+            Self::Convert(a, b) => write!(f, "{a:?}to{b:?}"),
+            Self::LCmp => write!(f, "lcmp"),
+            Self::DCmp(true) => write!(f, "dcmpl"),
+            Self::DCmp(false) => write!(f, "dcmpg"),
+            Self::FCmp(true) => write!(f, "fcmpl"),
+            Self::FCmp(false) => write!(f, "fcmpg"),
+            Self::ICmp(cmp, y) => write!(f, "if_i{cmp:?} {y:+}"),
+            Self::IfCmp(cmp, y) => write!(f, "if{cmp:?}z {y:+}"),
+            Self::Goto(y) => write!(f, "goto {y:+}"),
+            Self::Return0 => write!(f, "ret0"),
+            Self::Return1 => write!(f, "ret1"),
+            Self::Return2 => write!(f, "ret2"),
+            Self::GetStatic(class, name, ty) => write!(f, "getstatic {ty} {class}.{name}"),
+            Self::GetField(class, name, ty) => write!(f, "getfield {ty} {class}.{name}"),
+            Self::PutField(class, name, ty) => write!(f, "putfield {ty} {class}.{name}"),
+            Self::InvokeVirtual(class, name, ty) => {
+                write!(f, "invokevirtual {ty:?} {class}.{name}")
+            }
+            Self::InvokeInterface(class, name, ty) => {
+                write!(f, "invokeinterface {ty:?} {class}.{name}")
+            }
+            Self::InvokeSpecial(class, name, ty) => {
+                write!(f, "invokespecial {ty:?} {class}.{name}")
+            }
+            Self::InvokeStatic(class, name, ty) => write!(f, "invokestatic {ty:?} {class}.{name}"),
+            Self::InvokeDynamic(num, name, ty) => {
+                write!(f, "invokedynamic #{num} {ty:?} {name}")
+            }
+            Self::New(ty) => write!(f, "new {ty}"),
+            Self::NewArray1(ty) | Self::NewArray2(ty) => write!(f, "newarray {ty}"),
+            Self::NewMultiArray(b, c) => write!(f, "multinewarray[{b}] {c}"),
+            Self::ArrayLength => write!(f, "arraylength"),
+            Self::ArrayStore1 => write!(f, "arraystore1"),
+            Self::ArrayStore2 => write!(f, "arraystore2"),
+            Self::ArrayLoad1 => write!(f, "arrayload1"),
+            Self::ArrayLoad2 => write!(f, "arrayload2"),
+            Self::IfNull(invert, y) => {
+                write!(f, "if{}null {y:+}", if *invert { "non" } else { "" })
+            }
+            Self::Instanceof(class) => write!(f, "instanceof {class}"),
+            Self::CheckedCast(class) => write!(f, "checkedcast {class}"),
+        }
     }
 }
 
@@ -846,7 +918,7 @@ pub fn parse_instruction(
             let index = u16::from_be_bytes([ib1, ib2]);
 
             // I guess this doesn't do anything??? :shrug:
-            let count = bytes.next().unwrap().1;
+            let _count = bytes.next().unwrap().1;
 
             let 0 = bytes.next().unwrap().1 else {
                 return Err(String::from("Expected a zero"));
@@ -1004,9 +1076,8 @@ pub fn parse_instruction(
                 };
                 array_type = *inner;
             }
-            let is_long = array_type.get_size() == 2;
 
-            Ok(Instruction::NewMultiArray(is_long, dimensions, full_type))
+            Ok(Instruction::NewMultiArray(dimensions, full_type))
         }
         if_null @ 0xC6..=0xC7 => {
             // ifnull | ifnonnull
