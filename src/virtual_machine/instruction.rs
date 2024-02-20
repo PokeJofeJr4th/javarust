@@ -47,9 +47,9 @@ pub enum Instruction {
     InvokeStatic(Arc<str>, Arc<str>, MethodDescriptor),
     InvokeDynamic(u16, Arc<str>, MethodDescriptor),
     New(Arc<str>),
-    NewArray1,
-    NewArray2,
-    NewMultiArray(bool, u8),
+    NewArray1(FieldType),
+    NewArray2(FieldType),
+    NewMultiArray(bool, u8, FieldType),
     ArrayStore1,
     ArrayStore2,
     ArrayLoad1,
@@ -834,8 +834,14 @@ pub fn parse_instruction(
             // make a new array
             let atype = bytes.next().unwrap().1;
             match atype {
-                4..=6 | 8..=10 => Ok(Instruction::NewArray1),
-                7 | 11 => Ok(Instruction::NewArray2),
+                4 => Ok(Instruction::NewArray1(FieldType::Boolean)),
+                5 => Ok(Instruction::NewArray1(FieldType::Char)),
+                6 => Ok(Instruction::NewArray1(FieldType::Float)),
+                7 => Ok(Instruction::NewArray2(FieldType::Double)),
+                8 => Ok(Instruction::NewArray1(FieldType::Byte)),
+                9 => Ok(Instruction::NewArray1(FieldType::Short)),
+                10 => Ok(Instruction::NewArray1(FieldType::Int)),
+                11 => Ok(Instruction::NewArray2(FieldType::Long)),
                 other => Err(format!("Invalid `atype` for `anewarray`: {other}")),
             }
         }
@@ -877,6 +883,7 @@ pub fn parse_instruction(
             };
 
             let mut array_type = parse_field_type(&mut class_ref.chars().peekable())?;
+            let full_type = array_type.clone();
             for _ in 0..dimensions {
                 let FieldType::Array(inner) = array_type else {
                     return Err(String::from("Array is too shallow"));
@@ -885,7 +892,7 @@ pub fn parse_instruction(
             }
             let is_long = array_type.get_size() == 2;
 
-            Ok(Instruction::NewMultiArray(is_long, dimensions))
+            Ok(Instruction::NewMultiArray(is_long, dimensions, full_type))
         }
         if_null @ 0xC6..=0xC7 => {
             // ifnull | ifnonnull

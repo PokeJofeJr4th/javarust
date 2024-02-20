@@ -4,8 +4,8 @@ use crate::class::{AccessFlags, Class, Field, FieldType, Method, MethodDescripto
 
 use super::{object::Object, thread::heap_allocate};
 
-#[allow(non_snake_case)]
-pub mod StringBuilder;
+pub mod arrays;
+pub mod string_builder;
 
 pub static mut OBJECT_CLASS: Option<Arc<Class>> = None;
 pub static mut STRING_CLASS: Option<Arc<Class>> = None;
@@ -48,7 +48,7 @@ pub(super) fn add_native_methods(
     let array = Arc::new(array);
 
     let arrays_to_string = Arc::new(Method {
-        max_locals: 0,
+        max_locals: 1,
         access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
         name: "toString".into(),
         descriptor: MethodDescriptor {
@@ -59,12 +59,28 @@ pub(super) fn add_native_methods(
         attributes: Vec::new(),
         code: None,
     });
+    let deep_to_string = Arc::new(Method {
+        max_locals: 1,
+        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
+        name: "deepToString".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 1,
+            parameters: vec![FieldType::Array(Box::new(FieldType::Object(
+                object_name.clone(),
+            )))],
+            return_type: Some(FieldType::Object("java/lang/String".into())),
+        },
+        attributes: Vec::new(),
+        code: None,
+    });
     let mut arrays = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         "java/util/Arrays".into(),
         object_name.clone(),
     );
-    arrays.methods.push(arrays_to_string.clone());
+    arrays
+        .methods
+        .extend([arrays_to_string.clone(), deep_to_string.clone()]);
     let arrays = Arc::new(arrays);
 
     let string_length = Arc::new(Method {
@@ -366,6 +382,7 @@ pub(super) fn add_native_methods(
     method_area.extend([
         (object.clone(), init),
         (arrays.clone(), arrays_to_string),
+        (arrays.clone(), deep_to_string),
         (string.clone(), string_length),
         (string.clone(), char_at),
         (string_builder.clone(), builder_init),

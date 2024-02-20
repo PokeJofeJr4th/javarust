@@ -13,7 +13,7 @@ use crate::{
 use super::{
     instruction::Type,
     native,
-    object::{AnyObj, Array1, Array2, Object, ObjectFinder, StringObj},
+    object::{AnyObj, Array1, Array2, ArrayFields, Object, ObjectFinder, StringObj},
     Cmp, Instruction, Op, StackFrame,
 };
 
@@ -981,17 +981,17 @@ impl Thread {
                     self.pc_register += branch as usize;
                 }
             }
-            Instruction::NewArray1 => {
+            Instruction::NewArray1(field_type) => {
                 // {ty}newarray
                 let count = stackframe.lock().unwrap().operand_stack.pop().unwrap();
-                let new_array = Array1::new(count as usize);
+                let new_array = Array1::new(count as usize, field_type);
                 let objectref = heap_allocate(&mut self.heap.lock().unwrap(), new_array);
                 stackframe.lock().unwrap().operand_stack.push(objectref);
             }
-            Instruction::NewArray2 => {
+            Instruction::NewArray2(field_type) => {
                 // {ty}newarray
                 let count = stackframe.lock().unwrap().operand_stack.pop().unwrap();
-                let new_array = Array2::new(count as usize);
+                let new_array = Array2::new(count as usize, field_type);
                 let objectref = heap_allocate(&mut self.heap.lock().unwrap(), new_array);
                 stackframe.lock().unwrap().operand_stack.push(objectref);
             }
@@ -1002,7 +1002,7 @@ impl Thread {
                 let array_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
                 Array1.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
-                    arr[index as usize] = value;
+                    arr.contents[index as usize] = value;
                 })?;
             }
             Instruction::ArrayStore2 => {
@@ -1012,7 +1012,7 @@ impl Thread {
                 let array_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
                 Array2.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
-                    arr[index as usize] = value;
+                    arr.contents[index as usize] = value;
                 })?;
             }
             Instruction::ArrayLoad1 => {
@@ -1022,7 +1022,7 @@ impl Thread {
 
                 let value =
                     Array1.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
-                        arr[index as usize]
+                        arr.contents[index as usize]
                     })?;
                 stackframe.lock().unwrap().operand_stack.push(value);
             }
@@ -1033,11 +1033,11 @@ impl Thread {
 
                 let value =
                     Array2.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
-                        arr[index as usize]
+                        arr.contents[index as usize]
                     })?;
                 push_long(&mut stackframe.lock().unwrap().operand_stack, value);
             }
-            Instruction::NewMultiArray(is_long, dimensions) => {
+            Instruction::NewMultiArray(is_long, dimensions, arr_type) => {
                 let mut stackframe_ref = stackframe.lock().unwrap();
                 let dimension_sizes = (0..dimensions)
                     .map(|_| stackframe_ref.operand_stack.pop().unwrap())
@@ -1048,6 +1048,7 @@ impl Thread {
                     &mut self.heap.lock().unwrap(),
                     &dimension_sizes,
                     is_long,
+                    arr_type,
                 )?;
                 stackframe.lock().unwrap().operand_stack.push(allocation);
             }
@@ -1223,14 +1224,14 @@ impl Thread {
                         &self.heap.lock().unwrap(),
                         arr_ref as usize,
                         match field_type {
-                            FieldType::Double => |arr: &_| {
+                            FieldType::Double => |arr: ArrayFields<'_, u64>| {
                                 format!("{:?}", unsafe {
-                                    &*(arr as *const Vec<u64>).cast::<Vec<f64>>()
+                                    &*std::ptr::addr_of!(arr.contents).cast::<Vec<f64>>()
                                 })
                             },
-                            FieldType::Long => |arr: &_| {
+                            FieldType::Long => |arr: ArrayFields<'_, u64>| {
                                 format!("{:?}", unsafe {
-                                    &*(arr as *const Vec<u64>).cast::<Vec<i64>>()
+                                    &*std::ptr::addr_of!(arr.contents).cast::<Vec<i64>>()
                                 })
                             },
                             _ => unreachable!(),
@@ -1241,20 +1242,21 @@ impl Thread {
                         &self.heap.lock().unwrap(),
                         arr_ref as usize,
                         match field_type {
-                            FieldType::Int => |arr: &_| {
+                            FieldType::Int => |arr: ArrayFields<'_, u32>| {
                                 format!("{:?}", unsafe {
-                                    &*(arr as *const Vec<u32>).cast::<Vec<i32>>()
+                                    &*std::ptr::addr_of!(arr.contents).cast::<Vec<i32>>()
                                 })
                             },
-                            FieldType::Float => |arr: &_| {
+                            FieldType::Float => |arr: ArrayFields<'_, u32>| {
                                 format!("{:?}", unsafe {
-                                    &*(arr as *const Vec<u32>).cast::<Vec<f32>>()
+                                    &*std::ptr::addr_of!(arr.contents).cast::<Vec<f32>>()
                                 })
                             },
-                            _ => |arr: &Vec<_>| {
+                            _ => |arr: ArrayFields<'_, u32>| {
                                 format!(
                                     "{:?}",
-                                    arr.iter()
+                                    arr.contents
+                                        .iter()
                                         .map(|item| format!("&{item}"))
                                         .collect::<Vec<_>>()
                                 )
@@ -1267,6 +1269,21 @@ impl Thread {
                     StringObj::new(Arc::from(&*value)),
                 );
                 stackframe.lock().unwrap().operand_stack.push(string_ref);
+                self.return_one(verbose);
+            }
+            ("java/util/Arrays", "deepToString", _) => {
+                // TODO: Actually implement this
+
+                let arr_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+
+                let string_value =
+                    native::arrays::deep_to_string(&self.heap.lock().unwrap(), arr_ref as usize)?;
+
+                let str_pointer = heap_allocate(
+                    &mut self.heap.lock().unwrap(),
+                    StringObj::new(Arc::from(string_value)),
+                );
+                stackframe.lock().unwrap().operand_stack.push(str_pointer);
                 self.return_one(verbose);
             }
             ("java/lang/String", "length", _) => {
@@ -1390,14 +1407,14 @@ impl Thread {
                 },
             ) => {
                 // println!("{stackframe:?}");
-                native::StringBuilder::init(&self.heap.lock().unwrap(), stackframe)?;
+                native::string_builder::init(&self.heap.lock().unwrap(), stackframe)?;
                 self.return_void();
             }
             ("java/lang/StringBuilder", "setCharAt", _) => {
                 let builder_ref = stackframe.lock().unwrap().locals[0];
                 let index = stackframe.lock().unwrap().locals[1];
                 let char = stackframe.lock().unwrap().locals[2];
-                native::StringBuilder::set_char_at(
+                native::string_builder::set_char_at(
                     &self.heap.lock().unwrap(),
                     builder_ref as usize,
                     index as usize,
@@ -1407,7 +1424,7 @@ impl Thread {
             }
             ("java/lang/StringBuilder", "toString", _) => {
                 let builder_ref = stackframe.lock().unwrap().locals[0];
-                let string = native::StringBuilder::to_string(
+                let string = native::string_builder::to_string(
                     &self.heap.lock().unwrap(),
                     builder_ref as usize,
                 )?;
@@ -1526,21 +1543,28 @@ fn allocate_multi_array(
     heap: &mut Vec<Arc<Mutex<Object>>>,
     depth: &[u32],
     is_long: bool,
+    arr_type: FieldType,
 ) -> Result<u32, String> {
     match depth {
         [size] => Ok(heap_allocate(
             heap,
             if is_long {
-                Array2::new(*size as usize)
+                Array2::new(*size as usize, arr_type)
             } else {
-                Array1::new(*size as usize)
+                Array1::new(*size as usize, arr_type)
             },
         )),
         [size, rest @ ..] => {
+            let FieldType::Array(inner_type) = arr_type else {
+                return Err(format!("Expected an array type; got {arr_type:?}"));
+            };
             let current_array = (0..*size)
-                .map(|_| allocate_multi_array(heap, rest, is_long))
+                .map(|_| allocate_multi_array(heap, rest, is_long, *inner_type.clone()))
                 .collect::<Result<Vec<_>, String>>()?;
-            Ok(heap_allocate(heap, Array1::from_vec(current_array)))
+            Ok(heap_allocate(
+                heap,
+                Array1::from_vec(current_array, *inner_type),
+            ))
         }
         [] => Err(String::from("Can't create 0-dimensional array")),
     }

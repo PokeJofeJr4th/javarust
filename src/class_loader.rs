@@ -242,6 +242,7 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
 
         let constant_value = if access_flags.is_static() {
             let [const_idx] = attributes.iter().filter(|attr| &*attr.name == "ConstantValue").collect::<Vec<_>>()[..] else {
+                println!("{attributes:?}");
                 return Err(String::from("Static field must have exactly one `ConstantValue` attribute"))
             };
             let [b0, b1] = const_idx.data[..] else {
@@ -849,7 +850,9 @@ pub fn parse_method_descriptor(src: &str) -> Result<MethodDescriptor, String> {
     })
 }
 
-pub fn parse_field_type(chars: &mut Peekable<impl Iterator<Item = char>>) -> Result<FieldType, String> {
+pub fn parse_field_type(
+    chars: &mut Peekable<impl Iterator<Item = char>>,
+) -> Result<FieldType, String> {
     match chars.next() {
         Some('B') => Ok(FieldType::Byte),
         Some('C') => Ok(FieldType::Char),
