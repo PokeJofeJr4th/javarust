@@ -90,7 +90,9 @@ pub enum RawConstant {
 
 #[allow(clippy::too_many_lines)]
 pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result<Class, String> {
-    let 0xCAFE_BABE = get_u32(bytes)? else { return Err(String::from("Invalid header")) };
+    let 0xCAFE_BABE = get_u32(bytes)? else {
+        return Err(String::from("Invalid header"));
+    };
     let version = ClassVersion {
         minor_version: get_u16(bytes)?,
         major_version: get_u16(bytes)?,
@@ -168,7 +170,9 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
                 });
             }
             Some(15) => {
-                let Some(descriptor) = bytes.next() else { return Err(String::from("Unexpected EOF"))};
+                let Some(descriptor) = bytes.next() else {
+                    return Err(String::from("Unexpected EOF"));
+                };
                 let descriptor = match descriptor {
                     1 => MethodHandleKind::GetField,
                     2 => MethodHandleKind::GetStatic,
@@ -241,15 +245,25 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
         }
 
         let constant_value = if access_flags.is_static() {
-            let [const_idx] = attributes.iter().filter(|attr| &*attr.name == "ConstantValue").collect::<Vec<_>>()[..] else {
+            let [const_idx] = attributes
+                .iter()
+                .filter(|attr| &*attr.name == "ConstantValue")
+                .collect::<Vec<_>>()[..]
+            else {
                 println!("{attributes:?}");
-                return Err(String::from("Static field must have exactly one `ConstantValue` attribute"))
+                return Err(String::from(
+                    "Static field must have exactly one `ConstantValue` attribute",
+                ));
             };
             let [b0, b1] = const_idx.data[..] else {
-                return Err(String::from("`ConstantValue` attribute must have exactly two bytes"))
+                return Err(String::from(
+                    "`ConstantValue` attribute must have exactly two bytes",
+                ));
             };
             let Some(constant) = constants.get((b0 as usize) << 8 | b1 as usize) else {
-                return Err(String::from("`ConstantValue` attribute has invalid constant index"))
+                return Err(String::from(
+                    "`ConstantValue` attribute has invalid constant index",
+                ));
             };
             Some(constant.clone())
         } else {
@@ -334,9 +348,13 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
             let mut bootstrap_methods = Vec::new();
             for _ in 0..num_bootstrap_methods {
                 let method_ref = get_u16(&mut bytes)?;
-                let Constant::MethodHandle(method_handle) = constants[method_ref as usize - 1].clone() else {
+                let Constant::MethodHandle(method_handle) =
+                    constants[method_ref as usize - 1].clone()
+                else {
                     println!("{method_ref}: {:?}", constants[method_ref as usize - 1]);
-                    return Err(String::from("Bootstrap method needs to lead to a MethodHandle"))
+                    return Err(String::from(
+                        "Bootstrap method needs to lead to a MethodHandle",
+                    ));
                 };
                 if verbose {
                     println!("{method_handle:?}");
@@ -631,7 +649,9 @@ fn parse_java_string(bytes: Vec<u8>) -> Result<String, String> {
         } else if b < 128 {
             str.push(b as char);
         } else if b & 0b1110_0000 == 0b1100_0000 {
-            let Some(y) = bytes.next() else { return Err(String::from("Unexpected end of string"))};
+            let Some(y) = bytes.next() else {
+                return Err(String::from("Unexpected end of string"));
+            };
             let chr = ((b as u16 & 0x1f) << 6) | (y as u16 & 0x3f);
             str.push(
                 char::from_u32(chr as u32).ok_or_else(|| String::from("Invalid character code"))?,
@@ -646,8 +666,12 @@ fn parse_java_string(bytes: Vec<u8>) -> Result<String, String> {
             let chr = char::from_u32(chr).ok_or_else(|| String::from("Invalid character code"))?;
             str.push(chr);
         } else if b & 0b1111_0000 == 0b1110_0000 {
-            let Some(y) = bytes.next() else { return Err(String::from("Unexpected end of string"))};
-            let Some(z) = bytes.next() else { return Err(String::from("Unexpected end of string"))};
+            let Some(y) = bytes.next() else {
+                return Err(String::from("Unexpected end of string"));
+            };
+            let Some(z) = bytes.next() else {
+                return Err(String::from("Unexpected end of string"));
+            };
             let chr = ((b as u32 & 0xf) << 12) | ((y as u32 & 0x3f) << 6) | (z as u32 & 0x3f);
             let chr = char::from_u32(chr).ok_or_else(|| String::from("Invalid character code"))?;
             str.push(chr);
@@ -687,6 +711,7 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
         } => {
             let class = raw_class_index(constants, *class_ref_addr as usize)?;
             let (name, interface_type) = raw_name_type_index(constants, *name_type_addr as usize)?;
+            let interface_type = parse_method_descriptor(&interface_type)?;
             Constant::InterfaceRef {
                 class,
                 name,
@@ -819,8 +844,12 @@ fn raw_name_type_index(
     constants: &[RawConstant],
     idx: usize,
 ) -> Result<(Arc<str>, Arc<str>), String> {
-    let Some(RawConstant::NameTypeDescriptor { name_desc_addr, type_addr }) = constants.get(idx - 1) else {
-        return Err(String::from("Invalid NameTypeDescriptor"))
+    let Some(RawConstant::NameTypeDescriptor {
+        name_desc_addr,
+        type_addr,
+    }) = constants.get(idx - 1)
+    else {
+        return Err(String::from("Invalid NameTypeDescriptor"));
     };
     let name = raw_str_index(constants, *name_desc_addr as usize)?;
     let type_name = raw_str_index(constants, *type_addr as usize)?;
@@ -831,7 +860,7 @@ pub fn parse_method_descriptor(src: &str) -> Result<MethodDescriptor, String> {
     let mut chars = src.chars().peekable();
     let chars = &mut chars;
     let Some('(') = chars.next() else {
-        return Err(String::from("Expected `(`"))
+        return Err(String::from("Expected `(`"));
     };
     let mut parameters = Vec::new();
     while chars.peek() != Some(&')') {

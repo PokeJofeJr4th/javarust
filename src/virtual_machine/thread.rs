@@ -722,7 +722,7 @@ impl Thread {
                 // getstatic
                 // get a static field from a class
                 let Some(class) = search_class_area(&self.class_area, &class) else {
-                    return Err(format!("Couldn't resolve class {class}"))
+                    return Err(format!("Couldn't resolve class {class}"));
                 };
 
                 let staticindex = class
@@ -754,7 +754,7 @@ impl Thread {
             Instruction::GetField(class, name, field_type) => {
                 // get a field from an object
                 let Some(class) = search_class_area(&self.class_area, &class) else {
-                    return Err(format!("Couldn't resolve class {class}"))
+                    return Err(format!("Couldn't resolve class {class}"));
                 };
 
                 let field_index = class
@@ -801,7 +801,7 @@ impl Thread {
                 // set a field in an object
 
                 let Some(class) = search_class_area(&self.class_area, &class) else {
-                    return Err(format!("Couldn't resolve class {class}"))
+                    return Err(format!("Couldn't resolve class {class}"));
                 };
 
                 let field_index = class
@@ -836,7 +836,8 @@ impl Thread {
                     )
                     .unwrap();
             }
-            Instruction::InvokeVirtual(class, name, method_type) => {
+            Instruction::InvokeVirtual(class, name, method_type)
+            | Instruction::InvokeInterface(class, name, method_type) => {
                 // invokevirtual
                 // invoke a method virtually I guess
                 let (class_ref, method_ref) =
@@ -868,7 +869,6 @@ impl Thread {
                 let new_stackframe = self.stack.last().unwrap().clone();
 
                 let new_locals = &mut new_stackframe.lock().unwrap().locals;
-                // TODO: .rev() might not be correct
                 for (index, value) in stack_iter.enumerate() {
                     if verbose {
                         println!("new_locals[{index}]={value}");
@@ -941,7 +941,6 @@ impl Thread {
                 let new_stackframe = self.stack.last().unwrap().clone();
 
                 let new_locals = &mut new_stackframe.lock().unwrap().locals;
-                // TODO: .rev() might not be correct
                 for (index, value) in stack_iter.enumerate() {
                     if verbose {
                         println!("new_locals[{index}]={value}");
@@ -967,7 +966,7 @@ impl Thread {
             Instruction::New(class) => {
                 // make a new object instance
                 let Some(class) = search_class_area(&self.class_area, &class) else {
-                    return Err(format!("Couldn't find class {class}"))
+                    return Err(format!("Couldn't find class {class}"));
                 };
                 let mut new_object = Object::new();
                 new_object.class_mut_or_insert(&class);
@@ -1114,8 +1113,8 @@ impl Thread {
                     println!("{:?}", self.heap);
                 }
                 let [Constant::String(str) | Constant::StringRef(str)] = &args[..] else {
-                        return Err(format!("Expected a single template string; got {args:?}"))
-                    };
+                    return Err(format!("Expected a single template string; got {args:?}"));
+                };
                 let mut output = String::new();
                 let mut parameters_iter = parameters.iter();
 
@@ -1131,7 +1130,7 @@ impl Thread {
                         continue;
                     }
                     let Some(field_type) = parameters_iter.next() else {
-                        return Err(format!("Not enough parameters for java/lang/invoke/StringConcatFactory.makeConcatWithConstants: {str:?} {parameters:?}"))
+                        return Err(format!("Not enough parameters for java/lang/invoke/StringConcatFactory.makeConcatWithConstants: {str:?} {parameters:?}"));
                     };
                     if field_type.get_size() == 2 {
                         let value = pop_long(&mut args_iter).unwrap();
@@ -1217,7 +1216,9 @@ impl Thread {
                 let arr_ref = stackframe.lock().unwrap().locals[0];
 
                 let [field_type] = &parameters[..] else {
-                    return Err(format!("java/util/Arrays.toString Expected one parameter; got {parameters:?}"));
+                    return Err(format!(
+                        "java/util/Arrays.toString Expected one parameter; got {parameters:?}"
+                    ));
                 };
                 let value = if field_type.get_size() == 2 {
                     Array2.get(
@@ -1272,8 +1273,6 @@ impl Thread {
                 self.return_one(verbose);
             }
             ("java/util/Arrays", "deepToString", _) => {
-                // TODO: Actually implement this
-
                 let arr_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
                 let string_value =

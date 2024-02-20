@@ -1,12 +1,13 @@
 use std::{iter::Peekable, sync::Arc};
 
 use crate::{
-    class::{BootstrapMethod, Constant, FieldType, MethodDescriptor},
+    class::{Constant, FieldType, MethodDescriptor},
     class_loader::parse_field_type,
 };
 
 #[derive(Clone, Debug)]
 pub enum Instruction {
+    AThrow,
     Noop,
     Push1(u32),
     Push2(u32, u32),
@@ -43,6 +44,7 @@ pub enum Instruction {
     GetField(Arc<str>, Arc<str>, FieldType),
     PutField(Arc<str>, Arc<str>, FieldType),
     InvokeVirtual(Arc<str>, Arc<str>, MethodDescriptor),
+    InvokeInterface(Arc<str>, Arc<str>, MethodDescriptor),
     InvokeSpecial(Arc<str>, Arc<str>, MethodDescriptor),
     InvokeStatic(Arc<str>, Arc<str>, MethodDescriptor),
     InvokeDynamic(u16, Arc<str>, MethodDescriptor),
@@ -55,6 +57,8 @@ pub enum Instruction {
     ArrayLoad1,
     ArrayLoad2,
     IfNull(bool, i16),
+    Instanceof(Arc<str>),
+    CheckedCast(Arc<str>),
 }
 
 impl Instruction {
@@ -719,8 +723,16 @@ pub fn parse_instruction(
             let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
-            let Constant::FieldRef { class, name, field_type } = constants[index as usize - 1].clone() else {
-                    return Err(format!("Error invoking GetStatic at index {index}; {:?}", constants[index as usize - 1]))
+            let Constant::FieldRef {
+                class,
+                name,
+                field_type,
+            } = constants[index as usize - 1].clone()
+            else {
+                return Err(format!(
+                    "Error invoking GetStatic at index {index}; {:?}",
+                    constants[index as usize - 1]
+                ));
             };
             Ok(Instruction::GetStatic(class, name, field_type))
         }
@@ -735,9 +747,17 @@ pub fn parse_instruction(
             let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
-            let Constant::FieldRef { class, name, field_type } = constants[index as usize - 1].clone() else {
-                    return Err(format!("Error invoking PutField at index {index}; {:?}", constants[index as usize - 1]))
-                };
+            let Constant::FieldRef {
+                class,
+                name,
+                field_type,
+            } = constants[index as usize - 1].clone()
+            else {
+                return Err(format!(
+                    "Error invoking PutField at index {index}; {:?}",
+                    constants[index as usize - 1]
+                ));
+            };
 
             Ok(Instruction::GetField(class, name, field_type))
         }
@@ -748,9 +768,17 @@ pub fn parse_instruction(
             let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
-            let Constant::FieldRef { class, name, field_type } = constants[index as usize - 1].clone() else {
-                    return Err(format!("Error invoking PutField at index {index}; {:?}", constants[index as usize - 1]))
-                };
+            let Constant::FieldRef {
+                class,
+                name,
+                field_type,
+            } = constants[index as usize - 1].clone()
+            else {
+                return Err(format!(
+                    "Error invoking PutField at index {index}; {:?}",
+                    constants[index as usize - 1]
+                ));
+            };
 
             Ok(Instruction::PutField(class, name, field_type))
         }
@@ -762,9 +790,14 @@ pub fn parse_instruction(
             let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
-            let Constant::MethodRef { class, name, method_type } = constants[index as usize - 1].clone() else {
-                    return Err(String::from("Error during InvokeVirtual"))
-                };
+            let Constant::MethodRef {
+                class,
+                name,
+                method_type,
+            } = constants[index as usize - 1].clone()
+            else {
+                return Err(String::from("Error during InvokeVirtual"));
+            };
 
             Ok(Instruction::InvokeVirtual(class, name, method_type))
         }
@@ -775,9 +808,14 @@ pub fn parse_instruction(
             let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
-            let Constant::MethodRef{name, class, method_type} = constants[index as usize - 1].clone() else {
-                    todo!("Error during InvokeSpecial")
-                };
+            let Constant::MethodRef {
+                name,
+                class,
+                method_type,
+            } = constants[index as usize - 1].clone()
+            else {
+                todo!("Error during InvokeSpecial")
+            };
 
             Ok(Instruction::InvokeSpecial(class, name, method_type))
         }
@@ -788,13 +826,43 @@ pub fn parse_instruction(
             let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
-            let Constant::MethodRef{name, class, method_type} = constants[index as usize - 1].clone() else {
-                    todo!("Throw some sort of error")
-                };
+            let Constant::MethodRef {
+                name,
+                class,
+                method_type,
+            } = constants[index as usize - 1].clone()
+            else {
+                todo!("Error during InvokeStatic")
+            };
             Ok(Instruction::InvokeStatic(class, name, method_type))
         }
         0xB9 => {
-            todo!("invokeinterface")
+            // invokeinterface
+            // invoke a method for an interface
+
+            let ib1 = bytes.next().unwrap().1;
+            let ib2 = bytes.next().unwrap().1;
+            let index = u16::from_be_bytes([ib1, ib2]);
+
+            // I guess this doesn't do anything??? :shrug:
+            let count = bytes.next().unwrap().1;
+
+            let 0 = bytes.next().unwrap().1 else {
+                return Err(String::from("Expected a zero"));
+            };
+            let Constant::InterfaceRef {
+                class,
+                name,
+                interface_type,
+            } = constants[index as usize - 1].clone()
+            else {
+                return Err(format!(
+                    "Error resolving InvokeInterface - got {:?}",
+                    constants[index as usize - 1]
+                ));
+            };
+
+            Ok(Instruction::InvokeInterface(class, name, interface_type))
         }
         0xBA => {
             // invokedynamic
@@ -803,13 +871,24 @@ pub fn parse_instruction(
             let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
-            let 0 = bytes.next().unwrap().1 else { return Err(String::from("Expected a zero"))};
-            let 0 =  bytes.next().unwrap().1 else { return Err(String::from("Expected a zero"))};
+            let 0 = bytes.next().unwrap().1 else {
+                return Err(String::from("Expected a zero"));
+            };
+            let 0 = bytes.next().unwrap().1 else {
+                return Err(String::from("Expected a zero"));
+            };
 
-            let Constant::InvokeDynamic { bootstrap_index, method_name, method_type } =
-                    constants[index as usize - 1].clone() else {
-                        return Err(format!("Error running InvokeDynamic - {:?}", constants[index as usize - 1]))
-                    };
+            let Constant::InvokeDynamic {
+                bootstrap_index,
+                method_name,
+                method_type,
+            } = constants[index as usize - 1].clone()
+            else {
+                return Err(format!(
+                    "Error running InvokeDynamic - {:?}",
+                    constants[index as usize - 1]
+                ));
+            };
 
             Ok(Instruction::InvokeDynamic(
                 bootstrap_index,
@@ -825,8 +904,8 @@ pub fn parse_instruction(
             let index = u16::from_be_bytes([ib1, ib2]);
 
             let Constant::ClassRef(class) = constants[index as usize - 1].clone() else {
-                    todo!("Throw some sort of error")
-                };
+                todo!("Throw some sort of error")
+            };
 
             Ok(Instruction::New(class))
         }
@@ -851,14 +930,36 @@ pub fn parse_instruction(
         0xBE => {
             todo!("arraylength")
         }
-        0xBF => {
-            todo!("athrow")
-        }
+        0xBF => Ok(Instruction::AThrow),
         0xC0 => {
-            todo!("checkcast")
+            // checkedcast
+            // check if an object is an instance of a given type
+            let ib1 = bytes.next().unwrap().1;
+            let ib2 = bytes.next().unwrap().1;
+            let index = u16::from_be_bytes([ib1, ib2]);
+
+            let Constant::ClassRef(class) = constants[index as usize - 1].clone() else {
+                return Err(format!(
+                    "Expected a class reference; got {:?}",
+                    constants[index as usize - 1]
+                ));
+            };
+            Ok(Instruction::CheckedCast(class))
         }
         0xC1 => {
-            todo!("instanceof")
+            // instanceof
+            // check if an object is an instance of a given type
+            let ib1 = bytes.next().unwrap().1;
+            let ib2 = bytes.next().unwrap().1;
+            let index = u16::from_be_bytes([ib1, ib2]);
+
+            let Constant::ClassRef(class) = constants[index as usize - 1].clone() else {
+                return Err(format!(
+                    "Expected a class reference; got {:?}",
+                    constants[index as usize - 1]
+                ));
+            };
+            Ok(Instruction::Instanceof(class))
         }
         0xC2 => {
             todo!("monitorenter")
@@ -879,7 +980,10 @@ pub fn parse_instruction(
             // constant index to a type
             let index = (ib1 as u16) << 8 | ib2 as u16;
             let Some(Constant::ClassRef(class_ref)) = constants.get(index as usize - 1) else {
-                return Err(format!("Invalid Constant for multianewarray: {:?}", constants.get(index as usize - 1)));
+                return Err(format!(
+                    "Invalid Constant for multianewarray: {:?}",
+                    constants.get(index as usize - 1)
+                ));
             };
 
             let mut array_type = parse_field_type(&mut class_ref.chars().peekable())?;

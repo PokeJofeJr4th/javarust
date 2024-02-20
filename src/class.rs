@@ -116,7 +116,7 @@ pub enum Constant {
     InterfaceRef {
         class: Arc<str>,
         name: Arc<str>,
-        interface_type: Arc<str>,
+        interface_type: MethodDescriptor,
     },
     NameTypeDescriptor {
         name: Arc<str>,
