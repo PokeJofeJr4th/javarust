@@ -5,6 +5,7 @@ use crate::class::{AccessFlags, Class, Field, FieldType, Method, MethodDescripto
 use super::{object::Object, thread::heap_allocate};
 
 pub mod arrays;
+mod primitives;
 pub mod string_builder;
 
 pub static mut OBJECT_CLASS: Option<Arc<Class>> = None;
@@ -32,6 +33,19 @@ pub(super) fn add_native_methods(
         attributes: Vec::new(),
         code: None,
     });
+    let object_to_string = Arc::new(Method {
+        max_locals: 1,
+        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        name: "toString".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 0,
+            parameters: Vec::new(),
+            return_type: Some(FieldType::Object("java/lang/String".into())),
+        },
+        signature: None,
+        attributes: Vec::new(),
+        code: None,
+    });
 
     let mut object = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -39,6 +53,7 @@ pub(super) fn add_native_methods(
         object_name.clone(),
     );
     object.methods.push(init.clone());
+    object.methods.push(object_to_string.clone());
     let object = Arc::new(object);
 
     let array = Class::new(
@@ -207,6 +222,19 @@ pub(super) fn add_native_methods(
         .extend([random_init.clone(), next_int.clone()]);
     let random = Arc::new(random);
 
+    let println_object = Arc::new(Method {
+        max_locals: 2,
+        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        name: "println".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 1,
+            parameters: vec![FieldType::Object(object_name.clone())],
+            return_type: None,
+        },
+        signature: None,
+        attributes: Vec::new(),
+        code: None,
+    });
     let println = Arc::new(Method {
         max_locals: 2,
         access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -266,6 +294,7 @@ pub(super) fn add_native_methods(
     );
     printstream.methods.extend([
         println.clone(),
+        println_object.clone(),
         println_empty.clone(),
         println_float.clone(),
         println_int.clone(),
@@ -398,6 +427,7 @@ pub(super) fn add_native_methods(
     }
     method_area.extend([
         (object.clone(), init),
+        (object.clone(), object_to_string),
         (arrays.clone(), arrays_to_string),
         (arrays.clone(), deep_to_string),
         (string.clone(), string_length),
@@ -408,6 +438,7 @@ pub(super) fn add_native_methods(
         (random.clone(), random_init),
         (random.clone(), next_int),
         (printstream.clone(), println),
+        (printstream.clone(), println_object),
         (printstream.clone(), println_float),
         (printstream.clone(), println_int),
         (printstream.clone(), println_empty),

@@ -1469,16 +1469,31 @@ impl Thread {
                 // println!("{stackframe:?}");
                 let arg = stackframe.lock().unwrap().locals[1];
                 let heap_borrow = self.heap.lock().unwrap();
-                let reference = heap_borrow.get(arg as usize);
-                if StringObj
-                    .extract(&reference.unwrap().lock().unwrap(), |string| {
-                        println!("{string}");
-                    })
-                    .is_err()
-                {
-                    return Err(format!("Invalid argument for println: {reference:?}"));
-                }
+                let (to_string_class, to_string_method) =
+                    AnyObj.get(&heap_borrow, arg as usize, |obj| {
+                        obj.resolve_method(
+                            &self.method_area,
+                            &self.class_area,
+                            "toString",
+                            &MethodDescriptor {
+                                parameter_size: 0,
+                                parameters: Vec::new(),
+                                return_type: Some(FieldType::Object(unsafe {
+                                    native::STRING_CLASS.as_ref().unwrap().this.clone()
+                                })),
+                            },
+                        )
+                    })?;
                 drop(heap_borrow);
+                let stackframes = self.stack.len();
+                self.invoke_method(to_string_method, to_string_class);
+                self.stack.last_mut().unwrap().lock().unwrap().locals[0] = arg;
+                while self.stack.len() > stackframes {
+                    self.tick(verbose)?;
+                }
+                let ret = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                let str = StringObj.get(&self.heap.lock().unwrap(), ret as usize, Clone::clone)?;
+                println!("{str}");
                 self.return_void();
             }
             (
