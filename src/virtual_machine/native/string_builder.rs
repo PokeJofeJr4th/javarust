@@ -16,7 +16,8 @@ pub fn init(
         AnyObj
             .get_mut(heap_borrow, obj_ref as usize, |heap_obj| {
                 heap_obj
-                    .class_mut_or_insert(&stackframe.lock().unwrap().class)
+                    .class_mut(&stackframe.lock().unwrap().class.this)
+                    .unwrap()
                     .native_fields
                     .push(Box::new(String::from(&**init_string)));
             })

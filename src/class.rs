@@ -58,7 +58,7 @@ impl Debug for Class {
         if !self.interfaces.is_empty() {
             write!(f, " implements {}", self.interfaces.join(", "))?;
         }
-        let mut s = f.debug_struct("class");
+        let mut s = f.debug_struct("");
         if let Some(signature) = &self.signature {
             s.field("signature", signature);
         }

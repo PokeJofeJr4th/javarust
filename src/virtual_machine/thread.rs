@@ -52,7 +52,10 @@ impl Thread {
                 operand_stack.push(b);
             }
             Instruction::LoadString(str) => {
-                let str_ptr = heap_allocate(&mut self.heap.lock().unwrap(), StringObj::new(str));
+                let str_ptr = heap_allocate(
+                    &mut self.heap.lock().unwrap(),
+                    StringObj::new(&self.class_area, str),
+                );
                 stackframe.lock().unwrap().operand_stack.push(str_ptr);
             }
             Instruction::Load2(index) => {
@@ -778,7 +781,7 @@ impl Thread {
                                     class.this
                                 );
                             }
-                            let object_fields = object_borrow.class_mut_or_insert(&class);
+                            let object_fields = object_borrow.class_mut(&class.this).unwrap();
 
                             if field_type.get_size() == 1 {
                                 let value = object_fields.fields[field_index];
@@ -824,7 +827,7 @@ impl Thread {
                         &self.heap.lock().unwrap(),
                         object_index as usize,
                         |object_borrow| {
-                            let object_fields = object_borrow.class_mut_or_insert(&class);
+                            let object_fields = object_borrow.class_mut(&class.this).unwrap();
 
                             if field_type.get_size() == 1 {
                                 object_fields.fields[field_index] = value as u32;
@@ -968,8 +971,7 @@ impl Thread {
                 let Some(class) = search_class_area(&self.class_area, &class) else {
                     return Err(format!("Couldn't find class {class}"));
                 };
-                let mut new_object = Object::new();
-                new_object.class_mut_or_insert(&class);
+                let mut new_object = Object::from_class(&self.class_area, &class);
                 let objectref = heap_allocate(&mut self.heap.lock().unwrap(), new_object);
                 stackframe.lock().unwrap().operand_stack.push(objectref);
             }
@@ -983,14 +985,14 @@ impl Thread {
             Instruction::NewArray1(field_type) => {
                 // {ty}newarray
                 let count = stackframe.lock().unwrap().operand_stack.pop().unwrap();
-                let new_array = Array1::new(count as usize, field_type);
+                let new_array = Array1::new(&self.class_area, count as usize, field_type);
                 let objectref = heap_allocate(&mut self.heap.lock().unwrap(), new_array);
                 stackframe.lock().unwrap().operand_stack.push(objectref);
             }
             Instruction::NewArray2(field_type) => {
                 // {ty}newarray
                 let count = stackframe.lock().unwrap().operand_stack.pop().unwrap();
-                let new_array = Array2::new(count as usize, field_type);
+                let new_array = Array2::new(&self.class_area, count as usize, field_type);
                 let objectref = heap_allocate(&mut self.heap.lock().unwrap(), new_array);
                 stackframe.lock().unwrap().operand_stack.push(objectref);
             }
@@ -1044,6 +1046,7 @@ impl Thread {
                 drop(stackframe_ref);
                 // make all the thingies
                 let allocation = allocate_multi_array(
+                    &self.class_area,
                     &mut self.heap.lock().unwrap(),
                     &dimension_sizes,
                     arr_type,
@@ -1180,7 +1183,7 @@ impl Thread {
                 }
                 let heap_pointer = heap_allocate(
                     &mut self.heap.lock().unwrap(),
-                    StringObj::new(Arc::from(&*output)),
+                    StringObj::new(&self.class_area, Arc::from(&*output)),
                 );
                 stackframe.lock().unwrap().operand_stack.push(heap_pointer);
                 if verbose {
@@ -1266,7 +1269,7 @@ impl Thread {
                 };
                 let string_ref = heap_allocate(
                     &mut self.heap.lock().unwrap(),
-                    StringObj::new(Arc::from(&*value)),
+                    StringObj::new(&self.class_area, Arc::from(&*value)),
                 );
                 stackframe.lock().unwrap().operand_stack.push(string_ref);
                 self.return_one(verbose);
@@ -1279,7 +1282,7 @@ impl Thread {
 
                 let str_pointer = heap_allocate(
                     &mut self.heap.lock().unwrap(),
-                    StringObj::new(Arc::from(string_value)),
+                    StringObj::new(&self.class_area, Arc::from(string_value)),
                 );
                 stackframe.lock().unwrap().operand_stack.push(str_pointer);
                 self.return_one(verbose);
@@ -1426,8 +1429,10 @@ impl Thread {
                     &self.heap.lock().unwrap(),
                     builder_ref as usize,
                 )?;
-                let string_ref =
-                    heap_allocate(&mut self.heap.lock().unwrap(), StringObj::new(string));
+                let string_ref = heap_allocate(
+                    &mut self.heap.lock().unwrap(),
+                    StringObj::new(&self.class_area, string),
+                );
 
                 stackframe.lock().unwrap().operand_stack.push(string_ref);
                 self.return_one(verbose);
@@ -1538,6 +1543,7 @@ impl Thread {
 }
 
 fn allocate_multi_array(
+    class_area: &[Arc<Class>],
     heap: &mut Vec<Arc<Mutex<Object>>>,
     depth: &[u32],
     arr_type: FieldType,
@@ -1546,9 +1552,9 @@ fn allocate_multi_array(
         [size] => Ok(heap_allocate(
             heap,
             if arr_type.get_size() == 2 {
-                Array2::new(*size as usize, arr_type)
+                Array2::new(class_area, *size as usize, arr_type)
             } else {
-                Array1::new(*size as usize, arr_type)
+                Array1::new(class_area, *size as usize, arr_type)
             },
         )),
         [size, rest @ ..] => {
@@ -1556,11 +1562,11 @@ fn allocate_multi_array(
                 return Err(format!("Expected an array type; got {arr_type:?}"));
             };
             let current_array = (0..*size)
-                .map(|_| allocate_multi_array(heap, rest, *inner_type.clone()))
+                .map(|_| allocate_multi_array(class_area, heap, rest, *inner_type.clone()))
                 .collect::<Result<Vec<_>, String>>()?;
             Ok(heap_allocate(
                 heap,
-                Array1::from_vec(current_array, *inner_type),
+                Array1::from_vec(class_area, current_array, *inner_type),
             ))
         }
         [] => Err(String::from("Can't create 0-dimensional array")),
@@ -1607,7 +1613,7 @@ fn long_load(stackframe: &Mutex<StackFrame>, index: usize) {
         .extend([value_upper, value_lower]);
 }
 
-fn search_class_area(class_area: &[Arc<Class>], class: &str) -> Option<Arc<Class>> {
+pub fn search_class_area(class_area: &[Arc<Class>], class: &str) -> Option<Arc<Class>> {
     for possible_class in class_area {
         if &*possible_class.this == class {
             return Some(possible_class.clone());

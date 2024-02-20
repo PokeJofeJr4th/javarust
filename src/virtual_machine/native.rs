@@ -273,16 +273,14 @@ pub(super) fn add_native_methods(
 
     let printstream = Arc::new(printstream);
 
-    let mut system_out = Object::new();
-    system_out.class_mut_or_insert(&printstream);
-    let system_out_idx = heap_allocate(heap, system_out);
+    let system_out = heap_allocate(heap, Object::from_class(class_area, &printstream));
 
     let mut system = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         "java/lang/System".into(),
         object_name.clone(),
     );
-    system.static_data.lock().unwrap().push(system_out_idx);
+    system.static_data.lock().unwrap().push(system_out);
     system.statics.push((
         Field {
             access_flags: AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
