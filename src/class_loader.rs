@@ -226,7 +226,7 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
     let interface_count = get_u16(bytes)?;
     let mut interfaces = Vec::new();
     for _ in 0..interface_count {
-        interfaces.push(get_u16(bytes)?);
+        interfaces.push(raw_class_index(&raw_constants, get_u16(bytes)? as usize)?);
     }
 
     let field_count = get_u16(bytes)?;
@@ -270,12 +270,15 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
             None
         };
 
+        let (signature, attributes) = get_signature(&constants, attributes)?;
+
         fields.push(Field {
             access_flags,
             name,
             descriptor,
-            attributes,
             constant_value,
+            signature,
+            attributes,
         });
     }
 
@@ -319,13 +322,17 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
             Some((code, max_locals)) => (Some(code), max_locals),
             None => (None, 0),
         };
+
+        let (signature, attributes) = get_signature(&constants, attributes)?;
+
         methods.push(Arc::new(Method {
             max_locals,
             access_flags,
             name,
             descriptor,
-            attributes,
             code,
+            signature,
+            attributes,
         }));
     }
 
@@ -334,12 +341,7 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
     for _ in 0..attribute_count {
         attributes.push(get_attribute(&constants, bytes)?);
     }
-    let (bootstrap_attrs, attributes) = {
-        let split: (Vec<_>, Vec<_>) = attributes
-            .into_iter()
-            .partition(|attr| &*attr.name == "BootstrapMethods");
-        split
-    };
+    let (bootstrap_attrs, attributes) = split_attributes(attributes, "BootstrapMethods");
 
     let bootstrap_methods = match &bootstrap_attrs[..] {
         [bootstrap] => {
@@ -379,6 +381,8 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
             ))
         }
     };
+
+    let (signature, attributes) = get_signature(&constants, attributes)?;
 
     let (statics, fields): (Vec<_>, Vec<_>) = fields
         .into_iter()
@@ -424,8 +428,41 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
         methods,
         bootstrap_methods,
         version,
+        signature,
         attributes,
     })
+}
+
+fn split_attributes(attributes: Vec<Attribute>, compare: &str) -> (Vec<Attribute>, Vec<Attribute>) {
+    attributes
+        .into_iter()
+        .partition(|attr| &*attr.name == compare)
+}
+
+fn get_signature(
+    constants: &[Constant],
+    attributes: Vec<Attribute>,
+) -> Result<(Option<Arc<str>>, Vec<Attribute>), String> {
+    let (signature_attrs, attributes) = split_attributes(attributes, "Signature");
+    let signature = match &signature_attrs[..] {
+        [signature] => {
+            let signature_ref = get_u16(&mut signature.data.iter().copied().peekable())?;
+            let Constant::String(signature) = constants[signature_ref as usize - 1].clone() else {
+                return Err(format!(
+                    "Expected string for signature; got {:?}",
+                    constants[signature_ref as usize - 1]
+                ));
+            };
+            Some(signature)
+        }
+        [] => None,
+        _ => {
+            return Err(String::from(
+                "A class can have at most one Signature attribute",
+            ))
+        }
+    };
+    Ok((signature, attributes))
 }
 
 fn get_attribute(

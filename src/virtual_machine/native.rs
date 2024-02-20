@@ -28,6 +28,7 @@ pub(super) fn add_native_methods(
             parameters: Vec::new(),
             return_type: None,
         },
+        signature: None,
         attributes: Vec::new(),
         code: None,
     });
@@ -40,7 +41,7 @@ pub(super) fn add_native_methods(
     object.methods.push(init.clone());
     let object = Arc::new(object);
 
-    let mut array = Class::new(
+    let array = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         "java/lang/Array".into(),
         object_name.clone(),
@@ -56,8 +57,9 @@ pub(super) fn add_native_methods(
             parameters: vec![FieldType::Array(Box::new(FieldType::Int))],
             return_type: Some(FieldType::Object("java/lang/String".into())),
         },
-        attributes: Vec::new(),
+        signature: None,
         code: None,
+        attributes: Vec::new(),
     });
     let deep_to_string = Arc::new(Method {
         max_locals: 1,
@@ -70,6 +72,7 @@ pub(super) fn add_native_methods(
             )))],
             return_type: Some(FieldType::Object("java/lang/String".into())),
         },
+        signature: None,
         attributes: Vec::new(),
         code: None,
     });
@@ -92,6 +95,7 @@ pub(super) fn add_native_methods(
             parameters: Vec::new(),
             return_type: Some(FieldType::Int),
         },
+        signature: None,
         attributes: Vec::new(),
         code: None,
     });
@@ -104,6 +108,7 @@ pub(super) fn add_native_methods(
             parameters: vec![FieldType::Int],
             return_type: Some(FieldType::Char),
         },
+        signature: None,
         attributes: Vec::new(),
         code: None,
     });
@@ -126,6 +131,7 @@ pub(super) fn add_native_methods(
             parameters: vec![FieldType::Object("java/lang/String".into())],
             return_type: None,
         },
+        signature: None,
         attributes: Vec::new(),
         code: None,
     });
@@ -138,6 +144,7 @@ pub(super) fn add_native_methods(
             parameters: vec![FieldType::Int, FieldType::Char],
             return_type: None,
         },
+        signature: None,
         attributes: Vec::new(),
         code: None,
     });
@@ -150,6 +157,7 @@ pub(super) fn add_native_methods(
             parameters: Vec::new(),
             return_type: Some(FieldType::Object("java/lang/String".into())),
         },
+        signature: None,
         attributes: Vec::new(),
         code: None,
     });
@@ -172,6 +180,7 @@ pub(super) fn add_native_methods(
             parameters: Vec::new(),
             return_type: None,
         },
+        signature: None,
         attributes: Vec::new(),
         code: None,
     });
@@ -184,6 +193,7 @@ pub(super) fn add_native_methods(
             parameters: vec![FieldType::Int],
             return_type: Some(FieldType::Int),
         },
+        signature: None,
         attributes: Vec::new(),
         code: None,
     });
@@ -206,6 +216,7 @@ pub(super) fn add_native_methods(
             parameters: vec![FieldType::Object("java/lang/String".into())],
             return_type: None,
         },
+        signature: None,
         attributes: Vec::new(),
         code: None,
     });
@@ -218,6 +229,7 @@ pub(super) fn add_native_methods(
             parameters: vec![FieldType::Int],
             return_type: None,
         },
+        signature: None,
         attributes: Vec::new(),
         code: None,
     });
@@ -230,6 +242,7 @@ pub(super) fn add_native_methods(
             parameters: vec![FieldType::Float],
             return_type: None,
         },
+        signature: None,
         attributes: Vec::new(),
         code: None,
     });
@@ -242,6 +255,7 @@ pub(super) fn add_native_methods(
             parameters: Vec::new(),
             return_type: None,
         },
+        signature: None,
         attributes: Vec::new(),
         code: None,
     });
@@ -275,6 +289,7 @@ pub(super) fn add_native_methods(
             name: "out".into(),
             descriptor: FieldType::Object("java/io/PrintStream".into()),
             attributes: Vec::new(),
+            signature: None,
             constant_value: None,
         },
         0,
@@ -293,6 +308,7 @@ pub(super) fn add_native_methods(
             name: "location".into(),
             descriptor: FieldType::Int,
             attributes: Vec::new(),
+            signature: None,
             constant_value: None,
         },
         0,
@@ -311,6 +327,7 @@ pub(super) fn add_native_methods(
             name: "location".into(),
             descriptor: FieldType::Int,
             attributes: Vec::new(),
+            signature: None,
             constant_value: None,
         },
         0,
@@ -339,6 +356,7 @@ pub(super) fn add_native_methods(
             ],
             return_type: Some(FieldType::Object("java/lang/invoke/CallSite".into())),
         },
+        signature: None,
         attributes: Vec::new(),
         code: None,
     });
@@ -362,6 +380,7 @@ pub(super) fn add_native_methods(
             parameters: vec![FieldType::Double],
             return_type: Some(FieldType::Double),
         },
+        signature: None,
         attributes: Vec::new(),
         code: None,
     });

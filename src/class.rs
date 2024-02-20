@@ -4,20 +4,20 @@ use std::sync::{Arc, Mutex};
 
 use crate::virtual_machine::Instruction;
 
-#[derive(Debug)]
 pub struct Class {
     pub version: ClassVersion,
     pub constants: Vec<Constant>,
     pub access: AccessFlags,
     pub this: Arc<str>,
     pub super_class: Arc<str>,
-    pub interfaces: Vec<u16>,
+    pub interfaces: Vec<Arc<str>>,
     pub field_size: usize,
     pub fields: Vec<(Field, usize)>,
     pub static_data: Mutex<Vec<u32>>,
     pub statics: Vec<(Field, usize)>,
     pub methods: Vec<Arc<Method>>,
     pub bootstrap_methods: Vec<BootstrapMethod>,
+    pub signature: Option<Arc<str>>,
     pub attributes: Vec<Attribute>,
 }
 
@@ -39,8 +39,37 @@ impl Class {
             statics: Vec::new(),
             methods: Vec::new(),
             bootstrap_methods: Vec::new(),
+            signature: None,
             attributes: Vec::new(),
         }
+    }
+}
+
+impl Debug for Class {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.access, self.this)?;
+        if &*self.super_class != "java/lang/Object" {
+            write!(f, " extends {}", self.super_class)?;
+        }
+        if !self.interfaces.is_empty() {
+            write!(f, " implements {}", self.interfaces.join(", "))?;
+        }
+        let mut s = f.debug_struct("class");
+        if let Some(signature) = &self.signature {
+            s.field("signature", signature);
+        }
+        s.field("version", &self.version)
+            .field("constants", &self.constants)
+            .field("field_size", &self.field_size)
+            .field("fields", &self.fields)
+            .field("static_data", &self.static_data.lock().unwrap())
+            .field("statics", &self.statics)
+            .field("methods", &self.methods)
+            .field("bootstrap_methods", &self.bootstrap_methods);
+        for Attribute { name, data } in &self.attributes {
+            s.field(name, &data);
+        }
+        s.finish()
     }
 }
 
@@ -276,13 +305,30 @@ pub struct ClassVersion {
     pub major_version: u16,
 }
 
-#[derive(Debug)]
 pub struct Field {
     pub access_flags: AccessFlags,
     pub name: Arc<str>,
     pub descriptor: FieldType,
-    pub attributes: Vec<Attribute>,
     pub constant_value: Option<Constant>,
+    pub signature: Option<Arc<str>>,
+    pub attributes: Vec<Attribute>,
+}
+
+impl Debug for Field {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{} {}", self.access_flags, self.descriptor, self.name)?;
+        let mut s = f.debug_struct("");
+        if let Some(signature) = &self.signature {
+            s.field("signature", signature);
+        }
+        if let Some(constant_value) = &self.constant_value {
+            s.field("costant_value", constant_value);
+        }
+        for Attribute { name, data } in &self.attributes {
+            s.field(name, data);
+        }
+        s.finish()
+    }
 }
 
 pub struct Method {
@@ -290,8 +336,9 @@ pub struct Method {
     pub access_flags: AccessFlags,
     pub name: Arc<str>,
     pub descriptor: MethodDescriptor,
-    pub attributes: Vec<Attribute>,
     pub code: Option<Code>,
+    pub signature: Option<Arc<str>>,
+    pub attributes: Vec<Attribute>,
 }
 
 impl Debug for Method {
@@ -299,13 +346,16 @@ impl Debug for Method {
         write!(f, "{}{:?} ", self.access_flags, self.descriptor)?;
         let mut s = f.debug_struct(&self.name);
         s.field("max_locals", &self.max_locals);
+        if let Some(signature) = &self.signature {
+            s.field("signature", signature);
+        }
         if let Some(code) = &self.code {
             s.field("Code", code);
         }
         for Attribute { name, data } in &self.attributes {
             s.field(name, data);
         }
-        s.finish_non_exhaustive()
+        s.finish()
     }
 }
 
@@ -385,13 +435,26 @@ pub struct Attribute {
     pub data: Vec<u8>,
 }
 
-#[derive(Debug)]
 pub struct Code {
     pub max_stack: u16,
     pub code: Vec<Instruction>,
     pub exception_table: Vec<(u16, u16, u16, Option<Arc<str>>)>,
     pub attributes: Vec<Attribute>,
     pub stack_map: Vec<StackMapFrame>,
+}
+
+impl Debug for Code {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = f.debug_struct("Code");
+        s.field("max_stack", &self.max_stack)
+            .field("code", &self.code)
+            .field("stack_map", &self.stack_map)
+            .field("exception_table", &self.exception_table);
+        for Attribute { name, data } in &self.attributes {
+            s.field(name, data);
+        }
+        s.finish()
+    }
 }
 
 #[derive(Debug)]
