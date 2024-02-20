@@ -52,6 +52,7 @@ pub enum Instruction {
     NewArray1(FieldType),
     NewArray2(FieldType),
     NewMultiArray(bool, u8, FieldType),
+    ArrayLength,
     ArrayStore1,
     ArrayStore2,
     ArrayLoad1,
@@ -921,15 +922,24 @@ pub fn parse_instruction(
                 9 => Ok(Instruction::NewArray1(FieldType::Short)),
                 10 => Ok(Instruction::NewArray1(FieldType::Int)),
                 11 => Ok(Instruction::NewArray2(FieldType::Long)),
-                other => Err(format!("Invalid `atype` for `anewarray`: {other}")),
+                other => Err(format!("Invalid `atype` for `newarray`: {other}")),
             }
         }
         0xBD => {
-            todo!("anewarray")
+            // anewarray
+            // create a new array of a reference type
+            let ib1 = bytes.next().unwrap().1;
+            let ib2 = bytes.next().unwrap().1;
+            let index = u16::from_be_bytes([ib1, ib2]);
+            let Constant::ClassRef(class) = constants[index as usize - 1].clone() else {
+                return Err(format!(
+                    "Expected a class reference; got {:?}",
+                    constants[index as usize - 1]
+                ));
+            };
+            Ok(Instruction::NewArray1(FieldType::Object(class)))
         }
-        0xBE => {
-            todo!("arraylength")
-        }
+        0xBE => Ok(Instruction::ArrayLength),
         0xBF => Ok(Instruction::AThrow),
         0xC0 => {
             // checkedcast

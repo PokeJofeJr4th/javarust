@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::ops::{BitAnd, BitOr};
 use std::sync::{Arc, Mutex};
 
@@ -158,7 +158,7 @@ impl Constant {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 /// Flag Name           Value   Interpretation
 /// `ACC_PUBLIC`          0x0001  Declared public; may be accessed from outside its package.
 /// `ACC_PRIVATE`         0x0002  Declared private; usable only within the defining class.
@@ -174,6 +174,57 @@ impl Constant {
 /// `ACC_SYNTHETIC`       0x1000  Declared synthetic; not present in the source code.
 /// `ACC_ENUM`            0x4000  Declared as an element of an enum.
 pub struct AccessFlags(pub u16);
+
+impl Debug for AccessFlags {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AccessFlags({self})")
+    }
+}
+
+impl Display for AccessFlags {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0 & 1 != 0 {
+            write!(f, "public ")?;
+        }
+        if self.0 & 2 != 0 {
+            write!(f, "private ")?;
+        }
+        if self.0 & 4 != 0 {
+            write!(f, "protected ")?;
+        }
+        if self.0 & 8 != 0 {
+            write!(f, "static ")?;
+        }
+        if self.0 & 0x10 != 0 {
+            write!(f, "final ")?;
+        }
+        if self.0 & 0x20 != 0 {
+            write!(f, "synchronized ")?;
+        }
+        if self.0 & 0x40 != 0 {
+            write!(f, "volatile ")?;
+        }
+        if self.0 & 0x80 != 0 {
+            write!(f, "transient ")?;
+        }
+        if self.0 & 0x100 != 0 {
+            write!(f, "native ")?;
+        }
+        if self.0 & 0x400 != 0 {
+            write!(f, "abstract ")?;
+        }
+        if self.0 & 0x800 != 0 {
+            write!(f, "strict ")?;
+        }
+        if self.0 & 0x1000 != 0 {
+            write!(f, "synthetic ")?;
+        }
+        if self.0 & 0x4000 != 0 {
+            write!(f, "enum ")?;
+        }
+        Ok(())
+    }
+}
 
 impl AccessFlags {
     pub const fn is_static(self) -> bool {
@@ -234,7 +285,6 @@ pub struct Field {
     pub constant_value: Option<Constant>,
 }
 
-#[derive(Debug)]
 pub struct Method {
     pub max_locals: u16,
     pub access_flags: AccessFlags,
@@ -244,11 +294,49 @@ pub struct Method {
     pub code: Option<Code>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+impl Debug for Method {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{:?} ", self.access_flags, self.descriptor)?;
+        let mut s = f.debug_struct(&self.name);
+        s.field("max_locals", &self.max_locals);
+        if let Some(code) = &self.code {
+            s.field("Code", code);
+        }
+        for Attribute { name, data } in &self.attributes {
+            s.field(name, data);
+        }
+        s.finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct MethodDescriptor {
     pub parameter_size: usize,
     pub parameters: Vec<FieldType>,
     pub return_type: Option<FieldType>,
+}
+
+impl Debug for MethodDescriptor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.return_type {
+            Some(t) => {
+                write!(f, "{t} ")?;
+            }
+            None => {
+                write!(f, "void ")?;
+            }
+        }
+        write!(
+            f,
+            "{}({})",
+            self.parameter_size,
+            self.parameters
+                .iter()
+                .map(|par| format!("{par}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -263,6 +351,23 @@ pub enum FieldType {
     Short,
     Boolean,
     Array(Box<FieldType>),
+}
+
+impl Display for FieldType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Boolean => write!(f, "boolean"),
+            Self::Byte => write!(f, "byte"),
+            Self::Char => write!(f, "char"),
+            Self::Double => write!(f, "double"),
+            Self::Float => write!(f, "float"),
+            Self::Int => write!(f, "int"),
+            Self::Long => write!(f, "long"),
+            Self::Short => write!(f, "short"),
+            Self::Array(inner) => write!(f, "{inner}[]"),
+            Self::Object(class) => write!(f, "{class}"),
+        }
+    }
 }
 
 impl FieldType {
