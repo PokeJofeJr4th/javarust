@@ -839,16 +839,24 @@ impl Thread {
                     )
                     .unwrap();
             }
-            Instruction::InvokeVirtual(class, name, method_type)
-            | Instruction::InvokeInterface(class, name, method_type) => {
+            Instruction::InvokeVirtual(_class, name, method_type)
+            | Instruction::InvokeInterface(_class, name, method_type) => {
                 // invokevirtual
                 // invoke a method virtually I guess
-                let (class_ref, method_ref) =
-                    search_method_area(&self.method_area, &class, &name, &method_type).ok_or_else(
-                        || format!("Error during InvokeVirtual; {class}.{name} : {method_type:?}"),
-                    )?;
-                let args_start =
-                    stackframe.lock().unwrap().operand_stack.len() - method_type.parameter_size - 1;
+                let arg_count = method_type.parameter_size;
+                let obj_pointer = *stackframe
+                    .lock()
+                    .unwrap()
+                    .operand_stack
+                    .iter()
+                    .rev()
+                    .nth(arg_count)
+                    .unwrap();
+                let (resolved_class, resolved_method) =
+                    AnyObj.get(&self.heap.lock().unwrap(), obj_pointer as usize, |obj| {
+                        obj.resolve_method(&self.method_area, &self.class_area, &name, &method_type)
+                    })?;
+                let args_start = stackframe.lock().unwrap().operand_stack.len() - arg_count - 1;
                 if verbose {
                     println!(
                         "Args Start: {args_start}\nStack: {:?}",
@@ -863,10 +871,10 @@ impl Thread {
                 if verbose {
                     println!(
                         "Invoking Virtual Method {} on {}",
-                        method_ref.name, class_ref.this
+                        resolved_method.name, resolved_class.this
                     );
                 }
-                self.invoke_method(method_ref, class_ref);
+                self.invoke_method(resolved_method, resolved_class);
                 self.pc_register = 0;
 
                 let new_stackframe = self.stack.last().unwrap().clone();
@@ -971,8 +979,10 @@ impl Thread {
                 let Some(class) = search_class_area(&self.class_area, &class) else {
                     return Err(format!("Couldn't find class {class}"));
                 };
-                let mut new_object = Object::from_class(&self.class_area, &class);
-                let objectref = heap_allocate(&mut self.heap.lock().unwrap(), new_object);
+                let objectref = heap_allocate(
+                    &mut self.heap.lock().unwrap(),
+                    Object::from_class(&self.class_area, &class),
+                );
                 stackframe.lock().unwrap().operand_stack.push(objectref);
             }
             Instruction::IfNull(is_rev, branch) => {

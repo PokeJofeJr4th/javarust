@@ -3,9 +3,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::class::{Class, FieldType};
+use crate::class::{Class, FieldType, Method, MethodDescriptor};
 
-use super::{native, thread::search_class_area};
+use super::{native, search_method_area, thread::search_class_area};
 
 #[derive(Debug)]
 pub struct Instance {
@@ -67,6 +67,28 @@ impl Object {
             Some(&self.fields)
         } else {
             self.super_object.as_ref()?.class(class)
+        }
+    }
+
+    pub fn resolve_method(
+        &self,
+        method_area: &[(Arc<Class>, Arc<Method>)],
+        class_area: &[Arc<Class>],
+        method: &str,
+        descriptor: &MethodDescriptor,
+    ) -> (Arc<Class>, Arc<Method>) {
+        let mut current_class = search_class_area(class_area, &self.class).unwrap();
+        loop {
+            if let Some(values) =
+                search_method_area(method_area, &current_class.this, method, descriptor)
+            {
+                return values;
+            }
+            assert!(
+                &*current_class.this != "java/lang/Object",
+                "We shouldn't get to object ;-;"
+            );
+            current_class = search_class_area(class_area, &current_class.super_class).unwrap();
         }
     }
 }
