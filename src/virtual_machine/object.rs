@@ -1,16 +1,16 @@
-use std::{
-    any::Any,
-    sync::{Arc, Mutex},
+use std::{any::Any, sync::Arc};
+
+use crate::{
+    class::{Class, FieldType, Method, MethodDescriptor},
+    data::{ClassArea, Heap, SharedMethodArea},
 };
 
-use crate::class::{Class, FieldType, Method, MethodDescriptor};
-
-use super::{native, search_method_area, thread::search_class_area};
+use super::native;
 
 #[derive(Debug)]
 pub struct Instance {
     pub fields: Vec<u32>,
-    pub native_fields: Vec<Box<dyn Any>>,
+    pub native_fields: Vec<Box<dyn Any + Send + Sync>>,
 }
 
 #[derive(Debug)]
@@ -20,9 +20,13 @@ pub struct Object {
     super_object: Option<Box<Object>>,
 }
 
+trait SS: Send + Sync {}
+
+impl SS for Object {}
+
 impl Object {
     /// # Panics
-    pub fn from_class(class_area: &[Arc<Class>], class: &Class) -> Self {
+    pub fn from_class(class_area: &impl ClassArea, class: &Class) -> Self {
         Self {
             fields: Instance {
                 fields: vec![0; class.field_size],
@@ -34,14 +38,14 @@ impl Object {
             } else {
                 Some(Box::new(Self::from_class(
                     class_area,
-                    &search_class_area(class_area, &class.super_class).unwrap(),
+                    &class_area.search(&class.super_class).unwrap(),
                 )))
             },
         }
     }
 
     /// # Panics
-    pub fn with_fields(class_area: &[Arc<Class>], class: &Class, fields: Instance) -> Self {
+    pub fn with_fields(class_area: &impl ClassArea, class: &Class, fields: Instance) -> Self {
         Self {
             fields,
             class: class.this.clone(),
@@ -50,7 +54,7 @@ impl Object {
             } else {
                 Some(Box::new(Self::from_class(
                     class_area,
-                    &search_class_area(class_area, &class.super_class).unwrap(),
+                    &class_area.search(&class.super_class).unwrap(),
                 )))
             },
         }
@@ -76,24 +80,27 @@ impl Object {
     /// # Panics
     pub fn resolve_method(
         &self,
-        method_area: &[(Arc<Class>, Arc<Method>)],
-        class_area: &[Arc<Class>],
+        method_area: &SharedMethodArea,
+        class_area: &impl ClassArea,
         method: &str,
         descriptor: &MethodDescriptor,
     ) -> (Arc<Class>, Arc<Method>) {
-        let mut current_class = search_class_area(class_area, &self.class).unwrap();
+        let mut current_class = class_area.search(&self.class).unwrap();
         loop {
-            if let Some(values) =
-                search_method_area(method_area, &current_class.this, method, descriptor)
-            {
+            if let Some(values) = method_area.search(&current_class.this, method, descriptor) {
                 return values;
             }
             assert!(
                 &*current_class.this != "java/lang/Object",
                 "We shouldn't get to object ;-;"
             );
-            current_class = search_class_area(class_area, &current_class.super_class).unwrap();
+            current_class = class_area.search(&current_class.super_class).unwrap();
         }
+    }
+
+    #[must_use]
+    pub fn this_class(&self) -> Arc<str> {
+        self.class.clone()
     }
 }
 
@@ -104,7 +111,7 @@ pub trait ObjectFinder {
     /// # Errors
     fn get<T>(
         &self,
-        heap: &[Arc<Mutex<Object>>],
+        heap: &Heap,
         index: usize,
         func: impl FnOnce(Self::Target<'_>) -> T,
     ) -> Result<T, String> {
@@ -116,7 +123,7 @@ pub trait ObjectFinder {
     /// # Errors
     fn get_mut<T>(
         &self,
-        heap: &[Arc<Mutex<Object>>],
+        heap: &Heap,
         index: usize,
         func: impl FnOnce(Self::TargetMut<'_>) -> T,
     ) -> Result<T, String> {
@@ -145,7 +152,7 @@ pub struct StringObj;
 impl StringObj {
     #[allow(clippy::new_ret_no_self)]
     /// # Panics
-    pub fn new(class_area: &[Arc<Class>], str: Arc<str>) -> Object {
+    pub fn new(class_area: &impl ClassArea, str: Arc<str>) -> Object {
         Object::with_fields(
             class_area,
             unsafe { native::STRING_CLASS.as_ref().unwrap() },
@@ -340,12 +347,16 @@ pub struct Array1;
 
 impl Array1 {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(class_area: &[Arc<Class>], count: usize, arr_type: FieldType) -> Object {
+    pub fn new(class_area: &impl ClassArea, count: usize, arr_type: FieldType) -> Object {
         Self::from_vec(class_area, vec![0u32; count], arr_type)
     }
 
     /// # Panics
-    pub fn from_vec(class_area: &[Arc<Class>], contents: Vec<u32>, arr_type: FieldType) -> Object {
+    pub fn from_vec(
+        class_area: &impl ClassArea,
+        contents: Vec<u32>,
+        arr_type: FieldType,
+    ) -> Object {
         Object::with_fields(
             class_area,
             unsafe { native::ARRAY_CLASS.as_ref().unwrap() },
@@ -412,12 +423,16 @@ pub struct Array2;
 
 impl Array2 {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(class_area: &[Arc<Class>], count: usize, arr_type: FieldType) -> Object {
+    pub fn new(class_area: &impl ClassArea, count: usize, arr_type: FieldType) -> Object {
         Self::from_vec(class_area, vec![0u64; count], arr_type)
     }
 
     /// # Panics
-    pub fn from_vec(class_area: &[Arc<Class>], contents: Vec<u64>, arr_type: FieldType) -> Object {
+    pub fn from_vec(
+        class_area: &impl ClassArea,
+        contents: Vec<u64>,
+        arr_type: FieldType,
+    ) -> Object {
         Object::with_fields(
             class_area,
             unsafe { native::ARRAY_CLASS.as_ref().unwrap() },

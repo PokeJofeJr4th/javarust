@@ -9,7 +9,8 @@ use crate::{
         Field, FieldType, InnerClass, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, Method,
         MethodDescriptor, MethodHandle, StackMapFrame, VerificationTypeInfo,
     },
-    virtual_machine::hydrate_code,
+    data::{Heap, WorkingClassArea, WorkingMethodArea},
+    virtual_machine::{add_native_methods, hydrate_code},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,10 +90,24 @@ pub enum RawConstant {
     Placeholder,
 }
 
+#[must_use]
+pub fn load_environment() -> (WorkingMethodArea, WorkingClassArea, Heap) {
+    let mut method_area = WorkingMethodArea::new();
+    let mut class_area = WorkingClassArea::new();
+    let mut heap = Heap::new();
+    add_native_methods(&mut method_area, &mut class_area, &mut heap);
+    (method_area, class_area, heap)
+}
+
 #[allow(clippy::too_many_lines)]
 /// # Errors
 /// # Panics
-pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result<Class, String> {
+pub fn load_class(
+    method_area: &mut WorkingMethodArea,
+    class_area: &mut WorkingClassArea,
+    bytes: &mut impl Iterator<Item = u8>,
+    verbose: bool,
+) -> Result<Arc<Class>, String> {
     let 0xCAFE_BABE = get_u32(bytes)? else {
         return Err(String::from("Invalid header"));
     };
@@ -482,7 +497,7 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
         return Err(String::from("Static data size error"));
     }
 
-    Ok(Class {
+    let class = Arc::new(Class {
         constants,
         access,
         this: this_class,
@@ -499,7 +514,14 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
         inner_classes,
         source_file,
         attributes,
-    })
+    });
+
+    for method in &class.methods {
+        method_area.push(class.clone(), method.clone());
+    }
+    class_area.push(class.clone());
+
+    Ok(class)
 }
 
 fn split_attributes(attributes: Vec<Attribute>, compare: &str) -> (Vec<Attribute>, Vec<Attribute>) {

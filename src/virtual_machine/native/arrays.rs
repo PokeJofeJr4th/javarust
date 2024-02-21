@@ -8,6 +8,7 @@ use crate::{
     },
 };
 
+#[allow(clippy::only_used_in_recursion)]
 pub fn deep_to_string(
     thread: &mut Thread,
     stackframe: &Mutex<StackFrame>,
@@ -70,7 +71,7 @@ pub fn deep_to_string(
 pub fn to_string(
     thread: &mut Thread,
     stackframe: &Mutex<StackFrame>,
-    verbose: bool,
+    _verbose: bool,
 ) -> Result<Arc<str>, String> {
     let arr_ref = stackframe.lock().unwrap().locals[0] as usize;
     let field_type = ArrayType.get(&thread.heap.lock().unwrap(), arr_ref, Clone::clone)?;

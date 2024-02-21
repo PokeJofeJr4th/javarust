@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     class::{BootstrapMethod, Class, Constant, FieldType, Method, MethodDescriptor, MethodHandle},
-    virtual_machine::search_method_area,
+    data::{ClassArea, Heap, SharedClassArea, SharedHeap, SharedMethodArea},
 };
 
 use super::{
@@ -18,9 +18,9 @@ use super::{
 pub struct Thread {
     pub pc_register: usize,
     pub stack: Vec<Arc<Mutex<StackFrame>>>,
-    pub method_area: Arc<[(Arc<Class>, Arc<Method>)]>,
-    pub class_area: Arc<[Arc<Class>]>,
-    pub heap: Arc<Mutex<Vec<Arc<Mutex<Object>>>>>,
+    pub method_area: SharedMethodArea,
+    pub class_area: SharedClassArea,
+    pub heap: SharedHeap,
 }
 
 impl Thread {
@@ -54,10 +54,11 @@ impl Thread {
                 operand_stack.push(b);
             }
             Instruction::LoadString(str) => {
-                let str_ptr = heap_allocate(
-                    &mut self.heap.lock().unwrap(),
-                    StringObj::new(&self.class_area, str),
-                );
+                let str_ptr = self
+                    .heap
+                    .lock()
+                    .unwrap()
+                    .allocate(StringObj::new(&self.class_area, str));
                 stackframe.lock().unwrap().operand_stack.push(str_ptr);
             }
             Instruction::Load2(index) => {
@@ -726,7 +727,7 @@ impl Thread {
             Instruction::GetStatic(class, name, field_type) => {
                 // getstatic
                 // get a static field from a class
-                let Some(class) = search_class_area(&self.class_area, &class) else {
+                let Some(class) = self.class_area.search(&class) else {
                     return Err(format!("Couldn't resolve class {class}"));
                 };
 
@@ -760,7 +761,7 @@ impl Thread {
             }
             Instruction::GetField(class, name, field_type) => {
                 // get a field from an object
-                let Some(class) = search_class_area(&self.class_area, &class) else {
+                let Some(class) = self.class_area.search(&class) else {
                     return Err(format!("Couldn't resolve class {class}"));
                 };
 
@@ -807,7 +808,7 @@ impl Thread {
                 // putfield
                 // set a field in an object
 
-                let Some(class) = search_class_area(&self.class_area, &class) else {
+                let Some(class) = self.class_area.search(&class) else {
                     return Err(format!("Couldn't resolve class {class}"));
                 };
 
@@ -826,22 +827,26 @@ impl Thread {
                 };
                 let object_index = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
-                AnyObj
-                    .get_mut(
-                        &self.heap.lock().unwrap(),
-                        object_index as usize,
-                        |object_borrow| {
-                            let object_fields = object_borrow.class_mut(&class.this).unwrap();
+                AnyObj.get_mut(
+                    &self.heap.lock().unwrap(),
+                    object_index as usize,
+                    |object_borrow| -> Result<(), String> {
+                        if verbose {
+                            println!("Object class: {}", object_borrow.this_class());
+                        }
+                        let object_fields = object_borrow
+                            .class_mut(&class.this)
+                            .ok_or_else(|| format!("Expected a(n) {}", class.this))?;
 
-                            if field_type.get_size() == 1 {
-                                object_fields.fields[field_index] = value as u32;
-                            } else {
-                                object_fields.fields[field_index] = (value >> 32) as u32;
-                                object_fields.fields[field_index + 1] = value as u32;
-                            }
-                        },
-                    )
-                    .unwrap();
+                        if field_type.get_size() == 1 {
+                            object_fields.fields[field_index] = value as u32;
+                        } else {
+                            object_fields.fields[field_index] = (value >> 32) as u32;
+                            object_fields.fields[field_index + 1] = value as u32;
+                        }
+                        Ok(())
+                    },
+                )??;
             }
             Instruction::InvokeVirtual(_class, name, method_type)
             | Instruction::InvokeInterface(_class, name, method_type) => {
@@ -896,9 +901,10 @@ impl Thread {
             }
             Instruction::InvokeSpecial(class, name, method_type) => {
                 // invoke an instance method
-                let (class_ref, method_ref) =
-                    search_method_area(&self.method_area, &class, &name, &method_type)
-                        .ok_or_else(|| format!("Error during InvokeSpecial; {class}.{name}"))?;
+                let (class_ref, method_ref) = self
+                    .method_area
+                    .search(&class, &name, &method_type)
+                    .ok_or_else(|| format!("Error during InvokeSpecial; {class}.{name}"))?;
                 let args_start =
                     stackframe.lock().unwrap().operand_stack.len() - method_type.parameter_size - 1;
                 let stack = &mut stackframe.lock().unwrap().operand_stack;
@@ -921,7 +927,7 @@ impl Thread {
                 let new_stackframe = self.stack.last().unwrap().clone();
 
                 let new_locals = &mut new_stackframe.lock().unwrap().locals;
-                for (index, value) in stack_iter.rev().enumerate() {
+                for (index, value) in stack_iter.enumerate() {
                     if verbose {
                         println!("new_locals[{index}]={value}");
                     }
@@ -933,10 +939,12 @@ impl Thread {
             }
             Instruction::InvokeStatic(class, name, method_type) => {
                 // make a static method
-                let (class_ref, method_ref) =
-                    search_method_area(&self.method_area, &class, &name, &method_type).ok_or_else(
-                        || format!("Error during InvokeStatic; {class}.{name}: {method_type:?}"),
-                    )?;
+                let (class_ref, method_ref) = self
+                    .method_area
+                    .search(&class, &name, &method_type)
+                    .ok_or_else(|| {
+                        format!("Error during InvokeStatic; {class}.{name}: {method_type:?}")
+                    })?;
                 if verbose {
                     println!(
                         "Invoking Static Method {} on {}",
@@ -980,34 +988,35 @@ impl Thread {
             }
             Instruction::New(class) => {
                 // make a new object instance
-                let Some(class) = search_class_area(&self.class_area, &class) else {
+                let Some(class) = self.class_area.search(&class) else {
                     return Err(format!("Couldn't find class {class}"));
                 };
-                let objectref = heap_allocate(
-                    &mut self.heap.lock().unwrap(),
-                    Object::from_class(&self.class_area, &class),
-                );
+                let objectref = self
+                    .heap
+                    .lock()
+                    .unwrap()
+                    .allocate(Object::from_class(&self.class_area, &class));
                 stackframe.lock().unwrap().operand_stack.push(objectref);
             }
             Instruction::IfNull(is_rev, branch) => {
                 // ifnull | ifnonnull
                 let ptr = stackframe.lock().unwrap().operand_stack.pop().unwrap();
                 if (ptr == u32::MAX) ^ (is_rev) {
-                    self.pc_register += branch as usize;
+                    self.pc_register = branch as usize;
                 }
             }
             Instruction::NewArray1(field_type) => {
                 // {ty}newarray
                 let count = stackframe.lock().unwrap().operand_stack.pop().unwrap();
                 let new_array = Array1::new(&self.class_area, count as usize, field_type);
-                let objectref = heap_allocate(&mut self.heap.lock().unwrap(), new_array);
+                let objectref = self.heap.lock().unwrap().allocate(new_array);
                 stackframe.lock().unwrap().operand_stack.push(objectref);
             }
             Instruction::NewArray2(field_type) => {
                 // {ty}newarray
                 let count = stackframe.lock().unwrap().operand_stack.pop().unwrap();
                 let new_array = Array2::new(&self.class_area, count as usize, field_type);
-                let objectref = heap_allocate(&mut self.heap.lock().unwrap(), new_array);
+                let objectref = self.heap.lock().unwrap().allocate(new_array);
                 stackframe.lock().unwrap().operand_stack.push(objectref);
             }
             Instruction::ArrayStore1 => {
@@ -1203,10 +1212,11 @@ impl Thread {
                         }
                     }
                 }
-                let heap_pointer = heap_allocate(
-                    &mut self.heap.lock().unwrap(),
-                    StringObj::new(&self.class_area, Arc::from(&*output)),
-                );
+                let heap_pointer = self
+                    .heap
+                    .lock()
+                    .unwrap()
+                    .allocate(StringObj::new(&self.class_area, Arc::from(&*output)));
                 stackframe.lock().unwrap().operand_stack.push(heap_pointer);
                 if verbose {
                     println!("makeConcatWithConstants: {heap_pointer}");
@@ -1256,20 +1266,17 @@ impl Thread {
 }
 
 fn allocate_multi_array(
-    class_area: &[Arc<Class>],
-    heap: &mut Vec<Arc<Mutex<Object>>>,
+    class_area: &impl ClassArea,
+    heap: &mut Heap,
     depth: &[u32],
     arr_type: FieldType,
 ) -> Result<u32, String> {
     match depth {
-        [size] => Ok(heap_allocate(
-            heap,
-            if arr_type.get_size() == 2 {
-                Array2::new(class_area, *size as usize, arr_type)
-            } else {
-                Array1::new(class_area, *size as usize, arr_type)
-            },
-        )),
+        [size] => Ok(heap.allocate(if arr_type.get_size() == 2 {
+            Array2::new(class_area, *size as usize, arr_type)
+        } else {
+            Array1::new(class_area, *size as usize, arr_type)
+        })),
         [size, rest @ ..] => {
             let FieldType::Array(inner_type) = arr_type else {
                 return Err(format!("Expected an array type; got {arr_type:?}"));
@@ -1277,10 +1284,7 @@ fn allocate_multi_array(
             let current_array = (0..*size)
                 .map(|_| allocate_multi_array(class_area, heap, rest, *inner_type.clone()))
                 .collect::<Result<Vec<_>, String>>()?;
-            Ok(heap_allocate(
-                heap,
-                Array1::from_vec(class_area, current_array, *inner_type),
-            ))
+            Ok(heap.allocate(Array1::from_vec(class_area, current_array, *inner_type)))
         }
         [] => Err(String::from("Can't create 0-dimensional array")),
     }
@@ -1324,15 +1328,6 @@ fn long_load(stackframe: &Mutex<StackFrame>, index: usize) {
         .unwrap()
         .operand_stack
         .extend([value_upper, value_lower]);
-}
-
-pub fn search_class_area(class_area: &[Arc<Class>], class: &str) -> Option<Arc<Class>> {
-    for possible_class in class_area {
-        if &*possible_class.this == class {
-            return Some(possible_class.clone());
-        }
-    }
-    None
 }
 
 pub fn heap_allocate(heap: &mut Vec<Arc<Mutex<Object>>>, element: Object) -> u32 {

@@ -4,9 +4,7 @@ use std::{
 };
 
 use crate::virtual_machine::{
-    object::StringObj,
-    thread::{heap_allocate, push_long},
-    Instruction, StackFrame, Thread,
+    object::StringObj, thread::push_long, Instruction, StackFrame, Thread,
 };
 
 use super::{Attribute, FieldType};
@@ -191,7 +189,7 @@ impl<T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<Arc<str>, String> + 
     ) -> Result<(), String> {
         let str = self.0(thread, stackframe, is_verbose)?;
         let string_object = StringObj::new(&thread.class_area, str);
-        let heap_allocation = heap_allocate(&mut thread.heap.lock().unwrap(), string_object);
+        let heap_allocation = thread.heap.lock().unwrap().allocate(string_object);
         stackframe
             .lock()
             .unwrap()

@@ -1,10 +1,16 @@
 use std::sync::{Arc, Mutex};
 
-use rand::{rngs::ThreadRng, thread_rng, Rng};
+use rand::{
+    rngs::{StdRng, ThreadRng},
+    Rng, SeedableRng,
+};
 
-use crate::class::{
-    AccessFlags, Class, Code, Field, FieldType, Method, MethodDescriptor, NativeDoubleMethod,
-    NativeSingleMethod, NativeStringMethod, NativeTodo, NativeVoid,
+use crate::{
+    class::{
+        AccessFlags, Class, Code, Field, FieldType, Method, MethodDescriptor, NativeDoubleMethod,
+        NativeSingleMethod, NativeStringMethod, NativeTodo, NativeVoid,
+    },
+    data::{Heap, WorkingClassArea, WorkingMethodArea},
 };
 
 use self::{
@@ -16,7 +22,6 @@ use self::{
 
 use super::{
     object::{Object, ObjectFinder},
-    thread::heap_allocate,
     StackFrame, Thread,
 };
 
@@ -32,10 +37,11 @@ pub static mut ARRAY_CLASS: Option<Arc<Class>> = None;
 pub static mut RANDOM_CLASS: Option<Arc<Class>> = None;
 
 #[allow(clippy::too_many_lines)]
-pub(super) fn add_native_methods(
-    method_area: &mut Vec<(Arc<Class>, Arc<Method>)>,
-    class_area: &mut Vec<Arc<Class>>,
-    heap: &mut Vec<Arc<Mutex<Object>>>,
+/// # Panics
+pub fn add_native_methods(
+    method_area: &mut WorkingMethodArea,
+    class_area: &mut WorkingClassArea,
+    heap: &mut Heap,
 ) {
     let object_name: Arc<str> = Arc::from("java/lang/Object");
     let object_init = Arc::new(Method {
@@ -260,7 +266,9 @@ pub(super) fn add_native_methods(
                     &thread.heap.lock().unwrap(),
                     obj as usize,
                     |instance| {
-                        instance.native_fields.push(Box::new(thread_rng()));
+                        instance
+                            .native_fields
+                            .push(Box::new(StdRng::from_entropy()));
                     },
                 )
             },
@@ -310,26 +318,26 @@ pub(super) fn add_native_methods(
         .extend([random_init.clone(), next_int.clone()]);
     let random = Arc::new(random);
 
-    // let println_object = Arc::new(Method {
-    //     max_locals: 2,
-    //     access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
-    //     name: "println".into(),
-    //     descriptor: MethodDescriptor {
-    //         parameter_size: 1,
-    //         parameters: vec![FieldType::Object(object_name.clone())],
-    //         return_type: None,
-    //     },
-    //     signature: None,
-    //     attributes: Vec::new(),
-    //     code: Code::native(NativeTodo),
-    // });
-    let println = Arc::new(Method {
+    let println_string = Arc::new(Method {
         max_locals: 2,
         access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         name: "println".into(),
         descriptor: MethodDescriptor {
             parameter_size: 1,
             parameters: vec![FieldType::Object("java/lang/String".into())],
+            return_type: None,
+        },
+        signature: None,
+        attributes: Vec::new(),
+        code: Code::native(NativeVoid(native_println_object)),
+    });
+    let println_object = Arc::new(Method {
+        max_locals: 2,
+        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        name: "println".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 1,
+            parameters: vec![FieldType::Object("java/lang/Object".into())],
             return_type: None,
         },
         signature: None,
@@ -455,7 +463,8 @@ pub(super) fn add_native_methods(
         object_name.clone(),
     );
     printstream.methods.extend([
-        println.clone(),
+        println_string.clone(),
+        println_object.clone(),
         println_empty.clone(),
         println_float.clone(),
         println_int.clone(),
@@ -466,7 +475,7 @@ pub(super) fn add_native_methods(
 
     let printstream = Arc::new(printstream);
 
-    let system_out = heap_allocate(heap, Object::from_class(class_area, &printstream));
+    let system_out = heap.allocate(Object::from_class(class_area, &printstream));
 
     let mut system = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -568,7 +577,8 @@ pub(super) fn add_native_methods(
         (string_builder.clone(), set_char_at),
         (random.clone(), random_init),
         (random.clone(), next_int),
-        (printstream.clone(), println),
+        (printstream.clone(), println_string),
+        (printstream.clone(), println_object),
         (printstream.clone(), println_float),
         (printstream.clone(), println_int),
         (printstream.clone(), println_bool),

@@ -60,12 +60,14 @@ pub enum Instruction {
     ArrayStore2,
     ArrayLoad1,
     ArrayLoad2,
+    /// false => if non null, true => if null
     IfNull(bool, i16),
     Instanceof(Arc<str>),
     CheckedCast(Arc<str>),
 }
 
 impl Instruction {
+    #[must_use]
     pub const fn push_2(bytes: u64) -> Self {
         Self::Push2((bytes >> 32) as u32, (bytes & u32::MAX as u64) as u32)
     }
@@ -179,6 +181,8 @@ pub enum Cmp {
     Ge,
 }
 
+/// # Panics
+/// # Errors
 pub fn hydrate_code(
     constants: &[Constant],
     code: Vec<u8>,
@@ -228,6 +232,8 @@ pub fn hydrate_code(
 }
 
 #[allow(clippy::too_many_lines)]
+/// # Panics
+/// # Errors
 pub fn parse_instruction(
     constants: &[Constant],
     bytes: &mut Peekable<impl Iterator<Item = (usize, u8)>>,
@@ -1091,7 +1097,7 @@ pub fn parse_instruction(
             let bb2 = bytes.next().unwrap().1;
             let branch = u16::from_be_bytes([bb1, bb2]) as i16;
 
-            Ok(Instruction::IfNull(if_null == 0xC6, branch))
+            Ok(Instruction::IfNull(if_null == 0xC7, branch))
         }
         0xC8 => {
             // goto_w bb1 bb2 bb3 bb4

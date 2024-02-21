@@ -3,32 +3,16 @@ mod native;
 pub mod object;
 pub mod thread;
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use crate::class::{Class, Method, MethodDescriptor};
+use crate::class::{Class, Method};
+use crate::data::{SharedClassArea, SharedHeap, SharedMethodArea};
 
-use self::native::add_native_methods;
+pub use self::native::add_native_methods;
 
 pub use self::thread::Thread;
 
 pub use self::instruction::{hydrate_code, Cmp, Instruction, Op};
-
-fn search_method_area(
-    method_area: &[(Arc<Class>, Arc<Method>)],
-    class: &str,
-    method: &str,
-    method_type: &MethodDescriptor,
-) -> Option<(Arc<Class>, Arc<Method>)> {
-    for (possible_class, possible_method) in method_area {
-        if &*possible_class.this == class
-            && &*possible_method.name == method
-            && &possible_method.descriptor == method_type
-        {
-            return Some((possible_class.clone(), possible_method.clone()));
-        }
-    }
-    None
-}
 
 #[derive(Debug)]
 pub struct StackFrame {
@@ -50,17 +34,13 @@ impl StackFrame {
 }
 
 /// # Panics
-pub fn start_vm(src: Class, verbose: bool) {
-    let class = Arc::new(src);
-    let mut method_area = class
-        .methods
-        .iter()
-        .cloned()
-        .map(|method| (class.clone(), method))
-        .collect::<Vec<_>>();
-    let mut class_area = vec![class.clone()];
-    let heap = Arc::new(Mutex::new(Vec::new()));
-    add_native_methods(&mut method_area, &mut class_area, &mut heap.lock().unwrap());
+pub fn start_vm(
+    class: Arc<Class>,
+    method_area: SharedMethodArea,
+    class_area: SharedClassArea,
+    heap: SharedHeap,
+    verbose: bool,
+) {
     let mut method = None;
     for methods in &class.methods {
         if &*methods.name == "main" {
@@ -72,8 +52,8 @@ pub fn start_vm(src: Class, verbose: bool) {
     let mut primary_thread = Thread {
         pc_register: 0,
         stack: Vec::new(),
-        method_area: Arc::from(&*method_area),
-        class_area: Arc::from(&*class_area),
+        method_area,
+        class_area,
         heap,
     };
     primary_thread.invoke_method(method, class);
