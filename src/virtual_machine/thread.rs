@@ -1,4 +1,3 @@
-use rand::{rngs::ThreadRng, thread_rng, Rng};
 use std::{
     cmp::Ordering,
     fmt::Write,
@@ -12,8 +11,7 @@ use crate::{
 
 use super::{
     instruction::Type,
-    native,
-    object::{AnyObj, Array1, Array2, ArrayFields, Object, ObjectFinder, StringObj},
+    object::{AnyObj, Array1, Array2, Object, ObjectFinder, StringObj},
     Cmp, Instruction, Op, StackFrame,
 };
 
@@ -681,7 +679,7 @@ impl Thread {
                 } as u32;
                 stackframe.lock().unwrap().operand_stack.push(value);
             }
-            Instruction::IfCmp(cmp, branch) => {
+            Instruction::IfCmpZ(cmp, branch) => {
                 // if<cond>
                 // integer comparison to zero
                 let lhs = stackframe.lock().unwrap().operand_stack.pop().unwrap() as i32;
@@ -747,10 +745,12 @@ impl Thread {
 
                 if field_type.get_size() == 1 {
                     let value = static_fields[staticindex];
+                    drop(static_fields);
                     stackframe.lock().unwrap().operand_stack.push(value);
                 } else {
                     let upper = static_fields[staticindex];
                     let lower = static_fields[staticindex + 1];
+                    drop(static_fields);
                     stackframe
                         .lock()
                         .unwrap()
@@ -1067,6 +1067,13 @@ impl Thread {
                 )?;
                 stackframe.lock().unwrap().operand_stack.push(allocation);
             }
+            Instruction::ArrayLength => {
+                let arr_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap() as usize;
+                let length = Array1.get(&self.heap.lock().unwrap(), arr_ref, |arr| {
+                    arr.contents.len()
+                })? as u32;
+                stackframe.lock().unwrap().operand_stack.push(length);
+            }
             other => return Err(format!("Invalid Opcode: {other:?}")),
         }
         Ok(())
@@ -1210,195 +1217,6 @@ impl Thread {
         Ok(())
     }
 
-    #[allow(clippy::too_many_lines)]
-    fn invoke_native(
-        &mut self,
-        stackframe: &Mutex<StackFrame>,
-        verbose: bool,
-    ) -> Result<(), String> {
-        let name = stackframe.lock().unwrap().method.name.clone();
-        let method_type = stackframe.lock().unwrap().method.descriptor.clone();
-        let class = stackframe.lock().unwrap().class.this.clone();
-        match (&*class, &*name, method_type) {
-            (
-                "java/util/Arrays",
-                "toString",
-                MethodDescriptor {
-                    parameter_size: _,
-                    parameters,
-                    return_type: _,
-                },
-            ) => {
-                let arr_ref = stackframe.lock().unwrap().locals[0];
-
-                let [field_type] = &parameters[..] else {
-                    return Err(format!(
-                        "java/util/Arrays.toString Expected one parameter; got {parameters:?}"
-                    ));
-                };
-                let value = if field_type.get_size() == 2 {
-                    Array2.get(
-                        &self.heap.lock().unwrap(),
-                        arr_ref as usize,
-                        match field_type {
-                            FieldType::Double => |arr: ArrayFields<'_, u64>| {
-                                format!("{:?}", unsafe {
-                                    &*std::ptr::addr_of!(arr.contents).cast::<Vec<f64>>()
-                                })
-                            },
-                            FieldType::Long => |arr: ArrayFields<'_, u64>| {
-                                format!("{:?}", unsafe {
-                                    &*std::ptr::addr_of!(arr.contents).cast::<Vec<i64>>()
-                                })
-                            },
-                            _ => unreachable!(),
-                        },
-                    )?
-                } else {
-                    Array1.get(
-                        &self.heap.lock().unwrap(),
-                        arr_ref as usize,
-                        match field_type {
-                            FieldType::Int => |arr: ArrayFields<'_, u32>| {
-                                format!("{:?}", unsafe {
-                                    &*std::ptr::addr_of!(arr.contents).cast::<Vec<i32>>()
-                                })
-                            },
-                            FieldType::Float => |arr: ArrayFields<'_, u32>| {
-                                format!("{:?}", unsafe {
-                                    &*std::ptr::addr_of!(arr.contents).cast::<Vec<f32>>()
-                                })
-                            },
-                            _ => |arr: ArrayFields<'_, u32>| {
-                                format!(
-                                    "{:?}",
-                                    arr.contents
-                                        .iter()
-                                        .map(|item| format!("&{item}"))
-                                        .collect::<Vec<_>>()
-                                )
-                            },
-                        },
-                    )?
-                };
-                let string_ref = heap_allocate(
-                    &mut self.heap.lock().unwrap(),
-                    StringObj::new(&self.class_area, Arc::from(&*value)),
-                );
-                stackframe.lock().unwrap().operand_stack.push(string_ref);
-                self.return_one(verbose);
-            }
-            ("java/util/Arrays", "deepToString", _) => {
-                let arr_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
-
-                let string_value =
-                    native::arrays::deep_to_string(&self.heap.lock().unwrap(), arr_ref as usize)?;
-
-                let str_pointer = heap_allocate(
-                    &mut self.heap.lock().unwrap(),
-                    StringObj::new(&self.class_area, Arc::from(string_value)),
-                );
-                stackframe.lock().unwrap().operand_stack.push(str_pointer);
-                self.return_one(verbose);
-            }
-            ("java/lang/Math", "sqrt", _) => {
-                let arg_type = stackframe.lock().unwrap().method.descriptor.parameters[0].clone();
-                match arg_type {
-                    FieldType::Double => {
-                        let mut stackframe = stackframe.lock().unwrap();
-                        let param = f64::from_bits(
-                            (stackframe.locals[0] as u64) << 32 | (stackframe.locals[1] as u64),
-                        );
-                        push_long(&mut stackframe.operand_stack, param.sqrt().to_bits());
-                        drop(stackframe);
-                        self.return_two(verbose);
-                    }
-                    other => return Err(format!("java/lang/Math.sqrt({other:?}) is not defined")),
-                }
-            }
-            (
-                "java/io/PrintStream",
-                "println",
-                MethodDescriptor {
-                    parameter_size: 1,
-                    parameters,
-                    ..
-                },
-            ) if matches!(&parameters[..], [FieldType::Object(_)]) => {
-                // println!("{stackframe:?}");
-                let arg = stackframe.lock().unwrap().locals[1];
-                let heap_borrow = self.heap.lock().unwrap();
-                let (to_string_class, to_string_method) =
-                    AnyObj.get(&heap_borrow, arg as usize, |obj| {
-                        obj.resolve_method(
-                            &self.method_area,
-                            &self.class_area,
-                            "toString",
-                            &MethodDescriptor {
-                                parameter_size: 0,
-                                parameters: Vec::new(),
-                                return_type: Some(FieldType::Object(unsafe {
-                                    native::STRING_CLASS.as_ref().unwrap().this.clone()
-                                })),
-                            },
-                        )
-                    })?;
-                drop(heap_borrow);
-                let stackframes = self.stack.len();
-                // push a fake return address
-                self.stack
-                    .last_mut()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .operand_stack
-                    .push(0);
-                self.invoke_method(to_string_method, to_string_class);
-                self.stack.last_mut().unwrap().lock().unwrap().locals[0] = arg;
-                while self.stack.len() > stackframes {
-                    self.tick(verbose)?;
-                }
-                let ret = stackframe.lock().unwrap().operand_stack.pop().unwrap();
-                let str = StringObj.get(&self.heap.lock().unwrap(), ret as usize, Clone::clone)?;
-                println!("{str}");
-                self.return_void();
-            }
-            (
-                "java/io/PrintStream",
-                "println",
-                MethodDescriptor {
-                    parameter_size: 1,
-                    parameters,
-                    ..
-                },
-            ) => {
-                // println!("{stackframe:?}");
-                let arg = stackframe.lock().unwrap().locals[1];
-                match parameters[0] {
-                    FieldType::Float => {
-                        println!("{}", f32::from_bits(arg));
-                    }
-                    FieldType::Int => {
-                        println!("{}", arg as i32);
-                    }
-                    _ => {
-                        return Err(format!(
-                            "Unimplemented println argument type: {:?}",
-                            parameters[0]
-                        ))
-                    }
-                }
-                self.return_void();
-            }
-            (class, name, method_type) => {
-                return Err(format!(
-                    "Error invoking native method; {class}.{name} {method_type:?}"
-                ))
-            }
-        }
-        Ok(())
-    }
-
     /// # Panics
     pub fn return_void(&mut self) {
         self.stack.pop();
@@ -1468,13 +1286,13 @@ fn allocate_multi_array(
     }
 }
 
-fn pop_long(stack: &mut Vec<u32>) -> Option<u64> {
+pub fn pop_long(stack: &mut Vec<u32>) -> Option<u64> {
     let lower = stack.pop()?;
     let upper = stack.pop()?;
     Some((upper as u64) << 32 | lower as u64)
 }
 
-fn push_long(stack: &mut Vec<u32>, l: u64) {
+pub fn push_long(stack: &mut Vec<u32>, l: u64) {
     let lower = (l & 0xFFFF_FFFF) as u32;
     let upper = (l >> 32) as u32;
     stack.push(upper);

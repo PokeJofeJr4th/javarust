@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::virtual_machine::{
-    object::{AnyObj, Object, ObjectFinder, StringBuilder, StringObj},
+    object::{AnyObj, ObjectFinder, StringBuilder, StringObj},
     StackFrame, Thread,
 };
 

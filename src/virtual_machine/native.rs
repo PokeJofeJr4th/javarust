@@ -3,12 +3,15 @@ use std::sync::{Arc, Mutex};
 use rand::{rngs::ThreadRng, thread_rng, Rng};
 
 use crate::class::{
-    AccessFlags, Class, Code, Field, FieldType, Method, MethodDescriptor, NativeSingleMethod,
-    NativeStringMethod, NativeTodo, NativeVoid,
+    AccessFlags, Class, Code, Field, FieldType, Method, MethodDescriptor, NativeDoubleMethod,
+    NativeSingleMethod, NativeStringMethod, NativeTodo, NativeVoid,
 };
 
-use self::string::{
-    native_println_object, native_string_char_at, native_string_len, NativeStringValueOf,
+use self::{
+    arrays::deep_to_string,
+    string::{
+        native_println_object, native_string_char_at, native_string_len, NativeStringValueOf,
+    },
 };
 
 use super::{
@@ -95,7 +98,7 @@ pub(super) fn add_native_methods(
             return_type: Some(FieldType::Object("java/lang/String".into())),
         },
         signature: None,
-        code: Code::native(NativeTodo),
+        code: Code::native(NativeStringMethod(arrays::to_string)),
         attributes: Vec::new(),
     });
     let deep_to_string = Arc::new(Method {
@@ -111,7 +114,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: Code::native(NativeTodo),
+        code: Code::native(NativeStringMethod(deep_to_string)),
     });
     let mut arrays = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -333,6 +336,45 @@ pub(super) fn add_native_methods(
         attributes: Vec::new(),
         code: Code::native(NativeVoid(native_println_object)),
     });
+    let println_char = Arc::new(Method {
+        max_locals: 2,
+        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        name: "println".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 1,
+            parameters: vec![FieldType::Char],
+            return_type: None,
+        },
+        signature: None,
+        attributes: Vec::new(),
+        code: Code::native(NativeVoid(
+            |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
+                let char = char::from_u32(stackframe.lock().unwrap().locals[1])
+                    .ok_or_else(|| String::from("Invalid Character code"))?;
+                println!("{char}");
+                Ok(())
+            },
+        )),
+    });
+    let println_bool = Arc::new(Method {
+        max_locals: 2,
+        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        name: "println".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 1,
+            parameters: vec![FieldType::Boolean],
+            return_type: None,
+        },
+        signature: None,
+        attributes: Vec::new(),
+        code: Code::native(NativeVoid(
+            |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
+                let bool = stackframe.lock().unwrap().locals[1] != 0;
+                println!("{bool}");
+                Ok(())
+            },
+        )),
+    });
     let println_int = Arc::new(Method {
         max_locals: 2,
         access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -346,8 +388,28 @@ pub(super) fn add_native_methods(
         attributes: Vec::new(),
         code: Code::native(NativeVoid(
             |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
-                let int = stackframe.lock().unwrap().locals[0] as i32;
+                let int = stackframe.lock().unwrap().locals[1] as i32;
                 println!("{int}");
+                Ok(())
+            },
+        )),
+    });
+    let println_long = Arc::new(Method {
+        max_locals: 3,
+        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        name: "println".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 2,
+            parameters: vec![FieldType::Long],
+            return_type: None,
+        },
+        signature: None,
+        attributes: Vec::new(),
+        code: Code::native(NativeVoid(
+            |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
+                let locals = &stackframe.lock().unwrap().locals;
+                let long = ((locals[1] as u64) << 32 | (locals[2] as u64)) as i64;
+                println!("{long}");
                 Ok(())
             },
         )),
@@ -365,7 +427,7 @@ pub(super) fn add_native_methods(
         attributes: Vec::new(),
         code: Code::native(NativeVoid(
             |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
-                let float = f32::from_bits(stackframe.lock().unwrap().locals[0]);
+                let float = f32::from_bits(stackframe.lock().unwrap().locals[1]);
                 println!("{float}");
                 Ok(())
             },
@@ -394,10 +456,12 @@ pub(super) fn add_native_methods(
     );
     printstream.methods.extend([
         println.clone(),
-        // println_object.clone(),
         println_empty.clone(),
         println_float.clone(),
         println_int.clone(),
+        println_bool.clone(),
+        println_char.clone(),
+        println_long.clone(),
     ]);
 
     let printstream = Arc::new(printstream);
@@ -464,7 +528,16 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: Code::native(NativeTodo),
+        code: Code::native(NativeDoubleMethod(
+            |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
+                let stackframe = stackframe.lock().unwrap();
+                let param = f64::from_bits(
+                    (stackframe.locals[0] as u64) << 32 | (stackframe.locals[1] as u64),
+                );
+                drop(stackframe);
+                Ok(param.sqrt().to_bits())
+            },
+        )),
     });
     let mut math = Class::new(
         AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE,
@@ -496,9 +569,11 @@ pub(super) fn add_native_methods(
         (random.clone(), random_init),
         (random.clone(), next_int),
         (printstream.clone(), println),
-        // (printstream.clone(), println_object),
         (printstream.clone(), println_float),
         (printstream.clone(), println_int),
+        (printstream.clone(), println_bool),
+        (printstream.clone(), println_char),
+        (printstream.clone(), println_long),
         (printstream.clone(), println_empty),
         (string_concat_factory.clone(), make_concat_with_constants),
         (math.clone(), sqrt_double),

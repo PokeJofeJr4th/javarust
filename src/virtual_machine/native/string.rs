@@ -1,7 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use crate::{
-    class::{FieldType, MethodDescriptor, NativeMethod, NativeSingleMethod},
+    class::{FieldType, MethodDescriptor, NativeMethod},
     virtual_machine::{
         object::{AnyObj, ObjectFinder, StringObj},
         thread::heap_allocate,

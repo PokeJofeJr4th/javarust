@@ -569,7 +569,7 @@ fn parse_code_attribute(
         let catch_type = if catch_type == 0 {
             None
         } else {
-            Some(str_index(constants, catch_type as usize)?)
+            Some(class_index(constants, catch_type as usize)?)
         };
         exception_table.push((start_pc, end_pc, handler_pc, catch_type));
     }

@@ -21,6 +21,7 @@ pub struct Object {
 }
 
 impl Object {
+    /// # Panics
     pub fn from_class(class_area: &[Arc<Class>], class: &Class) -> Self {
         Self {
             fields: Instance {
@@ -39,6 +40,7 @@ impl Object {
         }
     }
 
+    /// # Panics
     pub fn with_fields(class_area: &[Arc<Class>], class: &Class, fields: Instance) -> Self {
         Self {
             fields,
@@ -62,6 +64,7 @@ impl Object {
         }
     }
 
+    #[must_use]
     pub fn class(&self, class: &str) -> Option<&Instance> {
         if &*self.class == class {
             Some(&self.fields)
@@ -70,6 +73,7 @@ impl Object {
         }
     }
 
+    /// # Panics
     pub fn resolve_method(
         &self,
         method_area: &[(Arc<Class>, Arc<Method>)],
@@ -97,6 +101,7 @@ pub trait ObjectFinder {
     type Target<'a>;
     type TargetMut<'a>;
 
+    /// # Errors
     fn get<T>(
         &self,
         heap: &[Arc<Mutex<Object>>],
@@ -108,6 +113,7 @@ pub trait ObjectFinder {
             .and_then(|obj| self.extract(&obj.lock().unwrap(), func))
     }
 
+    /// # Errors
     fn get_mut<T>(
         &self,
         heap: &[Arc<Mutex<Object>>],
@@ -119,12 +125,14 @@ pub trait ObjectFinder {
             .and_then(|obj| self.extract_mut(&mut obj.lock().unwrap(), func))
     }
 
+    /// # Errors
     fn extract<T>(
         &self,
         object: &Object,
         func: impl FnOnce(Self::Target<'_>) -> T,
     ) -> Result<T, String>;
 
+    /// # Errors
     fn extract_mut<T>(
         &self,
         object: &mut Object,
@@ -136,6 +144,7 @@ pub struct StringObj;
 
 impl StringObj {
     #[allow(clippy::new_ret_no_self)]
+    /// # Panics
     pub fn new(class_area: &[Arc<Class>], str: Arc<str>) -> Object {
         Object::with_fields(
             class_area,
@@ -335,6 +344,7 @@ impl Array1 {
         Self::from_vec(class_area, vec![0u32; count], arr_type)
     }
 
+    /// # Panics
     pub fn from_vec(class_area: &[Arc<Class>], contents: Vec<u32>, arr_type: FieldType) -> Object {
         Object::with_fields(
             class_area,
@@ -406,6 +416,7 @@ impl Array2 {
         Self::from_vec(class_area, vec![0u64; count], arr_type)
     }
 
+    /// # Panics
     pub fn from_vec(class_area: &[Arc<Class>], contents: Vec<u64>, arr_type: FieldType) -> Object {
         Object::with_fields(
             class_area,

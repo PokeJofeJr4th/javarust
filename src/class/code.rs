@@ -4,7 +4,9 @@ use std::{
 };
 
 use crate::virtual_machine::{
-    object::StringObj, thread::heap_allocate, Instruction, StackFrame, Thread,
+    object::StringObj,
+    thread::{heap_allocate, push_long},
+    Instruction, StackFrame, Thread,
 };
 
 use super::{Attribute, FieldType};
@@ -148,6 +150,27 @@ impl<T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<u32, String> + Send 
         let single = self.0(thread, stackframe, is_verbose)?;
         stackframe.lock().unwrap().operand_stack.push(single);
         thread.return_one(is_verbose);
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct NativeDoubleMethod<
+    T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<u64, String> + Send + Sync,
+>(pub T);
+
+impl<T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<u64, String> + Send + Sync> NativeMethod
+    for NativeDoubleMethod<T>
+{
+    fn run(
+        &self,
+        thread: &mut Thread,
+        stackframe: &Mutex<StackFrame>,
+        is_verbose: bool,
+    ) -> Result<(), String> {
+        let double = self.0(thread, stackframe, is_verbose)?;
+        push_long(&mut stackframe.lock().unwrap().operand_stack, double);
+        thread.return_two(is_verbose);
         Ok(())
     }
 }

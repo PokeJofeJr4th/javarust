@@ -4,8 +4,9 @@ use std::sync::{Arc, Mutex};
 
 pub use self::code::Code;
 pub use self::code::{
-    ByteCode, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, NativeMethod, NativeSingleMethod,
-    NativeStringMethod, NativeTodo, NativeVoid, StackMapFrame, VerificationTypeInfo,
+    ByteCode, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, NativeDoubleMethod, NativeMethod,
+    NativeSingleMethod, NativeStringMethod, NativeTodo, NativeVoid, StackMapFrame,
+    VerificationTypeInfo,
 };
 
 mod code;

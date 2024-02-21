@@ -35,8 +35,10 @@ pub enum Instruction {
     /// if true, dcmpl. if false, dcmpg
     DCmp(bool),
     FCmp(bool),
+    /// compare two integers
     ICmp(Cmp, i16),
-    IfCmp(Cmp, i16),
+    /// compare one integer to zero
+    IfCmpZ(Cmp, i16),
     Goto(i32),
     Return0,
     Return1,
@@ -102,7 +104,7 @@ impl Debug for Instruction {
             Self::FCmp(true) => write!(f, "fcmpl"),
             Self::FCmp(false) => write!(f, "fcmpg"),
             Self::ICmp(cmp, y) => write!(f, "if_i{cmp:?} {y:+}"),
-            Self::IfCmp(cmp, y) => write!(f, "if{cmp:?}z {y:+}"),
+            Self::IfCmpZ(cmp, y) => write!(f, "if{cmp:?}z {y:+}"),
             Self::Goto(y) => write!(f, "goto {y:+}"),
             Self::Return0 => write!(f, "ret0"),
             Self::Return1 => write!(f, "ret1"),
@@ -205,10 +207,10 @@ pub fn hydrate_code(
                 let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
                 Instruction::Goto(goto as i32)
             }
-            Instruction::IfCmp(cmp, goto) => {
+            Instruction::IfCmpZ(cmp, goto) => {
                 let target = (idx as i16).wrapping_add(goto) as usize;
                 let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
-                Instruction::IfCmp(cmp, goto as i16)
+                Instruction::IfCmpZ(cmp, goto as i16)
             }
             Instruction::IfNull(cmp, goto) => {
                 let target = (idx as i16).wrapping_add(goto) as usize;
@@ -738,7 +740,7 @@ pub fn parse_instruction(
                 0x9E => Cmp::Le,
                 _ => unreachable!(),
             };
-            Ok(Instruction::IfCmp(cond, branch))
+            Ok(Instruction::IfCmpZ(cond, branch))
         }
         if_icmp @ 0x9F..=0xA4 => {
             // if_icmp<cond>
@@ -758,8 +760,12 @@ pub fn parse_instruction(
             };
             Ok(Instruction::ICmp(cond, branch))
         }
-        _if_acmp @ 0xA5..=0xA6 => {
-            todo!("if_acmp<cond>")
+        if_acmp @ 0xA5..=0xA6 => {
+            let cond = if if_acmp == 0xA5 { Cmp::Eq } else { Cmp::Ne };
+            let bb1 = bytes.next().unwrap().1;
+            let bb2 = bytes.next().unwrap().1;
+            let branchoffset = u16::from_be_bytes([bb1, bb2]) as i16;
+            Ok(Instruction::ICmp(cond, branchoffset))
         }
         0xA7 => {
             // goto bb1 bb2
