@@ -1300,63 +1300,6 @@ impl Thread {
                 stackframe.lock().unwrap().operand_stack.push(str_pointer);
                 self.return_one(verbose);
             }
-            ("java/lang/String", "length", _) => {
-                let string_ref = stackframe.lock().unwrap().locals[0];
-                StringObj
-                    .get(&self.heap.lock().unwrap(), string_ref as usize, |str| {
-                        stackframe
-                            .lock()
-                            .unwrap()
-                            .operand_stack
-                            .push(str.len() as u32);
-                    })
-                    .unwrap();
-                self.return_one(verbose);
-            }
-            ("java/lang/String", "charAt", _) => {
-                let string_ref = stackframe.lock().unwrap().locals[0];
-                let char = stackframe.lock().unwrap().locals[1];
-                StringObj
-                    .get(&self.heap.lock().unwrap(), string_ref as usize, |str| {
-                        stackframe
-                            .lock()
-                            .unwrap()
-                            .operand_stack
-                            .push(str.chars().nth(char as usize).unwrap_or(0 as char) as u32);
-                    })
-                    .unwrap();
-                self.return_one(verbose);
-            }
-            (
-                "java/util/Random",
-                "nextInt",
-                MethodDescriptor {
-                    parameter_size: 1, ..
-                },
-            ) => {
-                let obj_ref = stackframe.lock().unwrap().locals[0];
-                if verbose {
-                    println!("java/util/Random.nextInt(int): obj_ref={obj_ref}");
-                }
-                let right_bound = stackframe.lock().unwrap().locals[1];
-                if verbose {
-                    println!("java/util/Random.nextInt(int): right_bound={right_bound}");
-                }
-                let result = stackframe
-                    .lock()
-                    .unwrap()
-                    .class
-                    .as_ref()
-                    .get_mut(&self.heap.lock().unwrap(), obj_ref as usize, |random_obj| {
-                        random_obj.native_fields[0]
-                            .downcast_mut::<ThreadRng>()
-                            .unwrap()
-                            .gen_range(0..right_bound)
-                    })
-                    .unwrap();
-                stackframe.lock().unwrap().operand_stack.push(result);
-                self.return_one(verbose);
-            }
             ("java/lang/Math", "sqrt", _) => {
                 let arg_type = stackframe.lock().unwrap().method.descriptor.parameters[0].clone();
                 match arg_type {
@@ -1410,16 +1353,6 @@ impl Thread {
 
                 stackframe.lock().unwrap().operand_stack.push(string_ref);
                 self.return_one(verbose);
-            }
-            (
-                "java/io/PrintStream",
-                "println",
-                MethodDescriptor {
-                    parameter_size: 0, ..
-                },
-            ) => {
-                println!();
-                self.return_void();
             }
             (
                 "java/io/PrintStream",

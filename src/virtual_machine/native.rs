@@ -1,13 +1,21 @@
 use std::sync::{Arc, Mutex};
 
+use rand::{rngs::ThreadRng, thread_rng, Rng};
+
 use crate::class::{
-    AccessFlags, Class, Code, Field, FieldType, Method, MethodDescriptor, NativeStringMethod,
-    NativeTodo, NativeVoid,
+    AccessFlags, Class, Code, Field, FieldType, Method, MethodDescriptor, NativeSingleMethod,
+    NativeStringMethod, NativeTodo, NativeVoid,
 };
 
-use self::string::{string_value_of, StringValueOf};
+use self::string::{
+    native_println_object, native_string_char_at, native_string_len, NativeStringValueOf,
+};
 
-use super::{object::Object, thread::heap_allocate, StackFrame, Thread};
+use super::{
+    object::{Object, ObjectFinder},
+    thread::heap_allocate,
+    StackFrame, Thread,
+};
 
 pub mod arrays;
 pub mod primitives;
@@ -18,6 +26,7 @@ pub static mut OBJECT_CLASS: Option<Arc<Class>> = None;
 pub static mut STRING_CLASS: Option<Arc<Class>> = None;
 pub static mut STRING_BUILDER_CLASS: Option<Arc<Class>> = None;
 pub static mut ARRAY_CLASS: Option<Arc<Class>> = None;
+pub static mut RANDOM_CLASS: Option<Arc<Class>> = None;
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn add_native_methods(
@@ -37,7 +46,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: Code::native(NativeVoid(|thread: &mut Thread, _: &_, _| Ok(()))),
+        code: Code::native(NativeVoid(|_: &mut _, _: &_, _| Ok(()))),
     });
     let object_to_string = Arc::new(Method {
         max_locals: 1,
@@ -125,7 +134,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: Code::native(NativeTodo),
+        code: Code::native(NativeSingleMethod(native_string_len)),
     });
     let char_at = Arc::new(Method {
         max_locals: 1,
@@ -138,7 +147,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: Code::native(NativeTodo),
+        code: Code::native(NativeSingleMethod(native_string_char_at)),
     });
     let string_value_of = Arc::new(Method {
         max_locals: 1,
@@ -149,7 +158,7 @@ pub(super) fn add_native_methods(
             parameters: vec![FieldType::Object(object_name.clone())],
             return_type: Some(FieldType::Object("java/lang/String".into())),
         },
-        code: Code::native(StringValueOf),
+        code: Code::native(NativeStringValueOf),
         signature: None,
         attributes: Vec::new(),
     });
@@ -225,7 +234,18 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: Code::native(NativeTodo),
+        code: Code::native(NativeVoid(
+            |thread: &mut Thread, stackframe: &Mutex<StackFrame>, _verbose: bool| {
+                let obj = stackframe.lock().unwrap().locals[0];
+                unsafe { RANDOM_CLASS.as_ref().unwrap() }.as_ref().get_mut(
+                    &thread.heap.lock().unwrap(),
+                    obj as usize,
+                    |instance| {
+                        instance.native_fields.push(Box::new(thread_rng()));
+                    },
+                )
+            },
+        )),
     });
     let next_int = Arc::new(Method {
         max_locals: 1,
@@ -238,7 +258,28 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: Code::native(NativeTodo),
+        code: Code::native(NativeSingleMethod(
+            |thread: &mut Thread, stackframe: &Mutex<StackFrame>, verbose: bool| {
+                let obj_ref = stackframe.lock().unwrap().locals[0];
+                if verbose {
+                    println!("java/util/Random.nextInt(int): obj_ref={obj_ref}");
+                }
+                let right_bound = stackframe.lock().unwrap().locals[1];
+                if verbose {
+                    println!("java/util/Random.nextInt(int): right_bound={right_bound}");
+                }
+                unsafe { RANDOM_CLASS.as_ref().unwrap() }.as_ref().get_mut(
+                    &thread.heap.lock().unwrap(),
+                    obj_ref as usize,
+                    |random_obj| {
+                        random_obj.native_fields[0]
+                            .downcast_mut::<ThreadRng>()
+                            .unwrap()
+                            .gen_range(0..right_bound)
+                    },
+                )
+            },
+        )),
     });
     let mut random = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -274,7 +315,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: Code::native(NativeTodo),
+        code: Code::native(NativeVoid(native_println_object)),
     });
     let println_int = Arc::new(Method {
         max_locals: 2,
@@ -455,6 +496,7 @@ pub(super) fn add_native_methods(
         STRING_CLASS = Some(string.clone());
         STRING_BUILDER_CLASS = Some(string_builder.clone());
         ARRAY_CLASS = Some(array.clone());
+        RANDOM_CLASS = Some(random.clone());
     }
     method_area.extend([
         (object.clone(), init),

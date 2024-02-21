@@ -118,18 +118,16 @@ pub struct NativeTodo;
 impl NativeMethod for NativeTodo {
     fn run(
         &self,
-        thread: &mut Thread,
+        _thread: &mut Thread,
         stackframe: &Mutex<StackFrame>,
-        is_verbose: bool,
+        _is_verbose: bool,
     ) -> Result<(), String> {
         let method = stackframe.lock().unwrap().method.clone();
         let class = stackframe.lock().unwrap().class.clone();
-        todo!(
+        Err(format!(
             "Unimplemented Native Method {:?} {}.{}",
-            method.descriptor,
-            class.this,
-            method.name
-        )
+            method.descriptor, class.this, method.name
+        ))
     }
 }
 

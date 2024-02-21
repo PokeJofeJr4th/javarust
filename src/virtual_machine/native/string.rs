@@ -9,20 +9,20 @@ use crate::{
     },
 };
 
-pub struct StringValueOf;
+pub struct NativeStringValueOf;
 
-impl NativeMethod for StringValueOf {
+impl NativeMethod for NativeStringValueOf {
     fn run(
         &self,
         thread: &mut Thread,
         stackframe: &Mutex<StackFrame>,
         verbose: bool,
     ) -> Result<(), String> {
-        string_value_of(thread, stackframe, verbose)
+        native_string_value_of(thread, stackframe, verbose)
     }
 }
 
-pub fn string_value_of(
+pub fn native_string_value_of(
     thread: &mut Thread,
     stackframe: &Mutex<StackFrame>,
     verbose: bool,
@@ -66,4 +66,75 @@ pub fn string_value_of(
     }
     thread.return_one(verbose);
     Ok(())
+}
+
+pub fn native_println_object(
+    thread: &mut Thread,
+    stackframe: &Mutex<StackFrame>,
+    verbose: bool,
+) -> Result<(), String> {
+    // println!("{stackframe:?}");
+    let arg = stackframe.lock().unwrap().locals[1];
+    let heap_borrow = thread.heap.lock().unwrap();
+    let (to_string_class, to_string_method) = AnyObj.get(&heap_borrow, arg as usize, |obj| {
+        obj.resolve_method(
+            &thread.method_area,
+            &thread.class_area,
+            "toString",
+            &MethodDescriptor {
+                parameter_size: 0,
+                parameters: Vec::new(),
+                return_type: Some(FieldType::Object(unsafe {
+                    crate::virtual_machine::native::STRING_CLASS
+                        .as_ref()
+                        .unwrap()
+                        .this
+                        .clone()
+                })),
+            },
+        )
+    })?;
+    drop(heap_borrow);
+    let stackframes = thread.stack.len();
+    // push a fake return address
+    stackframe.lock().unwrap().operand_stack.push(0);
+    thread.invoke_method(to_string_method, to_string_class);
+    thread.stack.last_mut().unwrap().lock().unwrap().locals[0] = arg;
+    while thread.stack.len() > stackframes {
+        thread.tick(verbose)?;
+    }
+    let ret = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+    let str = StringObj.get(&thread.heap.lock().unwrap(), ret as usize, Clone::clone)?;
+    println!("{str}");
+    Ok(())
+}
+
+#[allow(clippy::unnecessary_wraps)]
+pub fn native_string_len(
+    thread: &mut Thread,
+    stackframe: &Mutex<StackFrame>,
+    _verbose: bool,
+) -> Result<u32, String> {
+    let string_ref = stackframe.lock().unwrap().locals[0];
+    StringObj
+        .get(&thread.heap.lock().unwrap(), string_ref as usize, |str| {
+            stackframe
+                .lock()
+                .unwrap()
+                .operand_stack
+                .push(str.len() as u32);
+        })
+        .unwrap();
+    Ok(string_ref)
+}
+
+pub fn native_string_char_at(
+    thread: &mut Thread,
+    stackframe: &Mutex<StackFrame>,
+    _verbose: bool,
+) -> Result<u32, String> {
+    let string_ref = stackframe.lock().unwrap().locals[0];
+    StringObj.get(&thread.heap.lock().unwrap(), string_ref as usize, |str| {
+        str.len() as u32
+    })
 }
