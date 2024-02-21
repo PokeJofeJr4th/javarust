@@ -17,7 +17,7 @@ use super::{
     Cmp, Instruction, Op, StackFrame,
 };
 
-pub(super) struct Thread {
+pub struct Thread {
     pub pc_register: usize,
     pub stack: Vec<Arc<Mutex<StackFrame>>>,
     pub method_area: Arc<[(Arc<Class>, Arc<Method>)]>,
@@ -27,11 +27,15 @@ pub(super) struct Thread {
 
 impl Thread {
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+    /// # Panics
+    /// # Errors
     pub fn tick(&mut self, verbose: bool) -> Result<(), String> {
         // this way we can mutate the stack frame without angering the borrow checker
         let stackframe = self.stack.last().unwrap().clone();
-        if stackframe.lock().unwrap().method.access_flags.is_native() {
-            return self.invoke_native(&stackframe, verbose);
+        let method = stackframe.lock().unwrap().method.clone();
+        if let Some(native_method) = method.code.as_native() {
+            // return self.invoke_native(&stackframe, verbose);
+            return native_method.run(self, &stackframe, verbose);
         }
         let opcode = self.get_pc_byte(&stackframe);
         if verbose {
@@ -1215,7 +1219,6 @@ impl Thread {
         let method_type = stackframe.lock().unwrap().method.descriptor.clone();
         let class = stackframe.lock().unwrap().class.this.clone();
         match (&*class, &*name, method_type) {
-            ("java/lang/Object", "<init>", _) => self.return_void(),
             (
                 "java/util/Arrays",
                 "toString",
@@ -1320,106 +1323,6 @@ impl Thread {
                             .unwrap()
                             .operand_stack
                             .push(str.chars().nth(char as usize).unwrap_or(0 as char) as u32);
-                    })
-                    .unwrap();
-                self.return_one(verbose);
-            }
-            ("java/lang/Object", "toString", _) => {
-                let obj_ref = stackframe.lock().unwrap().locals[0];
-                // basically random bits
-                let fake_addr = 3_141_592u32.wrapping_add(obj_ref);
-                let str_value = Arc::from(format!("{fake_addr:0>8X}"));
-                let str_ref = heap_allocate(
-                    &mut self.heap.lock().unwrap(),
-                    StringObj::new(&self.class_area, str_value),
-                );
-                stackframe.lock().unwrap().operand_stack.push(str_ref);
-                self.return_one(verbose);
-            }
-            (
-                "java/lang/String",
-                "valueOf",
-                MethodDescriptor {
-                    parameter_size: 1,
-                    parameters,
-                    return_type: Some(FieldType::Object(obj)),
-                },
-            ) if &*obj == "java/lang/String"
-                && matches!(&parameters[..], [FieldType::Object(_)]) =>
-            {
-                let obj_ref = stackframe.lock().unwrap().locals[0];
-                if obj_ref == u32::MAX {
-                    let str_ref = heap_allocate(
-                        &mut self.heap.lock().unwrap(),
-                        StringObj::new(&self.class_area, "null".into()),
-                    );
-                    stackframe.lock().unwrap().operand_stack.push(str_ref);
-                } else {
-                    let (to_string_class, to_string_method) =
-                        AnyObj.get(&self.heap.lock().unwrap(), obj_ref as usize, |obj| {
-                            obj.resolve_method(
-                                &self.method_area,
-                                &self.class_area,
-                                "toString",
-                                &MethodDescriptor {
-                                    parameter_size: 0,
-                                    parameters: Vec::new(),
-                                    return_type: Some(FieldType::Object("java/lang/String".into())),
-                                },
-                            )
-                        })?;
-                    let stackframes = self.stack.len();
-                    // push a fake return address
-                    self.stack
-                        .last_mut()
-                        .unwrap()
-                        .lock()
-                        .unwrap()
-                        .operand_stack
-                        .push(0);
-                    self.invoke_method(to_string_method, to_string_class);
-                    self.stack.last_mut().unwrap().lock().unwrap().locals[0] = obj_ref;
-                    while self.stack.len() > stackframes {
-                        self.tick(verbose)?;
-                    }
-                }
-                self.return_one(verbose);
-            }
-            ("java/util/Random", "<init>", _) => {
-                let obj_ref = stackframe.lock().unwrap().locals[0];
-                stackframe
-                    .lock()
-                    .unwrap()
-                    .class
-                    .as_ref()
-                    .get_mut(&self.heap.lock().unwrap(), obj_ref as usize, |random_obj| {
-                        random_obj.native_fields.push(Box::new(thread_rng()));
-                        if verbose {
-                            println!("heap[{obj_ref}] = {random_obj:?}");
-                        }
-                    })
-                    .unwrap();
-                self.return_void();
-            }
-            (
-                "java/util/Random",
-                "nextInt",
-                MethodDescriptor {
-                    parameter_size: 0, ..
-                },
-            ) => {
-                let obj_ref = stackframe.lock().unwrap().locals[0];
-                stackframe
-                    .lock()
-                    .unwrap()
-                    .class
-                    .as_ref()
-                    .get_mut(&self.heap.lock().unwrap(), obj_ref as usize, |random_obj| {
-                        let result = random_obj.native_fields[0]
-                            .downcast_mut::<ThreadRng>()
-                            .unwrap()
-                            .gen();
-                        stackframe.lock().unwrap().operand_stack.push(result);
                     })
                     .unwrap();
                 self.return_one(verbose);
@@ -1601,7 +1504,8 @@ impl Thread {
         Ok(())
     }
 
-    fn return_void(&mut self) {
+    /// # Panics
+    pub fn return_void(&mut self) {
         self.stack.pop();
         if self.stack.is_empty() {
             return;
@@ -1611,7 +1515,8 @@ impl Thread {
         self.pc_register = return_address as usize;
     }
 
-    fn return_one(&mut self, verbose: bool) {
+    /// # Panics
+    pub fn return_one(&mut self, verbose: bool) {
         let old_stackframe = self.stack.pop().unwrap();
         let ret_value = old_stackframe.lock().unwrap().operand_stack.pop().unwrap();
         if verbose {
@@ -1623,7 +1528,8 @@ impl Thread {
         stackframe.lock().unwrap().operand_stack.push(ret_value);
     }
 
-    fn return_two(&mut self, verbose: bool) {
+    /// # Panics
+    pub fn return_two(&mut self, verbose: bool) {
         let old_stackframe = self.stack.pop().unwrap();
         let ret_value = pop_long(&mut old_stackframe.lock().unwrap().operand_stack).unwrap();
         if verbose {
@@ -1716,7 +1622,7 @@ pub fn search_class_area(class_area: &[Arc<Class>], class: &str) -> Option<Arc<C
     None
 }
 
-pub(super) fn heap_allocate(heap: &mut Vec<Arc<Mutex<Object>>>, element: Object) -> u32 {
+pub fn heap_allocate(heap: &mut Vec<Arc<Mutex<Object>>>, element: Object) -> u32 {
     let length = heap.len();
 
     heap.push(Arc::new(Mutex::new(element)));

@@ -1,11 +1,17 @@
 use std::sync::{Arc, Mutex};
 
-use crate::class::{AccessFlags, Class, Field, FieldType, Method, MethodDescriptor};
+use crate::class::{
+    AccessFlags, Class, Code, Field, FieldType, Method, MethodDescriptor, NativeStringMethod,
+    NativeTodo, NativeVoid,
+};
 
-use super::{object::Object, thread::heap_allocate};
+use self::string::{string_value_of, StringValueOf};
+
+use super::{object::Object, thread::heap_allocate, StackFrame, Thread};
 
 pub mod arrays;
-mod primitives;
+pub mod primitives;
+pub mod string;
 pub mod string_builder;
 
 pub static mut OBJECT_CLASS: Option<Arc<Class>> = None;
@@ -31,7 +37,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeVoid(|thread: &mut Thread, _: &_, _| Ok(()))),
     });
     let object_to_string = Arc::new(Method {
         max_locals: 1,
@@ -44,7 +50,14 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeStringMethod(
+            |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
+                let obj_ref = stackframe.lock().unwrap().locals[0];
+                // basically random bits
+                let fake_addr = 3_141_592u32.wrapping_add(obj_ref);
+                Ok(Arc::from(format!("{fake_addr:0>8X}")))
+            },
+        )),
     });
 
     let mut object = Class::new(
@@ -73,7 +86,7 @@ pub(super) fn add_native_methods(
             return_type: Some(FieldType::Object("java/lang/String".into())),
         },
         signature: None,
-        code: None,
+        code: Code::native(NativeTodo),
         attributes: Vec::new(),
     });
     let deep_to_string = Arc::new(Method {
@@ -89,7 +102,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeTodo),
     });
     let mut arrays = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -112,7 +125,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeTodo),
     });
     let char_at = Arc::new(Method {
         max_locals: 1,
@@ -125,7 +138,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeTodo),
     });
     let string_value_of = Arc::new(Method {
         max_locals: 1,
@@ -136,7 +149,7 @@ pub(super) fn add_native_methods(
             parameters: vec![FieldType::Object(object_name.clone())],
             return_type: Some(FieldType::Object("java/lang/String".into())),
         },
-        code: None,
+        code: Code::native(StringValueOf),
         signature: None,
         attributes: Vec::new(),
     });
@@ -163,7 +176,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeTodo),
     });
     let set_char_at = Arc::new(Method {
         max_locals: 2,
@@ -176,7 +189,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeTodo),
     });
     let to_string = Arc::new(Method {
         max_locals: 1,
@@ -189,7 +202,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeTodo),
     });
     let mut string_builder = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -212,7 +225,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeTodo),
     });
     let next_int = Arc::new(Method {
         max_locals: 1,
@@ -225,7 +238,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeTodo),
     });
     let mut random = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -248,7 +261,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeTodo),
     });
     let println = Arc::new(Method {
         max_locals: 2,
@@ -261,7 +274,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeTodo),
     });
     let println_int = Arc::new(Method {
         max_locals: 2,
@@ -274,7 +287,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeTodo),
     });
     let println_float = Arc::new(Method {
         max_locals: 2,
@@ -287,7 +300,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeTodo),
     });
     let println_empty = Arc::new(Method {
         max_locals: 1,
@@ -300,7 +313,10 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeVoid(|_: &mut _, _: &_, _| {
+            println!();
+            Ok(())
+        })),
     });
     let mut printstream = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -400,7 +416,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeTodo),
     });
 
     let mut string_concat_factory = Class::new(
@@ -424,7 +440,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: None,
+        code: Code::native(NativeTodo),
     });
     let mut math = Class::new(
         AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE,

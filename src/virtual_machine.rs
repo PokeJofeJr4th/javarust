@@ -1,13 +1,15 @@
-mod instruction;
+pub mod instruction;
 mod native;
-mod object;
-mod thread;
+pub mod object;
+pub mod thread;
 
 use std::sync::{Arc, Mutex};
 
 use crate::class::{Class, Method, MethodDescriptor};
 
-use self::{native::add_native_methods, thread::Thread};
+use self::native::add_native_methods;
+
+pub use self::thread::Thread;
 
 pub use self::instruction::{hydrate_code, Cmp, Instruction, Op};
 
@@ -30,10 +32,10 @@ fn search_method_area(
 
 #[derive(Debug)]
 pub struct StackFrame {
-    locals: Vec<u32>,
-    operand_stack: Vec<u32>,
-    method: Arc<Method>,
-    class: Arc<Class>,
+    pub locals: Vec<u32>,
+    pub operand_stack: Vec<u32>,
+    pub method: Arc<Method>,
+    pub class: Arc<Class>,
 }
 
 impl StackFrame {
@@ -47,6 +49,7 @@ impl StackFrame {
     }
 }
 
+/// # Panics
 pub fn start_vm(src: Class, verbose: bool) {
     let class = Arc::new(src);
     let mut method_area = class

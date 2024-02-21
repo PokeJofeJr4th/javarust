@@ -12,9 +12,9 @@ use std::{fs, path::PathBuf};
 
 use clap::Parser;
 
-mod class;
-mod class_loader;
-mod virtual_machine;
+pub mod class;
+pub mod class_loader;
+pub mod virtual_machine;
 
 #[derive(Parser)]
 struct Args {

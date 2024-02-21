@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::class::{AccessFlags, Class, FieldType, Method, MethodDescriptor};
+use crate::class::{AccessFlags, Class, Code, FieldType, Method, MethodDescriptor, NativeTodo};
 
 fn make_primitive_class(
     method_area: &mut Vec<(Arc<Class>, Arc<Method>)>,
@@ -24,7 +24,7 @@ fn make_primitive_class(
             parameters: vec![primitive],
             return_type: Some(FieldType::Object(primitive_class)),
         },
-        code: None,
+        code: Code::native(NativeTodo),
         signature: None,
         attributes: Vec::new(),
     });

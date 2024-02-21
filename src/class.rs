@@ -2,7 +2,13 @@ use std::fmt::{Debug, Display};
 use std::ops::{BitAnd, BitOr};
 use std::sync::{Arc, Mutex};
 
-use crate::virtual_machine::Instruction;
+pub use self::code::Code;
+pub use self::code::{
+    ByteCode, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, NativeMethod, NativeSingleMethod,
+    NativeStringMethod, NativeTodo, NativeVoid, StackMapFrame, VerificationTypeInfo,
+};
+
+mod code;
 
 pub struct Class {
     pub version: ClassVersion,
@@ -24,6 +30,7 @@ pub struct Class {
 }
 
 impl Class {
+    #[must_use]
     pub fn new(access: AccessFlags, this: Arc<str>, super_class: Arc<str>) -> Self {
         Self {
             version: ClassVersion {
@@ -183,6 +190,7 @@ pub enum Constant {
 }
 
 impl Constant {
+    #[must_use]
     pub fn bytes(&self) -> Vec<u32> {
         match self {
             Self::Int(i) => vec![*i as u32],
@@ -310,12 +318,15 @@ impl Display for AccessFlags {
 }
 
 impl AccessFlags {
+    #[must_use]
     pub const fn is_static(self) -> bool {
         self.0 & Self::ACC_STATIC.0 != 0
     }
+    #[must_use]
     pub const fn is_native(self) -> bool {
         self.0 & Self::ACC_NATIVE.0 != 0
     }
+    #[must_use]
     pub const fn is_abstract(self) -> bool {
         self.0 & Self::ACC_ABSTRACT.0 != 0
     }
@@ -390,7 +401,7 @@ pub struct Method {
     pub access_flags: AccessFlags,
     pub name: Arc<str>,
     pub descriptor: MethodDescriptor,
-    pub code: Option<Code>,
+    pub code: Code,
     pub signature: Option<Arc<str>>,
     pub attributes: Vec<Attribute>,
 }
@@ -403,9 +414,7 @@ impl Debug for Method {
         if let Some(signature) = &self.signature {
             s.field("signature", signature);
         }
-        if let Some(code) = &self.code {
-            s.field("Code", code);
-        }
+        s.field("code", &self.code);
         for Attribute { name, data } in &self.attributes {
             s.field(name, data);
         }
@@ -475,6 +484,7 @@ impl Display for FieldType {
 }
 
 impl FieldType {
+    #[must_use]
     pub const fn get_size(&self) -> usize {
         match self {
             Self::Double | Self::Long => 2,
@@ -487,144 +497,6 @@ impl FieldType {
 pub struct Attribute {
     pub name: Arc<str>,
     pub data: Vec<u8>,
-}
-
-#[derive(Clone, Copy)]
-pub struct LineTableEntry {
-    pub line: u16,
-    pub pc: u16,
-}
-
-impl Debug for LineTableEntry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Line {} => PC {}", self.line, self.pc)
-    }
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub struct LocalVarTypeEntry {
-    pub pc: u16,
-    pub length: u16,
-    pub name: Arc<str>,
-    pub ty: Arc<str>,
-    pub index: u16,
-}
-
-impl Debug for LocalVarTypeEntry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} {} ({}..{})@{}",
-            self.ty,
-            self.name,
-            self.pc,
-            self.pc + self.length,
-            self.index,
-        )
-    }
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub struct LocalVarEntry {
-    pub pc: u16,
-    pub length: u16,
-    pub name: Arc<str>,
-    pub ty: FieldType,
-    pub index: u16,
-}
-
-impl Debug for LocalVarEntry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} {} ({}..{})@{}",
-            self.ty,
-            self.name,
-            self.pc,
-            self.pc + self.length,
-            self.index,
-        )
-    }
-}
-
-pub struct Code {
-    pub max_stack: u16,
-    pub code: Vec<Instruction>,
-    pub exception_table: Vec<(u16, u16, u16, Option<Arc<str>>)>,
-    pub line_number_table: Vec<LineTableEntry>,
-    pub local_type_table: Vec<LocalVarTypeEntry>,
-    pub local_var_table: Vec<LocalVarEntry>,
-    pub stack_map: Vec<StackMapFrame>,
-    pub attributes: Vec<Attribute>,
-}
-
-impl Debug for Code {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut s = f.debug_struct("Code");
-        s.field("max_stack", &self.max_stack)
-            .field("code", &self.code)
-            .field("stack_map", &self.stack_map);
-        if !self.exception_table.is_empty() {
-            s.field("exception_table", &self.exception_table);
-        }
-        if !self.line_number_table.is_empty() {
-            s.field("line_number_table", &self.line_number_table);
-        }
-        if !self.local_type_table.is_empty() {
-            s.field("local_variable_type_table", &self.local_type_table);
-        }
-        if !self.local_var_table.is_empty() {
-            s.field("local_variable_table", &self.local_var_table);
-        }
-        for Attribute { name, data } in &self.attributes {
-            s.field(name, data);
-        }
-        s.finish()
-    }
-}
-
-#[derive(Debug)]
-pub enum StackMapFrame {
-    Same {
-        offset_delta: u8,
-    },
-    SameLocals1Stack {
-        offset_delta: u8,
-        verification: VerificationTypeInfo,
-    },
-    SameLocals1StackExtended {
-        offset_delta: u16,
-        verification: VerificationTypeInfo,
-    },
-    Chop {
-        chop: u8,
-        offset_delta: u16,
-    },
-    SameExtended {
-        offset_delta: u16,
-    },
-    Append {
-        offset_delta: u16,
-        locals: Vec<VerificationTypeInfo>,
-    },
-    Full {
-        offset_delta: u16,
-        locals: Vec<VerificationTypeInfo>,
-        stack: Vec<VerificationTypeInfo>,
-    },
-}
-
-#[derive(Debug)]
-pub enum VerificationTypeInfo {
-    Top,
-    Integer,
-    Float,
-    Null,
-    UninitializedThis,
-    Object { class_name: Arc<str> },
-    Uninitialized { offset: u16 },
-    Long,
-    Double,
 }
 
 #[derive(Debug, Clone)]

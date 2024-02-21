@@ -5,8 +5,8 @@ use std::{
 
 use crate::{
     class::{
-        AccessFlags, Attribute, BootstrapMethod, Class, ClassVersion, Code, Constant, Field,
-        FieldType, InnerClass, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, Method,
+        AccessFlags, Attribute, BootstrapMethod, ByteCode, Class, ClassVersion, Code, Constant,
+        Field, FieldType, InnerClass, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, Method,
         MethodDescriptor, MethodHandle, StackMapFrame, VerificationTypeInfo,
     },
     virtual_machine::hydrate_code,
@@ -90,6 +90,8 @@ pub enum RawConstant {
 }
 
 #[allow(clippy::too_many_lines)]
+/// # Errors
+/// # Panics
 pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result<Class, String> {
     let 0xCAFE_BABE = get_u32(bytes)? else {
         return Err(String::from("Invalid header"));
@@ -320,8 +322,8 @@ pub fn load_class(bytes: &mut impl Iterator<Item = u8>, verbose: bool) -> Result
             _ => return Err(String::from("Method must only have one code attribute")),
         };
         let (code, max_locals) = match code {
-            Some((code, max_locals)) => (Some(code), max_locals),
-            None => (None, 0),
+            Some((code, max_locals)) => (Code::Code(code), max_locals),
+            None => return Err(String::from("Non-Native methods must include code")),
         };
 
         let (signature, attributes) = get_signature(&constants, attributes)?;
@@ -550,7 +552,7 @@ fn parse_code_attribute(
     constants: &[Constant],
     bytes: Vec<u8>,
     verbose: bool,
-) -> Result<(Code, u16), String> {
+) -> Result<(ByteCode, u16), String> {
     let mut bytes = bytes.into_iter();
     let max_stack = get_u16(&mut bytes)?;
     let max_locals = get_u16(&mut bytes)?;
@@ -731,7 +733,7 @@ fn parse_code_attribute(
     let code = hydrate_code(constants, code, verbose)?;
 
     Ok((
-        Code {
+        ByteCode {
             max_stack,
             code,
             exception_table,
@@ -1040,6 +1042,7 @@ fn raw_name_type_index(
     Ok((name, type_name))
 }
 
+/// # Errors
 pub fn parse_method_descriptor(src: &str) -> Result<MethodDescriptor, String> {
     let mut chars = src.chars().peekable();
     let chars = &mut chars;
@@ -1063,6 +1066,8 @@ pub fn parse_method_descriptor(src: &str) -> Result<MethodDescriptor, String> {
     })
 }
 
+/// # Panics
+/// # Errors
 pub fn parse_field_type(
     chars: &mut Peekable<impl Iterator<Item = char>>,
 ) -> Result<FieldType, String> {
