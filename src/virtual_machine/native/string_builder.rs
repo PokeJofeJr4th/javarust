@@ -2,19 +2,21 @@ use std::sync::{Arc, Mutex};
 
 use crate::virtual_machine::{
     object::{AnyObj, Object, ObjectFinder, StringBuilder, StringObj},
-    StackFrame,
+    StackFrame, Thread,
 };
 
 pub fn init(
-    heap_borrow: &[Arc<Mutex<Object>>],
+    thread: &mut Thread,
     stackframe: &Mutex<StackFrame>,
+    _verbose: bool,
 ) -> Result<(), String> {
+    let heap_borrow = thread.heap.lock().unwrap();
     let str_ref = stackframe.lock().unwrap().locals[0];
     let obj_ref = stackframe.lock().unwrap().locals[1];
 
-    StringObj.get(heap_borrow, str_ref as usize, |init_string| {
+    StringObj.get(&heap_borrow, str_ref as usize, |init_string| {
         AnyObj
-            .get_mut(heap_borrow, obj_ref as usize, |heap_obj| {
+            .get_mut(&heap_borrow, obj_ref as usize, |heap_obj| {
                 heap_obj
                     .class_mut(&stackframe.lock().unwrap().class.this)
                     .unwrap()
@@ -26,12 +28,21 @@ pub fn init(
 }
 
 pub fn set_char_at(
-    heap_borrow: &[Arc<Mutex<Object>>],
-    builder_ref: usize,
-    index: usize,
-    character: char,
+    thread: &mut Thread,
+    stackframe: &Mutex<StackFrame>,
+    verbose: bool,
 ) -> Result<(), String> {
-    StringBuilder.get_mut(heap_borrow, builder_ref, |string_ref| {
+    let heap_borrow = thread.heap.lock().unwrap();
+    let builder_ref = stackframe.lock().unwrap().locals[0] as usize;
+    let index = stackframe.lock().unwrap().locals[1] as usize;
+    let character = char::from_u32(stackframe.lock().unwrap().locals[2]).unwrap();
+    if verbose {
+        println!("setting char at {index} to {character:?}");
+    }
+    StringBuilder.get_mut(&heap_borrow, builder_ref, |string_ref| {
+        if verbose {
+            println!("StringBuilder = {string_ref:?}");
+        }
         string_ref.replace_range(
             string_ref
                 .char_indices()
@@ -45,9 +56,12 @@ pub fn set_char_at(
 }
 
 pub fn to_string(
-    heap_borrow: &[Arc<Mutex<Object>>],
-    builder_ref: usize,
+    thread: &mut Thread,
+    stackframe: &Mutex<StackFrame>,
+    _verbose: bool,
 ) -> Result<Arc<str>, String> {
-    let string = Arc::from(&*StringBuilder.get(heap_borrow, builder_ref, Clone::clone)?);
+    let builder_ref = stackframe.lock().unwrap().locals[0] as usize;
+    let string =
+        Arc::from(&*StringBuilder.get(&thread.heap.lock().unwrap(), builder_ref, Clone::clone)?);
     Ok(string)
 }

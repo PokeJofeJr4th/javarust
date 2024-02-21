@@ -35,7 +35,7 @@ pub(super) fn add_native_methods(
     heap: &mut Vec<Arc<Mutex<Object>>>,
 ) {
     let object_name: Arc<str> = Arc::from("java/lang/Object");
-    let init = Arc::new(Method {
+    let object_init = Arc::new(Method {
         max_locals: 1,
         access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         name: "<init>".into(),
@@ -74,7 +74,7 @@ pub(super) fn add_native_methods(
         object_name.clone(),
         object_name.clone(),
     );
-    object.methods.push(init.clone());
+    object.methods.push(object_init.clone());
     object.methods.push(object_to_string.clone());
     let object = Arc::new(object);
 
@@ -162,6 +162,21 @@ pub(super) fn add_native_methods(
         signature: None,
         attributes: Vec::new(),
     });
+    let string_to_string = Arc::new(Method {
+        max_locals: 1,
+        access_flags: AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE,
+        name: "toString".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 0,
+            parameters: Vec::new(),
+            return_type: Some(FieldType::Object("java/lang/String".into())),
+        },
+        code: Code::native(NativeSingleMethod(
+            |_: &mut _, stackframe: &Mutex<StackFrame>, _| Ok(stackframe.lock().unwrap().locals[0]),
+        )),
+        signature: None,
+        attributes: Vec::new(),
+    });
     let mut string = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         "java/lang/String".into(),
@@ -171,6 +186,7 @@ pub(super) fn add_native_methods(
         string_length.clone(),
         char_at.clone(),
         string_value_of.clone(),
+        string_to_string.clone(),
     ]);
     let string = Arc::new(string);
 
@@ -185,7 +201,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: Code::native(NativeTodo),
+        code: Code::native(NativeVoid(string_builder::init)),
     });
     let set_char_at = Arc::new(Method {
         max_locals: 2,
@@ -198,7 +214,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: Code::native(NativeTodo),
+        code: Code::native(NativeVoid(string_builder::set_char_at)),
     });
     let to_string = Arc::new(Method {
         max_locals: 1,
@@ -211,7 +227,7 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: Code::native(NativeTodo),
+        code: Code::native(NativeStringMethod(string_builder::to_string)),
     });
     let mut string_builder = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -291,19 +307,19 @@ pub(super) fn add_native_methods(
         .extend([random_init.clone(), next_int.clone()]);
     let random = Arc::new(random);
 
-    let println_object = Arc::new(Method {
-        max_locals: 2,
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
-        name: "println".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 1,
-            parameters: vec![FieldType::Object(object_name.clone())],
-            return_type: None,
-        },
-        signature: None,
-        attributes: Vec::new(),
-        code: Code::native(NativeTodo),
-    });
+    // let println_object = Arc::new(Method {
+    //     max_locals: 2,
+    //     access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+    //     name: "println".into(),
+    //     descriptor: MethodDescriptor {
+    //         parameter_size: 1,
+    //         parameters: vec![FieldType::Object(object_name.clone())],
+    //         return_type: None,
+    //     },
+    //     signature: None,
+    //     attributes: Vec::new(),
+    //     code: Code::native(NativeTodo),
+    // });
     let println = Arc::new(Method {
         max_locals: 2,
         access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -328,7 +344,13 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: Code::native(NativeTodo),
+        code: Code::native(NativeVoid(
+            |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
+                let int = stackframe.lock().unwrap().locals[0] as i32;
+                println!("{int}");
+                Ok(())
+            },
+        )),
     });
     let println_float = Arc::new(Method {
         max_locals: 2,
@@ -341,7 +363,13 @@ pub(super) fn add_native_methods(
         },
         signature: None,
         attributes: Vec::new(),
-        code: Code::native(NativeTodo),
+        code: Code::native(NativeVoid(
+            |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
+                let float = f32::from_bits(stackframe.lock().unwrap().locals[0]);
+                println!("{float}");
+                Ok(())
+            },
+        )),
     });
     let println_empty = Arc::new(Method {
         max_locals: 1,
@@ -366,7 +394,7 @@ pub(super) fn add_native_methods(
     );
     printstream.methods.extend([
         println.clone(),
-        println_object.clone(),
+        // println_object.clone(),
         println_empty.clone(),
         println_float.clone(),
         println_int.clone(),
@@ -394,51 +422,6 @@ pub(super) fn add_native_methods(
         0,
     ));
     let system = Arc::new(system);
-
-    let mut method_handle = Class::new(
-        AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE,
-        "java/lang/invoke/MethodHandle".into(),
-        object_name.clone(),
-    );
-    method_handle.field_size = 1;
-    method_handle.fields.push((
-        Field {
-            access_flags: AccessFlags::ACC_PUBLIC,
-            name: "location".into(),
-            descriptor: FieldType::Int,
-            attributes: Vec::new(),
-            signature: None,
-            constant_value: None,
-        },
-        0,
-    ));
-    let method_handle = Arc::new(method_handle);
-
-    let mut method_type = Class::new(
-        AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE,
-        "java/lang/invoke/MethodType".into(),
-        object_name.clone(),
-    );
-    method_type.field_size = 1;
-    method_type.fields.push((
-        Field {
-            access_flags: AccessFlags::ACC_PUBLIC,
-            name: "location".into(),
-            descriptor: FieldType::Int,
-            attributes: Vec::new(),
-            signature: None,
-            constant_value: None,
-        },
-        0,
-    ));
-    let method_type = Arc::new(method_type);
-
-    let call_site = Class::new(
-        AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE,
-        "java/lang/invoke/CallSite".into(),
-        object_name.clone(),
-    );
-    let call_site = Arc::new(call_site);
 
     let make_concat_with_constants = Arc::new(Method {
         access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
@@ -499,20 +482,21 @@ pub(super) fn add_native_methods(
         RANDOM_CLASS = Some(random.clone());
     }
     method_area.extend([
-        (object.clone(), init),
+        (object.clone(), object_init),
         (object.clone(), object_to_string),
         (arrays.clone(), arrays_to_string),
         (arrays.clone(), deep_to_string),
         (string.clone(), string_length),
         (string.clone(), char_at),
         (string.clone(), string_value_of),
+        (string.clone(), string_to_string),
         (string_builder.clone(), builder_init),
         (string_builder.clone(), to_string),
         (string_builder.clone(), set_char_at),
         (random.clone(), random_init),
         (random.clone(), next_int),
         (printstream.clone(), println),
-        (printstream.clone(), println_object),
+        // (printstream.clone(), println_object),
         (printstream.clone(), println_float),
         (printstream.clone(), println_int),
         (printstream.clone(), println_empty),
@@ -528,9 +512,6 @@ pub(super) fn add_native_methods(
         random,
         system,
         printstream,
-        method_handle,
-        method_type,
-        call_site,
         string_concat_factory,
         math,
     ]);

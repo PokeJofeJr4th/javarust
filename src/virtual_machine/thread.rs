@@ -1093,6 +1093,7 @@ impl Thread {
     pub fn invoke_method(&mut self, method: Arc<Method>, class: Arc<Class>) {
         let stackframe = StackFrame::from_method(method, class);
         self.stack.push(Arc::new(Mutex::new(stackframe)));
+        self.pc_register = 0;
     }
 
     #[allow(clippy::too_many_lines)]
@@ -1314,45 +1315,6 @@ impl Thread {
                     }
                     other => return Err(format!("java/lang/Math.sqrt({other:?}) is not defined")),
                 }
-            }
-            (
-                "java/lang/StringBuilder",
-                "<init>",
-                MethodDescriptor {
-                    parameter_size: 1,
-                    parameters: _,
-                    return_type: None,
-                },
-            ) => {
-                // println!("{stackframe:?}");
-                native::string_builder::init(&self.heap.lock().unwrap(), stackframe)?;
-                self.return_void();
-            }
-            ("java/lang/StringBuilder", "setCharAt", _) => {
-                let builder_ref = stackframe.lock().unwrap().locals[0];
-                let index = stackframe.lock().unwrap().locals[1];
-                let char = stackframe.lock().unwrap().locals[2];
-                native::string_builder::set_char_at(
-                    &self.heap.lock().unwrap(),
-                    builder_ref as usize,
-                    index as usize,
-                    char::from_u32(char).unwrap(),
-                )?;
-                self.return_void();
-            }
-            ("java/lang/StringBuilder", "toString", _) => {
-                let builder_ref = stackframe.lock().unwrap().locals[0];
-                let string = native::string_builder::to_string(
-                    &self.heap.lock().unwrap(),
-                    builder_ref as usize,
-                )?;
-                let string_ref = heap_allocate(
-                    &mut self.heap.lock().unwrap(),
-                    StringObj::new(&self.class_area, string),
-                );
-
-                stackframe.lock().unwrap().operand_stack.push(string_ref);
-                self.return_one(verbose);
             }
             (
                 "java/io/PrintStream",
