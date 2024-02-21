@@ -1324,6 +1324,67 @@ impl Thread {
                     .unwrap();
                 self.return_one(verbose);
             }
+            ("java/lang/Object", "toString", _) => {
+                let obj_ref = stackframe.lock().unwrap().locals[0];
+                // basically random bits
+                let fake_addr = 3_141_592u32.wrapping_add(obj_ref);
+                let str_value = Arc::from(format!("{fake_addr:0>8X}"));
+                let str_ref = heap_allocate(
+                    &mut self.heap.lock().unwrap(),
+                    StringObj::new(&self.class_area, str_value),
+                );
+                stackframe.lock().unwrap().operand_stack.push(str_ref);
+                self.return_one(verbose);
+            }
+            (
+                "java/lang/String",
+                "valueOf",
+                MethodDescriptor {
+                    parameter_size: 1,
+                    parameters,
+                    return_type: Some(FieldType::Object(obj)),
+                },
+            ) if &*obj == "java/lang/String"
+                && matches!(&parameters[..], [FieldType::Object(_)]) =>
+            {
+                let obj_ref = stackframe.lock().unwrap().locals[0];
+                if obj_ref == u32::MAX {
+                    let str_ref = heap_allocate(
+                        &mut self.heap.lock().unwrap(),
+                        StringObj::new(&self.class_area, "null".into()),
+                    );
+                    stackframe.lock().unwrap().operand_stack.push(str_ref);
+                } else {
+                    let (to_string_class, to_string_method) =
+                        AnyObj.get(&self.heap.lock().unwrap(), obj_ref as usize, |obj| {
+                            obj.resolve_method(
+                                &self.method_area,
+                                &self.class_area,
+                                "toString",
+                                &MethodDescriptor {
+                                    parameter_size: 0,
+                                    parameters: Vec::new(),
+                                    return_type: Some(FieldType::Object("java/lang/String".into())),
+                                },
+                            )
+                        })?;
+                    let stackframes = self.stack.len();
+                    // push a fake return address
+                    self.stack
+                        .last_mut()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .operand_stack
+                        .push(0);
+                    self.invoke_method(to_string_method, to_string_class);
+                    self.stack.last_mut().unwrap().lock().unwrap().locals[0] = obj_ref;
+                    while self.stack.len() > stackframes {
+                        self.tick(verbose)?;
+                    }
+                }
+                self.return_one(verbose);
+            }
             ("java/util/Random", "<init>", _) => {
                 let obj_ref = stackframe.lock().unwrap().locals[0];
                 stackframe
@@ -1486,6 +1547,14 @@ impl Thread {
                     })?;
                 drop(heap_borrow);
                 let stackframes = self.stack.len();
+                // push a fake return address
+                self.stack
+                    .last_mut()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .operand_stack
+                    .push(0);
                 self.invoke_method(to_string_method, to_string_class);
                 self.stack.last_mut().unwrap().lock().unwrap().locals[0] = arg;
                 while self.stack.len() > stackframes {

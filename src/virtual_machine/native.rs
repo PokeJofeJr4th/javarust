@@ -127,14 +127,29 @@ pub(super) fn add_native_methods(
         attributes: Vec::new(),
         code: None,
     });
+    let string_value_of = Arc::new(Method {
+        max_locals: 1,
+        access_flags: AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC | AccessFlags::ACC_NATIVE,
+        name: "valueOf".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 1,
+            parameters: vec![FieldType::Object(object_name.clone())],
+            return_type: Some(FieldType::Object("java/lang/String".into())),
+        },
+        code: None,
+        signature: None,
+        attributes: Vec::new(),
+    });
     let mut string = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         "java/lang/String".into(),
         object_name.clone(),
     );
-    string
-        .methods
-        .extend([string_length.clone(), char_at.clone()]);
+    string.methods.extend([
+        string_length.clone(),
+        char_at.clone(),
+        string_value_of.clone(),
+    ]);
     let string = Arc::new(string);
 
     let builder_init = Arc::new(Method {
@@ -432,6 +447,7 @@ pub(super) fn add_native_methods(
         (arrays.clone(), deep_to_string),
         (string.clone(), string_length),
         (string.clone(), char_at),
+        (string.clone(), string_value_of),
         (string_builder.clone(), builder_init),
         (string_builder.clone(), to_string),
         (string_builder.clone(), set_char_at),
