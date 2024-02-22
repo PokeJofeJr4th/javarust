@@ -46,6 +46,7 @@ pub fn native_string_value_of(
                         parameters: Vec::new(),
                         return_type: Some(FieldType::Object("java/lang/String".into())),
                     },
+                    verbose,
                 )
             })?;
         let stackframes = thread.stack.len();
@@ -86,6 +87,7 @@ pub fn native_println_object(
                     parameters: Vec::new(),
                     return_type: Some(FieldType::Object("java/lang/String".into())),
                 },
+                verbose,
             )
         })?;
     if verbose {

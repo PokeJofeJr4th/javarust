@@ -863,7 +863,13 @@ impl Thread {
                     .unwrap();
                 let (resolved_class, resolved_method) =
                     AnyObj.get(&self.heap.lock().unwrap(), obj_pointer as usize, |obj| {
-                        obj.resolve_method(&self.method_area, &self.class_area, &name, &method_type)
+                        obj.resolve_method(
+                            &self.method_area,
+                            &self.class_area,
+                            &name,
+                            &method_type,
+                            verbose,
+                        )
                     })?;
                 let args_start = stackframe.lock().unwrap().operand_stack.len() - arg_count - 1;
                 if verbose {
@@ -1082,6 +1088,29 @@ impl Thread {
                     arr.contents.len()
                 })? as u32;
                 stackframe.lock().unwrap().operand_stack.push(length);
+            }
+            Instruction::CheckedCast(ty) => {
+                let objref = *stackframe.lock().unwrap().operand_stack.last().unwrap();
+                if objref != u32::MAX {
+                    // get the fields of the given class; if it works, we have a subclass
+                    // TODO: add support for interfaces
+                    let obj_works = self
+                        .class_area
+                        .search(&ty)
+                        .unwrap()
+                        .as_ref()
+                        .get(&self.heap.lock().unwrap(), objref as usize, |_| {})
+                        .is_ok();
+                    if !obj_works {
+                        let obj_type =
+                            AnyObj.get(&self.heap.lock().unwrap(), objref as usize, |obj| {
+                                obj.this_class()
+                            })?;
+                        return Err(format!(
+                            "CheckedCast failed; expected a(n) {ty} but got a(n) {obj_type}"
+                        ));
+                    }
+                }
             }
             other => return Err(format!("Invalid Opcode: {other:?}")),
         }

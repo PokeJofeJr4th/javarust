@@ -1,7 +1,7 @@
 use std::{any::Any, sync::Arc};
 
 use crate::{
-    class::{Class, FieldType, Method, MethodDescriptor},
+    class::{Class, Field, FieldType, Method, MethodDescriptor},
     data::{ClassArea, Heap, SharedMethodArea},
 };
 
@@ -20,16 +20,21 @@ pub struct Object {
     super_object: Option<Box<Object>>,
 }
 
-trait SS: Send + Sync {}
-
-impl SS for Object {}
-
 impl Object {
     /// # Panics
     pub fn from_class(class_area: &impl ClassArea, class: &Class) -> Self {
         Self {
             fields: Instance {
-                fields: vec![0; class.field_size],
+                fields: class
+                    .fields
+                    .iter()
+                    .flat_map(|(field, _idx)| match &field.descriptor {
+                        FieldType::Array(_) | FieldType::Object(_) => {
+                            std::iter::repeat(u32::MAX).take(1)
+                        }
+                        other => std::iter::repeat(0).take(other.get_size()),
+                    })
+                    .collect::<Vec<_>>(),
                 native_fields: Vec::new(),
             },
             class: class.this.clone(),
@@ -84,11 +89,18 @@ impl Object {
         class_area: &impl ClassArea,
         method: &str,
         descriptor: &MethodDescriptor,
+        verbose: bool,
     ) -> (Arc<Class>, Arc<Method>) {
+        if verbose {
+            println!("Resolving {descriptor:?} {method}");
+        }
         let mut current_class = class_area.search(&self.class).unwrap();
         loop {
             if let Some(values) = method_area.search(&current_class.this, method, descriptor) {
                 return values;
+            }
+            if verbose {
+                println!("{}.{method} not found", current_class.this);
             }
             assert!(
                 &*current_class.this != "java/lang/Object",
