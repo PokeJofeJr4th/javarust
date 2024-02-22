@@ -425,7 +425,7 @@ impl Debug for Method {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct MethodDescriptor {
     pub parameter_size: usize,
     pub parameters: Vec<FieldType>,
@@ -455,7 +455,7 @@ impl Debug for MethodDescriptor {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FieldType {
     Byte,
     Char,

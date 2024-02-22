@@ -11,8 +11,8 @@ pub fn init(
     _verbose: bool,
 ) -> Result<(), String> {
     let heap_borrow = thread.heap.lock().unwrap();
-    let str_ref = stackframe.lock().unwrap().locals[0];
-    let obj_ref = stackframe.lock().unwrap().locals[1];
+    let obj_ref = stackframe.lock().unwrap().locals[0];
+    let str_ref = stackframe.lock().unwrap().locals[1];
 
     StringObj.get(&heap_borrow, str_ref as usize, |init_string| {
         AnyObj

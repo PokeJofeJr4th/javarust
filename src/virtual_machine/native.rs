@@ -10,7 +10,7 @@ use crate::{
         AccessFlags, Class, Code, Field, FieldType, Method, MethodDescriptor, NativeDoubleMethod,
         NativeSingleMethod, NativeStringMethod, NativeTodo, NativeVoid,
     },
-    data::{Heap, WorkingClassArea, WorkingMethodArea},
+    data::{Heap, MethodArea, WorkingClassArea},
 };
 
 use self::{
@@ -40,7 +40,7 @@ pub static mut RANDOM_CLASS: Option<Arc<Class>> = None;
 #[allow(clippy::too_many_lines)]
 /// # Panics
 pub fn add_native_methods(
-    method_area: &mut WorkingMethodArea,
+    method_area: &mut MethodArea,
     class_area: &mut WorkingClassArea,
     heap: &mut Heap,
 ) {
@@ -320,7 +320,7 @@ pub fn add_native_methods(
                     obj_ref as usize,
                     |random_obj| {
                         random_obj.native_fields[0]
-                            .downcast_mut::<ThreadRng>()
+                            .downcast_mut::<StdRng>()
                             .unwrap()
                             .gen_range(0..right_bound)
                     },

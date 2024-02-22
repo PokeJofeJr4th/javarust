@@ -9,7 +9,7 @@ use crate::{
         Field, FieldType, InnerClass, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, Method,
         MethodDescriptor, MethodHandle, StackMapFrame, VerificationTypeInfo,
     },
-    data::{Heap, WorkingClassArea, WorkingMethodArea},
+    data::{Heap, WorkingClassArea, MethodArea},
     virtual_machine::{add_native_methods, hydrate_code},
 };
 
@@ -91,8 +91,8 @@ pub enum RawConstant {
 }
 
 #[must_use]
-pub fn load_environment() -> (WorkingMethodArea, WorkingClassArea, Heap) {
-    let mut method_area = WorkingMethodArea::new();
+pub fn load_environment() -> (MethodArea, WorkingClassArea, Heap) {
+    let mut method_area = MethodArea::new();
     let mut class_area = WorkingClassArea::new();
     let mut heap = Heap::new();
     add_native_methods(&mut method_area, &mut class_area, &mut heap);
@@ -103,7 +103,7 @@ pub fn load_environment() -> (WorkingMethodArea, WorkingClassArea, Heap) {
 /// # Errors
 /// # Panics
 pub fn load_class(
-    method_area: &mut WorkingMethodArea,
+    method_area: &mut MethodArea,
     class_area: &mut WorkingClassArea,
     bytes: &mut impl Iterator<Item = u8>,
     verbose: bool,

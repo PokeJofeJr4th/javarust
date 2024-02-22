@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use crate::{
     class::{AccessFlags, Class, Code, Field, FieldType, Method, MethodDescriptor, NativeTodo},
-    data::{WorkingClassArea, WorkingMethodArea},
+    data::{WorkingClassArea, MethodArea},
 };
 
 pub(super) fn make_primitives(
-    method_area: &mut WorkingMethodArea,
+    method_area: &mut MethodArea,
     class_area: &mut WorkingClassArea,
     object_class: Arc<str>,
 ) -> Vec<Arc<Method>> {
@@ -20,7 +20,7 @@ pub(super) fn make_primitives(
 }
 
 fn make_primitive_class(
-    method_area: &mut WorkingMethodArea,
+    method_area: &mut MethodArea,
     class_area: &mut WorkingClassArea,
     object_class: Arc<str>,
     primitive: FieldType,
