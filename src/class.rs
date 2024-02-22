@@ -342,13 +342,13 @@ impl AccessFlags {
     // pub const ACC_VOLATILE: u16 = 0x0040;
     // pub const ACC_TRANSIENT: u16 = 0x0080;
     pub const ACC_NATIVE: Self = Self(0x0100);
-    // pub const ACC_UNDEFINED: u16 = 0x0200;
+    // pub const ACC_???: u16 = 0x0200;
     pub const ACC_ABSTRACT: Self = Self(0x0400);
     // pub const ACC_STRICT: u16 = 0x0800;
     // pub const ACC_SYNTHETIC: u16 = 0x1000;
-    // pub const ACC_UNDEFINED: u16 = 0x2000;
+    // pub const ACC_???: u16 = 0x2000;
     // pub const ACC_ENUM: u16 = 0x4000;
-    // pub const ACC_UNDEFINED: u16 = 0x8000;
+    // pub const ACC_???: u16 = 0x8000;
 }
 
 impl BitOr for AccessFlags {

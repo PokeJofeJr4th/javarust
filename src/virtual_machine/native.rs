@@ -107,6 +107,21 @@ pub fn add_native_methods(
         code: Code::native(NativeStringMethod(arrays::to_string)),
         attributes: Vec::new(),
     });
+    let arrays_to_string_obj_arr = Arc::new(Method {
+        max_locals: 1,
+        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
+        name: "toString".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 1,
+            parameters: vec![FieldType::Array(Box::new(FieldType::Object(
+                "java/lang/Object".into(),
+            )))],
+            return_type: Some(FieldType::Object("java/lang/String".into())),
+        },
+        signature: None,
+        code: Code::native(NativeStringMethod(arrays::to_string)),
+        attributes: Vec::new(),
+    });
     let deep_to_string = Arc::new(Method {
         max_locals: 1,
         access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
@@ -127,9 +142,11 @@ pub fn add_native_methods(
         "java/util/Arrays".into(),
         object_name.clone(),
     );
-    arrays
-        .methods
-        .extend([arrays_to_string.clone(), deep_to_string.clone()]);
+    arrays.methods.extend([
+        arrays_to_string.clone(),
+        arrays_to_string_obj_arr.clone(),
+        deep_to_string.clone(),
+    ]);
     let arrays = Arc::new(arrays);
 
     let string_length = Arc::new(Method {
@@ -567,6 +584,7 @@ pub fn add_native_methods(
         (object.clone(), object_init),
         (object.clone(), object_to_string),
         (arrays.clone(), arrays_to_string),
+        (arrays.clone(), arrays_to_string_obj_arr),
         (arrays.clone(), deep_to_string),
         (string.clone(), string_length),
         (string.clone(), char_at),

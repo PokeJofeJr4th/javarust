@@ -322,23 +322,19 @@ pub fn load_class(
         // println!("Method {name}: {descriptor}; {attrs_count} attrs");
         // println!("{attributes:?}");
         // println!("{access:?}");
-        let code = match (
-            access.is_native() || access.is_abstract(),
-            &code_attributes[..],
-        ) {
-            (_, []) => None,
-            (false, [code]) => {
+        let (code, max_locals) = match &code_attributes[..] {
+            [code] => {
                 let bytes = code.data.clone();
-                let code = parse_code_attribute(&constants, bytes, verbose)?;
-                Some(code)
+                let (code, locals) = parse_code_attribute(&constants, bytes, verbose)?;
+                (Code::Code(code), locals)
             }
-            (true, [_]) => return Err(String::from("Method marked as native or abstract")),
+            [] if access.is_abstract() => (Code::Abstract, 0),
             // (false, []) => return Err(String::from("Method must contain code")),
-            _ => return Err(String::from("Method must only have one code attribute")),
-        };
-        let (code, max_locals) = match code {
-            Some((code, max_locals)) => (Code::Code(code), max_locals),
-            None => return Err(String::from("Non-Native methods must include code")),
+            _ => {
+                return Err(String::from(
+                    "Concrete methods must have exactly one code attribute",
+                ))
+            }
         };
 
         let (signature, attributes) = get_signature(&constants, attributes)?;

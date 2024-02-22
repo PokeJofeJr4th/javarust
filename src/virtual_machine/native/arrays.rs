@@ -114,11 +114,16 @@ pub fn to_string(
                 },
                 _ => |arr: ArrayFields<'_, u32>| {
                     format!(
-                        "{:?}",
+                        "[{}]",
                         arr.contents
                             .iter()
-                            .map(|item| format!("&{item:<8X}"))
+                            .map(|item| if *item == u32::MAX {
+                                String::from("null")
+                            } else {
+                                format!("&{item:0>8X}")
+                            })
                             .collect::<Vec<_>>()
+                            .join(", ")
                     )
                     .into()
                 },

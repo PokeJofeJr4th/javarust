@@ -1,7 +1,7 @@
 use std::{any::Any, sync::Arc};
 
 use crate::{
-    class::{Class, Field, FieldType, Method, MethodDescriptor},
+    class::{Class, FieldType, Method, MethodDescriptor},
     data::{ClassArea, Heap, SharedMethodArea},
 };
 
@@ -360,7 +360,12 @@ pub struct Array1;
 impl Array1 {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(class_area: &impl ClassArea, count: usize, arr_type: FieldType) -> Object {
-        Self::from_vec(class_area, vec![0u32; count], arr_type)
+        let default_value = if matches!(arr_type, FieldType::Object(_)) {
+            u32::MAX
+        } else {
+            0
+        };
+        Self::from_vec(class_area, vec![default_value; count], arr_type)
     }
 
     /// # Panics

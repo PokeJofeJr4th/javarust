@@ -70,6 +70,7 @@ impl Debug for LocalVarEntry {
 pub enum Code {
     Code(ByteCode),
     Native(Box<dyn NativeMethod>),
+    Abstract,
 }
 
 impl Code {
@@ -77,15 +78,15 @@ impl Code {
     pub const fn as_ref(&self) -> Option<&ByteCode> {
         match self {
             Self::Code(bt) => Some(bt),
-            Self::Native(_) => None,
+            _ => None,
         }
     }
 
     #[must_use]
     pub const fn as_native(&self) -> Option<&dyn NativeMethod> {
         match self {
-            Self::Code(_) => None,
             Self::Native(nm) => Some(&**nm),
+            _ => None,
         }
     }
 
@@ -99,6 +100,7 @@ impl Debug for Code {
         match self {
             Self::Code(byte_code) => byte_code.fmt(f),
             Self::Native(_) => write!(f, "<<native code>>"),
+            Self::Abstract => write!(f, "<<abstract method>>"),
         }
     }
 }
