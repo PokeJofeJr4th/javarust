@@ -90,6 +90,11 @@ impl Code {
         }
     }
 
+    #[must_use]
+    pub const fn is_abstract(&self) -> bool {
+        matches!(self, Self::Abstract)
+    }
+
     pub fn native(func: impl NativeMethod + 'static) -> Self {
         Self::Native(Box::new(func))
     }

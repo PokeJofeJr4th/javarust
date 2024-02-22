@@ -323,12 +323,17 @@ pub fn load_class(
         // println!("{attributes:?}");
         // println!("{access:?}");
         let (code, max_locals) = match &code_attributes[..] {
+            [_] if access_flags.is_abstract() => {
+                return Err(format!(
+                    "Abstract method {descriptor:?} {this_class}.{name} must not contain code"
+                ));
+            }
             [code] => {
                 let bytes = code.data.clone();
                 let (code, locals) = parse_code_attribute(&constants, bytes, verbose)?;
                 (Code::Code(code), locals)
             }
-            [] if access.is_abstract() => (Code::Abstract, 0),
+            [] if access_flags.is_abstract() => (Code::Abstract, 0),
             // (false, []) => return Err(String::from("Method must contain code")),
             _ => {
                 return Err(String::from(

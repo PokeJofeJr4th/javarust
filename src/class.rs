@@ -306,7 +306,7 @@ impl Display for AccessFlags {
             write!(f, "abstract ")?;
         }
         if self.0 & 0x800 != 0 {
-            write!(f, "strict ")?;
+            write!(f, "fp-strict ")?;
         }
         if self.0 & 0x1000 != 0 {
             write!(f, "synthetic ")?;
@@ -415,7 +415,9 @@ impl Debug for Method {
         if let Some(signature) = &self.signature {
             s.field("signature", signature);
         }
-        s.field("code", &self.code);
+        if !self.code.is_abstract() {
+            s.field("code", &self.code);
+        }
         for Attribute { name, data } in &self.attributes {
             s.field(name, data);
         }

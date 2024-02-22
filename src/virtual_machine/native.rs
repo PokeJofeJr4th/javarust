@@ -15,6 +15,7 @@ use crate::{
 
 use self::{
     arrays::deep_to_string,
+    primitives::make_primitives,
     string::{
         native_println_object, native_string_char_at, native_string_len, NativeStringValueOf,
     },
@@ -147,6 +148,8 @@ pub fn add_native_methods(
         arrays_to_string_obj_arr.clone(),
         deep_to_string.clone(),
     ]);
+    let array_methods = make_primitives(method_area, class_area, object_name.clone());
+    arrays.methods.extend(array_methods.iter().cloned());
     let arrays = Arc::new(arrays);
 
     let string_length = Arc::new(Method {
@@ -606,6 +609,11 @@ pub fn add_native_methods(
         (string_concat_factory.clone(), make_concat_with_constants),
         (math.clone(), sqrt_double),
     ]);
+    method_area.extend(
+        array_methods
+            .into_iter()
+            .map(|method| (arrays.clone(), method)),
+    );
     class_area.extend([
         object,
         array,

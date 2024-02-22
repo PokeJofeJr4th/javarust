@@ -1,7 +1,7 @@
 use std::{any::Any, sync::Arc};
 
 use crate::{
-    class::{Class, FieldType, Method, MethodDescriptor},
+    class::{Class, Code, FieldType, Method, MethodDescriptor},
     data::{ClassArea, Heap, SharedMethodArea},
 };
 
@@ -95,6 +95,7 @@ impl Object {
             println!("Resolving {descriptor:?} {method}");
         }
         let mut current_class = class_area.search(&self.class).unwrap();
+        let mut class_list = vec![current_class.clone()];
         loop {
             if let Some(values) = method_area.search(&current_class.this, method, descriptor) {
                 return values;
@@ -102,12 +103,28 @@ impl Object {
             if verbose {
                 println!("{}.{method} not found", current_class.this);
             }
-            assert!(
-                &*current_class.this != "java/lang/Object",
-                "We shouldn't get to object ;-;"
-            );
+            if &*current_class.this == "java/lang/Object" {
+                if verbose {
+                    println!("No method found in superclasses; looking in interfaces");
+                }
+                break;
+            }
             current_class = class_area.search(&current_class.super_class).unwrap();
+            class_list.push(current_class.clone());
         }
+        for class in class_list {
+            for interface in &class.interfaces {
+                if let Some(values) = method_area.search(interface, method, descriptor) {
+                    if !matches!(values.1.code, Code::Abstract) {
+                        return values;
+                    }
+                }
+                if verbose {
+                    println!("{interface}.{method} not found");
+                }
+            }
+        }
+        panic!("Failed to find any implementation")
     }
 
     #[must_use]
