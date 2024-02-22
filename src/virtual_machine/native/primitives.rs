@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     class::{AccessFlags, Class, Code, Field, FieldType, Method, MethodDescriptor, NativeTodo},
-    data::{WorkingClassArea, MethodArea},
+    data::{MethodArea, WorkingClassArea},
 };
 
 pub(super) fn make_primitives(
@@ -56,6 +56,7 @@ fn make_primitive_class(
         code: Code::native(NativeTodo),
         signature: None,
         attributes: Vec::new(),
+        ..Default::default()
     });
 
     let value_of = Arc::new(Method {
@@ -70,6 +71,7 @@ fn make_primitive_class(
         code: Code::native(NativeTodo),
         signature: None,
         attributes: Vec::new(),
+        ..Default::default()
     });
 
     class.methods.extend([value_of.clone(), init.clone()]);
@@ -89,5 +91,6 @@ fn make_primitive_class(
         code: Code::native(NativeTodo),
         signature: None,
         attributes: Vec::new(),
+        ..Default::default()
     })
 }

@@ -9,7 +9,7 @@ use crate::{
         Field, FieldType, InnerClass, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, Method,
         MethodDescriptor, MethodHandle, StackMapFrame, VerificationTypeInfo,
     },
-    data::{Heap, WorkingClassArea, MethodArea},
+    data::{Heap, MethodArea, WorkingClassArea},
     virtual_machine::{add_native_methods, hydrate_code},
 };
 
@@ -316,9 +316,7 @@ pub fn load_class(
             attributes.push(get_attribute(&constants, bytes)?);
         }
 
-        let (code_attributes, attributes): (Vec<_>, Vec<_>) = attributes
-            .into_iter()
-            .partition(|attr| &*attr.name == "Code");
+        let (code_attributes, attributes) = split_attributes(attributes, "Code");
         // println!("Method {name}: {descriptor}; {attrs_count} attrs");
         // println!("{attributes:?}");
         // println!("{access:?}");
@@ -342,12 +340,33 @@ pub fn load_class(
             }
         };
 
+        let (exceptions, attributes) = split_attributes(attributes, "Exceptions");
+        let exceptions = match &exceptions[..] {
+            [exceptions] => {
+                let mut bytes = exceptions.data.iter().copied().peekable();
+                let exc_count = get_u16(&mut bytes)?;
+                (0..exc_count)
+                    .map(|_| {
+                        let idx = get_u16(&mut bytes)?;
+                        class_index(&constants, idx as usize)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+            }
+            [] => Vec::new(),
+            _ => {
+                return Err(String::from(
+                    "A method may only have one `Exceptions` attribute",
+                ))
+            }
+        };
+
         let (signature, attributes) = get_signature(&constants, attributes)?;
 
         methods.push(Arc::new(Method {
             max_locals,
             access_flags,
             name,
+            exceptions,
             descriptor,
             code,
             signature,

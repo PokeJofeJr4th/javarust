@@ -57,6 +57,7 @@ pub fn add_native_methods(
         signature: None,
         attributes: Vec::new(),
         code: Code::native(NativeVoid(|_: &mut _, _: &_, _| Ok(()))),
+        ..Default::default()
     });
     let object_to_string = Arc::new(Method {
         max_locals: 1,
@@ -77,6 +78,7 @@ pub fn add_native_methods(
                 Ok(Arc::from(format!("{fake_addr:0>8X}")))
             },
         )),
+        ..Default::default()
     });
 
     let mut object = Class::new(
@@ -107,6 +109,7 @@ pub fn add_native_methods(
         signature: None,
         code: Code::native(NativeStringMethod(arrays::to_string)),
         attributes: Vec::new(),
+        ..Default::default()
     });
     let arrays_to_string_obj_arr = Arc::new(Method {
         max_locals: 1,
@@ -122,6 +125,7 @@ pub fn add_native_methods(
         signature: None,
         code: Code::native(NativeStringMethod(arrays::to_string)),
         attributes: Vec::new(),
+        ..Default::default()
     });
     let deep_to_string = Arc::new(Method {
         max_locals: 1,
@@ -137,6 +141,7 @@ pub fn add_native_methods(
         signature: None,
         attributes: Vec::new(),
         code: Code::native(NativeStringMethod(deep_to_string)),
+        ..Default::default()
     });
     let mut arrays = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -164,6 +169,7 @@ pub fn add_native_methods(
         signature: None,
         attributes: Vec::new(),
         code: Code::native(NativeSingleMethod(native_string_len)),
+        ..Default::default()
     });
     let char_at = Arc::new(Method {
         max_locals: 1,
@@ -177,6 +183,7 @@ pub fn add_native_methods(
         signature: None,
         attributes: Vec::new(),
         code: Code::native(NativeSingleMethod(native_string_char_at)),
+        ..Default::default()
     });
     let string_value_of = Arc::new(Method {
         max_locals: 1,
@@ -190,6 +197,7 @@ pub fn add_native_methods(
         code: Code::native(NativeStringValueOf),
         signature: None,
         attributes: Vec::new(),
+        ..Default::default()
     });
     let string_to_string = Arc::new(Method {
         max_locals: 1,
@@ -205,6 +213,7 @@ pub fn add_native_methods(
         )),
         signature: None,
         attributes: Vec::new(),
+        ..Default::default()
     });
     let mut string = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -231,6 +240,7 @@ pub fn add_native_methods(
         signature: None,
         attributes: Vec::new(),
         code: Code::native(NativeVoid(string_builder::init)),
+        ..Default::default()
     });
     let set_char_at = Arc::new(Method {
         max_locals: 2,
@@ -244,6 +254,7 @@ pub fn add_native_methods(
         signature: None,
         attributes: Vec::new(),
         code: Code::native(NativeVoid(string_builder::set_char_at)),
+        ..Default::default()
     });
     let to_string = Arc::new(Method {
         max_locals: 1,
@@ -257,6 +268,7 @@ pub fn add_native_methods(
         signature: None,
         attributes: Vec::new(),
         code: Code::native(NativeStringMethod(string_builder::to_string)),
+        ..Default::default()
     });
     let mut string_builder = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -293,6 +305,7 @@ pub fn add_native_methods(
                 )
             },
         )),
+        ..Default::default()
     });
     let next_int = Arc::new(Method {
         max_locals: 1,
@@ -327,6 +340,7 @@ pub fn add_native_methods(
                 )
             },
         )),
+        ..Default::default()
     });
     let mut random = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -350,6 +364,7 @@ pub fn add_native_methods(
         signature: None,
         attributes: Vec::new(),
         code: Code::native(NativeVoid(native_println_object)),
+        ..Default::default()
     });
     let println_object = Arc::new(Method {
         max_locals: 2,
@@ -363,6 +378,7 @@ pub fn add_native_methods(
         signature: None,
         attributes: Vec::new(),
         code: Code::native(NativeVoid(native_println_object)),
+        ..Default::default()
     });
     let println_char = Arc::new(Method {
         max_locals: 2,
@@ -383,6 +399,7 @@ pub fn add_native_methods(
                 Ok(())
             },
         )),
+        ..Default::default()
     });
     let println_bool = Arc::new(Method {
         max_locals: 2,
@@ -402,6 +419,7 @@ pub fn add_native_methods(
                 Ok(())
             },
         )),
+        ..Default::default()
     });
     let println_int = Arc::new(Method {
         max_locals: 2,
@@ -421,6 +439,7 @@ pub fn add_native_methods(
                 Ok(())
             },
         )),
+        ..Default::default()
     });
     let println_long = Arc::new(Method {
         max_locals: 3,
@@ -441,6 +460,7 @@ pub fn add_native_methods(
                 Ok(())
             },
         )),
+        ..Default::default()
     });
     let println_float = Arc::new(Method {
         max_locals: 2,
@@ -460,6 +480,7 @@ pub fn add_native_methods(
                 Ok(())
             },
         )),
+        ..Default::default()
     });
     let println_empty = Arc::new(Method {
         max_locals: 1,
@@ -476,6 +497,7 @@ pub fn add_native_methods(
             println!();
             Ok(())
         })),
+        ..Default::default()
     });
     let mut printstream = Class::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -534,6 +556,7 @@ pub fn add_native_methods(
         signature: None,
         attributes: Vec::new(),
         code: Code::native(NativeTodo),
+        ..Default::default()
     });
 
     let mut string_concat_factory = Class::new(
@@ -567,6 +590,7 @@ pub fn add_native_methods(
                 Ok(param.sqrt().to_bits())
             },
         )),
+        ..Default::default()
     });
     let mut math = Class::new(
         AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE,

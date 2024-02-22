@@ -401,16 +401,43 @@ pub struct Method {
     pub max_locals: u16,
     pub access_flags: AccessFlags,
     pub name: Arc<str>,
+    pub exceptions: Vec<Arc<str>>,
     pub descriptor: MethodDescriptor,
     pub code: Code,
     pub signature: Option<Arc<str>>,
     pub attributes: Vec<Attribute>,
 }
 
+impl Default for Method {
+    fn default() -> Self {
+        Self {
+            max_locals: 0,
+            access_flags: AccessFlags::ACC_PUBLIC,
+            name: "<>".into(),
+            exceptions: Vec::new(),
+            descriptor: MethodDescriptor {
+                parameter_size: 0,
+                parameters: Vec::new(),
+                return_type: None,
+            },
+            code: Code::native(NativeTodo),
+            signature: None,
+            attributes: Vec::new(),
+        }
+    }
+}
+
 impl Debug for Method {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{:?} ", self.access_flags, self.descriptor)?;
-        let mut s = f.debug_struct(&self.name);
+        write!(
+            f,
+            "{}{:?} {}",
+            self.access_flags, self.descriptor, self.name
+        )?;
+        if !self.exceptions.is_empty() {
+            write!(f, " throws {}", self.exceptions.join(", "))?;
+        }
+        let mut s = f.debug_struct("");
         s.field("max_locals", &self.max_locals);
         if let Some(signature) = &self.signature {
             s.field("signature", signature);
