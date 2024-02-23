@@ -1,5 +1,4 @@
 use std::{
-    borrow::Borrow,
     collections::HashMap,
     fmt::Debug,
     sync::{Arc, Mutex},
@@ -7,13 +6,14 @@ use std::{
 
 use crate::{
     class::{Class, Method, MethodDescriptor},
-    virtual_machine::object::Object,
+    virtual_machine::object::{Object, StringObj},
 };
 
 pub type SharedHeap = Arc<Mutex<Heap>>;
 
 pub struct Heap {
     contents: Vec<Arc<Mutex<Object>>>,
+    string_cache: HashMap<Arc<str>, u32>,
 }
 
 impl Heap {
@@ -29,15 +29,32 @@ impl Heap {
     }
 
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn allocate_str(&mut self, string: Arc<str>) -> u32 {
+        if let Some(idx) = self.string_cache.get(&string) {
+            return *idx;
+        }
+        let idx = self.allocate(StringObj::new(string.clone()));
+        self.string_cache.insert(string, idx);
+        idx
+    }
+
+    #[must_use]
+    pub fn new() -> Self {
         Self {
             contents: Vec::new(),
+            string_cache: HashMap::new(),
         }
     }
 
     #[must_use]
     pub fn make_shared(self) -> SharedHeap {
         Arc::new(Mutex::new(self))
+    }
+}
+
+impl Default for Heap {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

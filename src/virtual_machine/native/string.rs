@@ -28,11 +28,7 @@ pub fn native_string_value_of(
 ) -> Result<(), String> {
     let obj_ref = stackframe.lock().unwrap().locals[0];
     if obj_ref == u32::MAX {
-        let str_ref = thread
-            .heap
-            .lock()
-            .unwrap()
-            .allocate(StringObj::new(&thread.class_area, "null".into()));
+        let str_ref = thread.heap.lock().unwrap().allocate_str("null".into());
         stackframe.lock().unwrap().operand_stack.push(str_ref);
     } else {
         let (to_string_class, to_string_method) =

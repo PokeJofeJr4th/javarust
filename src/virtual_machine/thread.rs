@@ -41,7 +41,7 @@ impl Thread {
         }
         match opcode {
             Instruction::Noop => {
-                // nop
+                // nope
             }
             Instruction::Push1(i) => {
                 // push one item onto the operand stack
@@ -54,11 +54,7 @@ impl Thread {
                 operand_stack.push(b);
             }
             Instruction::LoadString(str) => {
-                let str_ptr = self
-                    .heap
-                    .lock()
-                    .unwrap()
-                    .allocate(StringObj::new(&self.class_area, str));
+                let str_ptr = self.heap.lock().unwrap().allocate_str(str);
                 stackframe.lock().unwrap().operand_stack.push(str_ptr);
             }
             Instruction::Load2(index) => {
@@ -1241,11 +1237,7 @@ impl Thread {
                         }
                     }
                 }
-                let heap_pointer = self
-                    .heap
-                    .lock()
-                    .unwrap()
-                    .allocate(StringObj::new(&self.class_area, Arc::from(&*output)));
+                let heap_pointer = self.heap.lock().unwrap().allocate_str(Arc::from(&*output));
                 stackframe.lock().unwrap().operand_stack.push(heap_pointer);
                 if verbose {
                     println!("makeConcatWithConstants: {heap_pointer}");

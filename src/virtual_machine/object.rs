@@ -13,6 +13,16 @@ pub struct Instance {
     pub native_fields: Vec<Box<dyn Any + Send + Sync>>,
 }
 
+impl Instance {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            fields: Vec::new(),
+            native_fields: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Object {
     fields: Instance,
@@ -62,6 +72,20 @@ impl Object {
                     &class_area.search(&class.super_class).unwrap(),
                 )))
             },
+        }
+    }
+
+    /// Create a class with Object as its superclass
+    /// # Panics
+    pub fn orphan_with_fields(class: &Class, fields: Instance) -> Self {
+        Self {
+            fields,
+            class: class.this.clone(),
+            super_object: Some(Box::new(Self {
+                fields: Instance::new(),
+                class: "java/lang/Object".into(),
+                super_object: None,
+            })),
         }
     }
 
@@ -181,9 +205,9 @@ pub struct StringObj;
 impl StringObj {
     #[allow(clippy::new_ret_no_self)]
     /// # Panics
-    pub fn new(class_area: &impl ClassArea, str: Arc<str>) -> Object {
-        Object::with_fields(
-            class_area,
+    #[must_use]
+    pub fn new(str: Arc<str>) -> Object {
+        Object::orphan_with_fields(
             unsafe { native::STRING_CLASS.as_ref().unwrap() },
             Instance {
                 fields: Vec::new(),

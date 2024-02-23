@@ -3,9 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::virtual_machine::{
-    object::StringObj, thread::push_long, Instruction, StackFrame, Thread,
-};
+use crate::virtual_machine::{thread::push_long, Instruction, StackFrame, Thread};
 
 use super::{Attribute, FieldType};
 
@@ -195,8 +193,7 @@ impl<T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<Arc<str>, String> + 
         is_verbose: bool,
     ) -> Result<(), String> {
         let str = self.0(thread, stackframe, is_verbose)?;
-        let string_object = StringObj::new(&thread.class_area, str);
-        let heap_allocation = thread.heap.lock().unwrap().allocate(string_object);
+        let heap_allocation = thread.heap.lock().unwrap().allocate_str(str);
         stackframe
             .lock()
             .unwrap()

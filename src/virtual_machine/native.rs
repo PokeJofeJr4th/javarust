@@ -1,9 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use rand::{
-    rngs::{StdRng, ThreadRng},
-    Rng, SeedableRng,
-};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use crate::{
     class::{
