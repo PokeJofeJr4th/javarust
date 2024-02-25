@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::Debug,
+    hash::{BuildHasher, DefaultHasher, Hash, Hasher},
     sync::{Arc, Mutex},
 };
 
@@ -132,28 +133,22 @@ impl ClassArea for WorkingClassArea {
 pub type SharedMethodArea = Arc<MethodArea>;
 
 pub struct MethodArea {
-    methods: HashMap<Arc<str>, (Arc<Class>, ClassTable)>,
+    methods: HashMap<MethodHash, (Arc<Class>, Arc<Method>), BuildNonHasher>,
 }
-
-type ClassTable = HashMap<Arc<str>, HashMap<MethodDescriptor, Arc<Method>>>;
 
 impl MethodArea {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            methods: HashMap::new(),
+            methods: HashMap::with_hasher(BuildNonHasher),
         }
     }
 
     pub fn push(&mut self, class: Arc<Class>, method: Arc<Method>) {
-        let signature = method.descriptor.clone();
-        self.methods
-            .entry(class.this.clone())
-            .or_insert_with(|| (class, HashMap::new()))
-            .1
-            .entry(method.name.clone())
-            .or_default()
-            .insert(signature, method);
+        self.methods.insert(
+            hash_method(&class.this, &method.name, &method.descriptor),
+            (class, method),
+        );
     }
 
     #[must_use]
@@ -174,19 +169,9 @@ impl MethodArea {
         method: &str,
         method_type: &MethodDescriptor,
     ) -> Option<(Arc<Class>, Arc<Method>)> {
-        // for (possible_class, possible_method) in &*self.methods {
-        //     if &*possible_class.this == class
-        //         && &*possible_method.name == method
-        //         && &possible_method.descriptor == method_type
-        //     {
-        //         return Some((possible_class.clone(), possible_method.clone()));
-        //     }
-        // }
-        // None
-        let (class, class_table) = self.methods.get(class)?;
-        let method_table = class_table.get(method)?;
-        let method = method_table.get(method_type)?;
-        Some((class.clone(), method.clone()))
+        self.methods
+            .get(&hash_method(class, method, method_type))
+            .cloned()
     }
 }
 
@@ -194,4 +179,41 @@ impl Default for MethodArea {
     fn default() -> Self {
         Self::new()
     }
+}
+
+struct BuildNonHasher;
+
+impl BuildHasher for BuildNonHasher {
+    type Hasher = NonHasher;
+
+    fn build_hasher(&self) -> Self::Hasher {
+        NonHasher(0)
+    }
+}
+
+struct NonHasher(u64);
+
+impl Hasher for NonHasher {
+    fn write(&mut self, _bytes: &[u8]) {
+        panic!("NonHasher should only be used to not hash a u64")
+    }
+
+    fn write_u64(&mut self, i: u64) {
+        self.0 = i;
+    }
+
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
+struct MethodHash(u64);
+
+fn hash_method(class: &str, name: &str, signature: &MethodDescriptor) -> MethodHash {
+    let mut state = DefaultHasher::new();
+    class.hash(&mut state);
+    name.hash(&mut state);
+    signature.hash(&mut state);
+    MethodHash(state.finish())
 }

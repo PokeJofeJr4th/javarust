@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Display};
+use std::hash::Hash;
 use std::ops::{BitAnd, BitOr};
 use std::sync::{Arc, Mutex};
 
@@ -452,11 +453,18 @@ impl Debug for Method {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct MethodDescriptor {
     pub parameter_size: usize,
     pub parameters: Vec<FieldType>,
     pub return_type: Option<FieldType>,
+}
+
+impl Hash for MethodDescriptor {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.parameters.hash(state);
+        self.return_type.hash(state);
+    }
 }
 
 impl Debug for MethodDescriptor {

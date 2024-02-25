@@ -73,7 +73,15 @@ pub enum Code {
 
 impl Code {
     #[must_use]
-    pub const fn as_ref(&self) -> Option<&ByteCode> {
+    pub fn as_bytecode_mut(&mut self) -> Option<&mut ByteCode> {
+        match self {
+            Self::Code(bt) => Some(bt),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_bytecode(&self) -> Option<&ByteCode> {
         match self {
             Self::Code(bt) => Some(bt),
             _ => None,

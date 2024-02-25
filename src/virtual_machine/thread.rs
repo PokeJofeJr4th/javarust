@@ -1119,7 +1119,7 @@ impl Thread {
             .unwrap()
             .method
             .code
-            .as_ref()
+            .as_bytecode()
             .unwrap()
             .code[idx]
             .clone()
