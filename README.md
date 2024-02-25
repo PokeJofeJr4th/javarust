@@ -7,3 +7,5 @@
 [Java Virtual Machine Specification](https://docs.oracle.com/javase/specs/jvms/se8/html/index.html)
 [Attribute Table](https://docs.oracle.com/javase/specs/jvms/se8/html/jvms-4.html#jvms-4.7)
 [String Concat Factory](https://docs.oracle.com/javase%2F9%2Fdocs%2Fapi%2F%2F/java/lang/invoke/StringConcatFactory.html)
+
+// TODO: Allow "caching" of method resolution by adding things to the MethodArea while lying about the classes

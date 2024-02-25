@@ -720,6 +720,39 @@ impl Thread {
                 // return one thing
                 self.return_one(verbose);
             }
+            Instruction::PutStatic(class, name, field_type) => {
+                // putstatic
+                // put a static field to a class
+                let Some(class) = self.class_area.search(&class) else {
+                    return Err(format!("Couldn't resolve class {class}"));
+                };
+
+                let staticindex = class
+                    .statics
+                    .iter()
+                    .find(|(field, _)| field.name == name)
+                    .ok_or_else(|| {
+                        format!("Couldn't find static `{name}` on class `{}`", class.this)
+                    })?
+                    .1;
+                if verbose {
+                    println!("Putting Static {name} of {}", class.this);
+                }
+                let mut static_fields = class.static_data.lock().unwrap();
+
+                if field_type.get_size() == 1 {
+                    let value = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                    static_fields[staticindex] = value;
+                    drop(static_fields);
+                } else {
+                    let mut stackframe = stackframe.lock().unwrap();
+                    let lower = stackframe.operand_stack.pop().unwrap();
+                    let upper = stackframe.operand_stack.pop().unwrap();
+                    drop(stackframe);
+                    static_fields[staticindex] = upper;
+                    static_fields[staticindex + 1] = lower;
+                }
+            }
             Instruction::GetStatic(class, name, field_type) => {
                 // getstatic
                 // get a static field from a class

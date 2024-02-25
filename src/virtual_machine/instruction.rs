@@ -12,6 +12,7 @@ pub enum Instruction {
     Push1(u32),
     Push2(u32, u32),
     LoadString(Arc<str>),
+    LoadClass(Arc<str>),
     Load1(usize),
     Load2(usize),
     Store1(usize),
@@ -44,6 +45,7 @@ pub enum Instruction {
     Return1,
     Return2,
     GetStatic(Arc<str>, Arc<str>, FieldType),
+    PutStatic(Arc<str>, Arc<str>, FieldType),
     GetField(Arc<str>, Arc<str>, FieldType),
     PutField(Arc<str>, Arc<str>, FieldType),
     InvokeVirtual(Arc<str>, Arc<str>, MethodDescriptor),
@@ -81,6 +83,7 @@ impl Debug for Instruction {
             Self::Push1(x) => write!(f, "push {x}"),
             Self::Push2(x, y) => write!(f, "push {x} {y}"),
             Self::LoadString(s) => write!(f, "load {s:?}"),
+            Self::LoadClass(s) => write!(f, "load class {s}"),
             Self::Load1(x) => write!(f, "load {x}"),
             Self::Load2(x) => write!(f, "load2 {x}"),
             Self::Store1(y) => write!(f, "store {y}"),
@@ -112,6 +115,7 @@ impl Debug for Instruction {
             Self::Return1 => write!(f, "ret1"),
             Self::Return2 => write!(f, "ret2"),
             Self::GetStatic(class, name, ty) => write!(f, "getstatic {ty} {class}.{name}"),
+            Self::PutStatic(class, name, ty) => write!(f, "putstatic {ty} {class}.{name}"),
             Self::GetField(class, name, ty) => write!(f, "getfield {ty} {class}.{name}"),
             Self::PutField(class, name, ty) => write!(f, "putfield {ty} {class}.{name}"),
             Self::InvokeVirtual(class, name, ty) => {
@@ -301,6 +305,7 @@ pub fn parse_instruction(
                 Constant::String(str) | Constant::StringRef(str) => {
                     Ok(Instruction::LoadString(str))
                 }
+                Constant::ClassRef(cls) => Ok(Instruction::LoadClass(cls)),
                 other => Err(format!("Error during ldc; can't load {other:?}")),
             }
         }
@@ -822,8 +827,23 @@ pub fn parse_instruction(
             Ok(Instruction::GetStatic(class, name, field_type))
         }
         0xB3 => {
-            todo!("putstatic")
             // set a static field in a class
+            let ib1 = bytes.next().unwrap().1;
+            let ib2 = bytes.next().unwrap().1;
+            let index = u16::from_be_bytes([ib1, ib2]);
+
+            let Constant::FieldRef {
+                class,
+                name,
+                field_type,
+            } = constants[index as usize - 1].clone()
+            else {
+                return Err(format!(
+                    "Error invoking PutStatic at index {index}; {:?}",
+                    constants[index as usize - 1]
+                ));
+            };
+            Ok(Instruction::PutStatic(class, name, field_type))
         }
         0xB4 => {
             // getfield

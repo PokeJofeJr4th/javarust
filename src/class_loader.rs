@@ -262,28 +262,29 @@ pub fn load_class(
             attributes.push(get_attribute(&constants, bytes)?);
         }
 
+        let (attributes, constant_value) = split_attributes(attributes, "ConstantValue");
         let constant_value = if access_flags.is_static() {
-            let [const_idx] = attributes
-                .iter()
-                .filter(|attr| &*attr.name == "ConstantValue")
-                .collect::<Vec<_>>()[..]
-            else {
-                println!("{attributes:?}");
-                return Err(String::from(
-                    "Static field must have exactly one `ConstantValue` attribute",
-                ));
-            };
-            let [b0, b1] = const_idx.data[..] else {
-                return Err(String::from(
-                    "`ConstantValue` attribute must have exactly two bytes",
-                ));
-            };
-            let Some(constant) = constants.get((b0 as usize) << 8 | b1 as usize) else {
-                return Err(String::from(
-                    "`ConstantValue` attribute has invalid constant index",
-                ));
-            };
-            Some(constant.clone())
+            match &constant_value[..] {
+                [const_idx] => {
+                    let [b0, b1] = const_idx.data[..] else {
+                        return Err(String::from(
+                            "`ConstantValue` attribute must have exactly two bytes",
+                        ));
+                    };
+                    let Some(constant) = constants.get((b0 as usize) << 8 | b1 as usize) else {
+                        return Err(String::from(
+                            "`ConstantValue` attribute has invalid constant index",
+                        ));
+                    };
+                    Some(constant.clone())
+                }
+                [] => None,
+                _ => {
+                    return Err(String::from(
+                        "static field must have at most one `ConstantValue` attribute",
+                    ))
+                }
+            }
         } else {
             None
         };
@@ -507,8 +508,13 @@ pub fn load_class(
         .map(|field| {
             let field_location = statics_size;
             statics_size += field.descriptor.get_size();
-            let x = field.constant_value.clone().unwrap();
-            static_data.extend(x.bytes());
+            if let Some(constant) = &field.constant_value {
+                // include any constant values
+                static_data.extend(constant.bytes());
+            } else {
+                // put zeroes otherwise
+                static_data.extend(std::iter::repeat(0).take(field.descriptor.get_size()));
+            }
             (field, field_location)
         })
         .collect();

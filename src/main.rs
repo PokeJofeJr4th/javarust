@@ -8,7 +8,7 @@
     clippy::module_name_repetitions
 )]
 
-use std::{fs, path::PathBuf};
+use std::{error::Error, fs, path::PathBuf};
 
 use clap::Parser;
 
@@ -19,19 +19,34 @@ pub mod virtual_machine;
 
 #[derive(Parser)]
 struct Args {
+    /// the filenames of the classes to run. The first filename will be treated as the main class
     filenames: Vec<PathBuf>,
     #[clap(short, long)]
+    /// whether to run the main method of the first resolved class
     run: bool,
     #[clap(short, long)]
     verbose: bool,
+    /// use this option to read dependencies from a file containing one relative path per line
+    #[clap(short, long)]
+    project: Option<PathBuf>,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let mut firstclass = None;
     let (mut method_area, mut class_area, heap) = class_loader::load_environment();
-    for filename in args.filenames {
-        let bytes = fs::read(filename).unwrap();
+    let mut filenames = args.filenames;
+    // include any paths from a project file
+    if let Some(projpath) = args.project {
+        let projfile = fs::read_to_string(&projpath)?;
+        let projpath = projpath.parent().unwrap();
+        for line in projfile.lines() {
+            filenames.push(projpath.join(line));
+        }
+    }
+    for filename in filenames {
+        println!("Reading class from {filename:?}...");
+        let bytes = fs::read(filename)?;
         // let bytes = [
         //     0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 0, 0, 3, 1, 0, 2, 0x30, 0x30, 3, 0, 0, 0, 0xFF, 0, 0, 0,
         //     1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -52,7 +67,7 @@ fn main() {
     }
     let Some(class) = firstclass else {
         println!("Error: no class specified");
-        return;
+        return Ok(());
     };
     let method_area = method_area.to_shared();
     let class_area = class_area.to_shared();
@@ -60,4 +75,5 @@ fn main() {
     if args.run {
         virtual_machine::start_vm(class, method_area, class_area, heap, args.verbose);
     }
+    Ok(())
 }
