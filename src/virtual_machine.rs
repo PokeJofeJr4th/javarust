@@ -10,6 +10,7 @@ use crate::data::{SharedClassArea, SharedHeap, SharedMethodArea};
 
 pub use self::native::add_native_methods;
 
+use self::object::{Instance, Object};
 pub use self::thread::Thread;
 
 pub use self::instruction::{hydrate_code, Cmp, Instruction, Op};
@@ -41,6 +42,26 @@ pub fn start_vm(
     heap: SharedHeap,
     verbose: bool,
 ) {
+    // set the static classes
+    unsafe {
+        native::ARRAY_CLASS = class_area.search("java/lang/Array");
+        native::OBJECT_CLASS = class_area.search("java/lang/Object");
+        native::RANDOM_CLASS = class_area.search("java/util/Random");
+        native::STRING_BUILDER_CLASS = class_area.search("java/lang/StringBuilder");
+        native::STRING_CLASS = class_area.search("java/lang/String");
+    }
+    // make System.out
+    let sys_out_index = heap.lock().unwrap().allocate(Object::orphan_with_fields(
+        &class_area.search("java/io/PrintStream").unwrap(),
+        Instance::new(),
+    ));
+    class_area
+        .search("java/lang/System")
+        .unwrap()
+        .static_data
+        .lock()
+        .unwrap()[0] = sys_out_index;
+
     let (class, method) = method_area
         .search(
             class,
