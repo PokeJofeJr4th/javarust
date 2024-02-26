@@ -44,6 +44,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             filenames.push(projpath.join(line));
         }
     }
+    // make sure all the filenames are unique and the first one is first
+    let mut filenames = filenames
+        .into_iter()
+        .map(|p| p.canonicalize())
+        .collect::<Result<Vec<_>, _>>()?;
+    let first_file = filenames.remove(0);
+    filenames.sort();
+    filenames.dedup();
+    filenames.retain(|p| p != &first_file);
+    filenames.insert(0, first_file);
     for filename in filenames {
         println!("Reading class from {filename:?}...");
         let bytes = fs::read(filename)?;
@@ -51,29 +61,30 @@ fn main() -> Result<(), Box<dyn Error>> {
         //     0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 0, 0, 3, 1, 0, 2, 0x30, 0x30, 3, 0, 0, 0, 0xFF, 0, 0, 0,
         //     1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         // ];
-        let class = class_loader::load_class(
-            &mut method_area,
-            &mut class_area,
-            &mut bytes.into_iter(),
-            args.verbose,
-        )
-        .unwrap();
+        let class =
+            class_loader::load_class(&mut method_area, &mut bytes.into_iter(), args.verbose)
+                .unwrap();
         if args.verbose {
             println!("{class:#?}");
         }
         if firstclass.is_none() {
-            firstclass = Some(class);
+            firstclass = Some(class.this.clone());
         }
+        class_area.push(class);
     }
     let Some(class) = firstclass else {
         println!("Error: no class specified");
         return Ok(());
     };
-    let method_area = method_area.to_shared();
     let class_area = class_area.to_shared();
+    let method_area = method_area.to_shared(
+        &class_area,
+        &class_area.search(&class).unwrap().constants,
+        args.verbose,
+    )?;
     let heap = heap.make_shared();
     if args.run {
-        virtual_machine::start_vm(class, method_area, class_area, heap, args.verbose);
+        virtual_machine::start_vm(&class, method_area, class_area, heap, args.verbose);
     }
     Ok(())
 }

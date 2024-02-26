@@ -67,7 +67,7 @@ impl Debug for LocalVarEntry {
 
 pub enum Code {
     Code(ByteCode),
-    Native(Box<dyn NativeMethod>),
+    Native(Arc<Box<dyn NativeMethod>>),
     Abstract,
 }
 
@@ -89,9 +89,9 @@ impl Code {
     }
 
     #[must_use]
-    pub const fn as_native(&self) -> Option<&dyn NativeMethod> {
+    pub fn as_native(&self) -> Option<&dyn NativeMethod> {
         match self {
-            Self::Native(nm) => Some(&**nm),
+            Self::Native(nm) => Some(&***nm),
             _ => None,
         }
     }
@@ -102,7 +102,7 @@ impl Code {
     }
 
     pub fn native(func: impl NativeMethod + 'static) -> Self {
-        Self::Native(Box::new(func))
+        Self::Native(Arc::new(Box::new(func)))
     }
 }
 
@@ -116,7 +116,7 @@ impl Debug for Code {
     }
 }
 
-pub trait NativeMethod: Send + Sync {
+pub trait NativeMethod: Send + Sync + 'static {
     /// # Errors
     fn run(
         &self,
@@ -126,6 +126,7 @@ pub trait NativeMethod: Send + Sync {
     ) -> Result<(), String>;
 }
 
+#[derive(Clone, Copy)]
 pub struct NativeTodo;
 
 impl NativeMethod for NativeTodo {
@@ -145,12 +146,11 @@ impl NativeMethod for NativeTodo {
 }
 
 #[derive(Clone, Copy)]
-pub struct NativeSingleMethod<
-    T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<u32, String> + Send + Sync,
->(pub T);
+pub struct NativeSingleMethod<T>(pub T);
 
-impl<T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<u32, String> + Send + Sync> NativeMethod
-    for NativeSingleMethod<T>
+impl<
+        T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<u32, String> + Send + Sync + 'static,
+    > NativeMethod for NativeSingleMethod<T>
 {
     fn run(
         &self,
@@ -166,12 +166,11 @@ impl<T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<u32, String> + Send 
 }
 
 #[derive(Clone, Copy)]
-pub struct NativeDoubleMethod<
-    T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<u64, String> + Send + Sync,
->(pub T);
+pub struct NativeDoubleMethod<T>(pub T);
 
-impl<T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<u64, String> + Send + Sync> NativeMethod
-    for NativeDoubleMethod<T>
+impl<
+        T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<u64, String> + Send + Sync + 'static,
+    > NativeMethod for NativeDoubleMethod<T>
 {
     fn run(
         &self,
@@ -187,12 +186,14 @@ impl<T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<u64, String> + Send 
 }
 
 #[derive(Clone, Copy)]
-pub struct NativeStringMethod<
-    T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<Arc<str>, String> + Send + Sync,
->(pub T);
+pub struct NativeStringMethod<T>(pub T);
 
-impl<T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<Arc<str>, String> + Send + Sync>
-    NativeMethod for NativeStringMethod<T>
+impl<
+        T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<Arc<str>, String>
+            + Send
+            + Sync
+            + 'static,
+    > NativeMethod for NativeStringMethod<T>
 {
     fn run(
         &self,
@@ -217,8 +218,9 @@ pub struct NativeVoid<
     T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<(), String> + Send + Sync,
 >(pub T);
 
-impl<T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<(), String> + Send + Sync> NativeMethod
-    for NativeVoid<T>
+impl<
+        T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<(), String> + Send + Sync + 'static,
+    > NativeMethod for NativeVoid<T>
 {
     fn run(
         &self,

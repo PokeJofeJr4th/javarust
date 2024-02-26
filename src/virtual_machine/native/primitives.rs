@@ -1,15 +1,16 @@
 use std::sync::Arc;
 
 use crate::{
-    class::{AccessFlags, Class, Code, Field, FieldType, Method, MethodDescriptor, NativeTodo},
-    data::{MethodArea, WorkingClassArea},
+    class::{AccessFlags, Field, FieldType, MethodDescriptor, NativeTodo},
+    class_loader::{RawClass, RawCode, RawMethod},
+    data::{WorkingClassArea, WorkingMethodArea},
 };
 
 pub(super) fn make_primitives(
-    method_area: &mut MethodArea,
+    method_area: &mut WorkingMethodArea,
     class_area: &mut WorkingClassArea,
     object_class: Arc<str>,
-) -> Vec<Arc<Method>> {
+) -> Vec<RawMethod> {
     vec![make_primitive_class(
         method_area,
         class_area,
@@ -20,13 +21,13 @@ pub(super) fn make_primitives(
 }
 
 fn make_primitive_class(
-    method_area: &mut MethodArea,
+    method_area: &mut WorkingMethodArea,
     class_area: &mut WorkingClassArea,
     object_class: Arc<str>,
     primitive: FieldType,
     primitive_class: Arc<str>,
-) -> Arc<Method> {
-    let mut class = Class::new(
+) -> RawMethod {
+    let mut class = RawClass::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         primitive_class.clone(),
         object_class,
@@ -44,8 +45,7 @@ fn make_primitive_class(
     ));
     class.field_size += primitive.get_size();
 
-    let init = Arc::new(Method {
-        max_locals: 1 + primitive.get_size() as u16,
+    let init = RawMethod {
         access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         name: "<init>".into(),
         descriptor: MethodDescriptor {
@@ -53,14 +53,13 @@ fn make_primitive_class(
             parameters: vec![primitive.clone()],
             return_type: Some(FieldType::Object(primitive_class.clone())),
         },
-        code: Code::native(NativeTodo),
+        code: RawCode::native(NativeTodo),
         signature: None,
         attributes: Vec::new(),
-        ..Default::default()
-    });
+        exceptions: Vec::new(),
+    };
 
-    let value_of = Arc::new(Method {
-        max_locals: 1 + primitive.get_size() as u16,
+    let value_of = RawMethod {
         access_flags: AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC | AccessFlags::ACC_NATIVE,
         name: "valueOf".into(),
         descriptor: MethodDescriptor {
@@ -68,19 +67,17 @@ fn make_primitive_class(
             parameters: vec![primitive],
             return_type: Some(FieldType::Object(primitive_class)),
         },
-        code: Code::native(NativeTodo),
+        code: RawCode::native(NativeTodo),
         signature: None,
         attributes: Vec::new(),
-        ..Default::default()
-    });
+        exceptions: Vec::new(),
+    };
 
-    class.methods.extend([value_of.clone(), init.clone()]);
-    let class = Arc::new(class);
+    class.methods.extend([]);
 
-    method_area.extend([(class.clone(), value_of), (class.clone(), init)]);
+    method_area.extend([(class.this.clone(), value_of), (class.this.clone(), init)]);
     class_area.push(class);
-    Arc::new(Method {
-        max_locals: 1,
+    RawMethod {
         access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
         name: "toString".into(),
         descriptor: MethodDescriptor {
@@ -88,9 +85,7 @@ fn make_primitive_class(
             parameters: vec![],
             return_type: Some(FieldType::Object("java/lang/String".into())),
         },
-        code: Code::native(NativeTodo),
-        signature: None,
-        attributes: Vec::new(),
+        code: RawCode::native(NativeTodo),
         ..Default::default()
-    })
+    }
 }

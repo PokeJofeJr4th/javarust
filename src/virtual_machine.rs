@@ -5,7 +5,7 @@ pub mod thread;
 
 use std::sync::Arc;
 
-use crate::class::{Class, Method};
+use crate::class::{Class, FieldType, Method, MethodDescriptor};
 use crate::data::{SharedClassArea, SharedHeap, SharedMethodArea};
 
 pub use self::native::add_native_methods;
@@ -35,20 +35,25 @@ impl StackFrame {
 
 /// # Panics
 pub fn start_vm(
-    class: Arc<Class>,
+    class: &str,
     method_area: SharedMethodArea,
     class_area: SharedClassArea,
     heap: SharedHeap,
     verbose: bool,
 ) {
-    let mut method = None;
-    for methods in &class.methods {
-        if &*methods.name == "main" {
-            method = Some(methods.clone());
-            break;
-        }
-    }
-    let method = method.expect("No `main` function found");
+    let (class, method) = method_area
+        .search(
+            class,
+            "main",
+            &MethodDescriptor {
+                parameter_size: 1,
+                parameters: vec![FieldType::Array(Box::new(FieldType::Object(
+                    "java/lang/String".into(),
+                )))],
+                return_type: None,
+            },
+        )
+        .expect("No `main` function found");
     let mut primary_thread = Thread {
         pc_register: 0,
         stack: Vec::new(),

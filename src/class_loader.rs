@@ -1,17 +1,18 @@
-use std::{
-    iter::Peekable,
-    sync::{Arc, Mutex},
-};
+use std::{iter::Peekable, sync::Arc};
 
 use crate::{
     class::{
-        AccessFlags, Attribute, BootstrapMethod, ByteCode, Class, ClassVersion, Code, Constant,
-        Field, FieldType, InnerClass, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, Method,
-        MethodDescriptor, MethodHandle, StackMapFrame, VerificationTypeInfo,
+        AccessFlags, Attribute, BootstrapMethod, ByteCode, ClassVersion, Constant, Field,
+        FieldType, InnerClass, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, MethodDescriptor,
+        MethodHandle, StackMapFrame, VerificationTypeInfo,
     },
-    data::{Heap, MethodArea, WorkingClassArea},
+    data::{Heap, WorkingClassArea, WorkingMethodArea},
     virtual_machine::{add_native_methods, hydrate_code},
 };
+
+mod raw_class;
+
+pub use raw_class::{MethodName, RawClass, RawCode, RawMethod};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MethodHandleKind {
@@ -91,23 +92,21 @@ pub enum RawConstant {
 }
 
 #[must_use]
-pub fn load_environment() -> (MethodArea, WorkingClassArea, Heap) {
-    let mut method_area = MethodArea::new();
+pub fn load_environment() -> (WorkingMethodArea, WorkingClassArea, Heap) {
+    let mut method_area = WorkingMethodArea::new();
     let mut class_area = WorkingClassArea::new();
-    let mut heap = Heap::new();
-    add_native_methods(&mut method_area, &mut class_area, &mut heap);
-    (method_area, class_area, heap)
+    add_native_methods(&mut method_area, &mut class_area);
+    (method_area, class_area, Heap::new())
 }
 
 #[allow(clippy::too_many_lines)]
 /// # Errors
 /// # Panics
 pub fn load_class(
-    method_area: &mut MethodArea,
-    class_area: &mut WorkingClassArea,
+    method_area: &mut WorkingMethodArea,
     bytes: &mut impl Iterator<Item = u8>,
     verbose: bool,
-) -> Result<Arc<Class>, String> {
+) -> Result<RawClass, String> {
     let 0xCAFE_BABE = get_u32(bytes)? else {
         return Err(String::from("Invalid header"));
     };
@@ -321,19 +320,17 @@ pub fn load_class(
         // println!("Method {name}: {descriptor}; {attrs_count} attrs");
         // println!("{attributes:?}");
         // println!("{access:?}");
-        let (code, max_locals) = match &code_attributes[..] {
-            [_] if access_flags.is_abstract() => {
+        let code = match &code_attributes[..] {
+            _ if access_flags.is_abstract() => {
                 return Err(format!(
                     "Abstract method {descriptor:?} {this_class}.{name} must not contain code"
                 ));
             }
             [code] => {
                 let bytes = code.data.clone();
-                let (code, locals) = parse_code_attribute(&constants, bytes, verbose)?;
-                (Code::Code(code), locals)
+                RawCode::Code(bytes)
             }
-            [] if access_flags.is_abstract() => (Code::Abstract, 0),
-            // (false, []) => return Err(String::from("Method must contain code")),
+            [] if access_flags.is_abstract() => RawCode::Abstract,
             _ => {
                 return Err(String::from(
                     "Concrete methods must have exactly one code attribute",
@@ -363,8 +360,7 @@ pub fn load_class(
 
         let (signature, attributes) = get_signature(&constants, attributes)?;
 
-        methods.push(Arc::new(Method {
-            max_locals,
+        methods.push(RawMethod {
             access_flags,
             name,
             exceptions,
@@ -372,7 +368,7 @@ pub fn load_class(
             code,
             signature,
             attributes,
-        }));
+        });
     }
 
     let attribute_count = get_u16(bytes)?;
@@ -523,30 +519,35 @@ pub fn load_class(
         return Err(String::from("Static data size error"));
     }
 
-    let class = Arc::new(Class {
+    let class = RawClass {
         constants,
         access,
-        this: this_class,
+        this: this_class.clone(),
         super_class,
         interfaces,
         field_size,
         fields,
         statics,
-        static_data: Mutex::new(static_data),
-        methods,
+        static_data,
+        methods: methods
+            .iter()
+            .map(|m| MethodName {
+                class: this_class.clone(),
+                name: m.name.clone(),
+                descriptor: m.descriptor.clone(),
+            })
+            .collect(),
         bootstrap_methods,
         version,
         signature,
         inner_classes,
         source_file,
         attributes,
-    });
+    };
 
-    for method in &class.methods {
-        method_area.push(class.clone(), method.clone());
+    for method in methods {
+        method_area.push(class.this.clone(), method);
     }
-    class_area.push(class.clone());
-
     Ok(class)
 }
 

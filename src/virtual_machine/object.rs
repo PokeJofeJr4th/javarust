@@ -2,7 +2,7 @@ use std::{any::Any, sync::Arc};
 
 use crate::{
     class::{Class, Code, FieldType, Method, MethodDescriptor},
-    data::{ClassArea, Heap, SharedMethodArea},
+    data::{Heap, SharedClassArea, SharedMethodArea},
 };
 
 use super::native;
@@ -32,7 +32,7 @@ pub struct Object {
 
 impl Object {
     /// # Panics
-    pub fn from_class(class_area: &impl ClassArea, class: &Class) -> Self {
+    pub fn from_class(class_area: &SharedClassArea, class: &Class) -> Self {
         Self {
             fields: Instance {
                 fields: class
@@ -60,7 +60,7 @@ impl Object {
     }
 
     /// # Panics
-    pub fn with_fields(class_area: &impl ClassArea, class: &Class, fields: Instance) -> Self {
+    pub fn with_fields(class_area: &SharedClassArea, class: &Class, fields: Instance) -> Self {
         Self {
             fields,
             class: class.this.clone(),
@@ -107,10 +107,11 @@ impl Object {
     }
 
     /// # Panics
+    #[must_use]
     pub fn resolve_method(
         &self,
         method_area: &SharedMethodArea,
-        class_area: &impl ClassArea,
+        class_area: &SharedClassArea,
         method: &str,
         descriptor: &MethodDescriptor,
         verbose: bool,
@@ -400,7 +401,8 @@ pub struct Array1;
 
 impl Array1 {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(class_area: &impl ClassArea, count: usize, arr_type: FieldType) -> Object {
+    #[must_use]
+    pub fn new(class_area: &SharedClassArea, count: usize, arr_type: FieldType) -> Object {
         let default_value = if matches!(arr_type, FieldType::Object(_)) {
             u32::MAX
         } else {
@@ -409,9 +411,10 @@ impl Array1 {
         Self::from_vec(class_area, vec![default_value; count], arr_type)
     }
 
+    #[must_use]
     /// # Panics
     pub fn from_vec(
-        class_area: &impl ClassArea,
+        class_area: &SharedClassArea,
         contents: Vec<u32>,
         arr_type: FieldType,
     ) -> Object {
@@ -481,13 +484,15 @@ pub struct Array2;
 
 impl Array2 {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(class_area: &impl ClassArea, count: usize, arr_type: FieldType) -> Object {
+    #[must_use]
+    pub fn new(class_area: &SharedClassArea, count: usize, arr_type: FieldType) -> Object {
         Self::from_vec(class_area, vec![0u64; count], arr_type)
     }
 
+    #[must_use]
     /// # Panics
     pub fn from_vec(
-        class_area: &impl ClassArea,
+        class_area: &SharedClassArea,
         contents: Vec<u64>,
         arr_type: FieldType,
     ) -> Object {

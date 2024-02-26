@@ -3,6 +3,8 @@ use std::hash::Hash;
 use std::ops::{BitAnd, BitOr};
 use std::sync::{Arc, Mutex};
 
+use crate::class_loader::MethodName;
+
 pub use self::code::Code;
 pub use self::code::{
     ByteCode, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, NativeDoubleMethod, NativeMethod,
@@ -23,7 +25,7 @@ pub struct Class {
     pub fields: Vec<(Field, usize)>,
     pub static_data: Mutex<Vec<u32>>,
     pub statics: Vec<(Field, usize)>,
-    pub methods: Vec<Arc<Method>>,
+    pub methods: Vec<MethodName>,
     pub bootstrap_methods: Vec<BootstrapMethod>,
     pub source_file: Option<Arc<str>>,
     pub signature: Option<Arc<str>>,
@@ -92,7 +94,7 @@ impl Debug for Class {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MethodHandle {
     GetField {
         class: Arc<str>,
@@ -142,7 +144,7 @@ pub enum MethodHandle {
 }
 
 /// A member of the constant pool
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Constant {
     String(Arc<str>),
     Int(i32),
@@ -366,12 +368,13 @@ impl BitAnd for AccessFlags {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct ClassVersion {
     pub minor_version: u16,
     pub major_version: u16,
 }
 
+#[derive(Clone, PartialEq)]
 pub struct Field {
     pub access_flags: AccessFlags,
     pub name: Arc<str>,
@@ -531,7 +534,7 @@ impl FieldType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Attribute {
     pub name: Arc<str>,
     pub data: Vec<u8>,

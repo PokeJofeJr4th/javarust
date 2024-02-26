@@ -6,7 +6,8 @@ use std::{
 };
 
 use crate::{
-    class::{Class, Method, MethodDescriptor},
+    class::{Class, Constant, Method, MethodDescriptor},
+    class_loader::{RawClass, RawMethod},
     virtual_machine::object::{Object, StringObj},
 };
 
@@ -71,35 +72,32 @@ impl Debug for Heap {
     }
 }
 
-pub trait ClassArea {
-    fn search(&self, class: &str) -> Option<Arc<Class>>;
-}
-
 #[derive(Clone)]
 pub struct SharedClassArea {
     classes: Arc<HashMap<Arc<str>, Arc<Class>>>,
 }
 
-impl ClassArea for SharedClassArea {
-    fn search(&self, class: &str) -> Option<Arc<Class>> {
+impl SharedClassArea {
+    #[must_use]
+    pub fn search(&self, class: &str) -> Option<Arc<Class>> {
         self.classes.get(class).cloned()
     }
 }
 
 pub struct WorkingClassArea {
-    classes: Vec<Arc<Class>>,
+    classes: HashMap<Arc<str>, RawClass>,
 }
 
 impl WorkingClassArea {
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
-            classes: Vec::new(),
+            classes: HashMap::new(),
         }
     }
 
-    pub fn push(&mut self, class: Arc<Class>) {
-        self.classes.push(class);
+    pub fn push(&mut self, class: RawClass) {
+        self.classes.insert(class.this.clone(), class);
     }
 
     #[must_use]
@@ -107,26 +105,27 @@ impl WorkingClassArea {
         SharedClassArea {
             classes: Arc::from(
                 self.classes
-                    .into_iter()
-                    .map(|class| (class.this.clone(), class))
+                    .iter()
+                    .map(|(this, class)| (this.clone(), Arc::new(class.to_class(&self))))
                     .collect::<HashMap<_, _>>(),
             ),
         }
     }
 
-    pub fn extend(&mut self, iter: impl IntoIterator<Item = Arc<Class>>) {
-        self.classes.extend(iter);
+    pub fn extend(&mut self, iter: impl IntoIterator<Item = RawClass>) {
+        self.classes
+            .extend(iter.into_iter().map(|c| (c.this.clone(), c)));
+    }
+
+    #[must_use]
+    pub fn search(&self, class: &str) -> Option<&RawClass> {
+        self.classes.get(class)
     }
 }
 
-impl ClassArea for WorkingClassArea {
-    fn search(&self, class: &str) -> Option<Arc<Class>> {
-        for possible_class in &*self.classes {
-            if &*possible_class.this == class {
-                return Some(possible_class.clone());
-            }
-        }
-        None
+impl Default for WorkingClassArea {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -181,6 +180,70 @@ impl Default for MethodArea {
     }
 }
 
+pub struct WorkingMethodArea {
+    methods: HashMap<MethodHash, (Arc<str>, RawMethod), BuildNonHasher>,
+}
+
+impl WorkingMethodArea {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            methods: HashMap::with_hasher(BuildNonHasher),
+        }
+    }
+
+    pub fn push(&mut self, class: Arc<str>, method: RawMethod) {
+        self.methods.insert(
+            hash_method(&class, &method.name, &method.descriptor),
+            (class, method),
+        );
+    }
+
+    pub fn extend(&mut self, iter: impl IntoIterator<Item = (Arc<str>, RawMethod)>) {
+        self.methods.extend(iter.into_iter().map(|(class, method)| {
+            (
+                hash_method(&class, &method.name, &method.descriptor),
+                (class, method),
+            )
+        }));
+    }
+
+    /// # Panics
+    /// # Errors
+    pub fn to_shared(
+        self,
+        class_area: &SharedClassArea,
+        constants: &[Constant],
+        verbose: bool,
+    ) -> Result<SharedMethodArea, String> {
+        Ok(MethodArea {
+            methods: self
+                .methods
+                .into_iter()
+                .map(|(h, (class, method))| {
+                    Ok((
+                        h,
+                        (
+                            class_area
+                                .search(&class)
+                                .ok_or_else(|| format!("Couldn't find class {class}"))?,
+                            Arc::new(method.cook(constants, verbose)?),
+                        ),
+                    ))
+                })
+                .collect::<Result<_, String>>()?,
+        }
+        .to_shared())
+    }
+}
+
+impl Default for WorkingMethodArea {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Default, Clone, Copy)]
 struct BuildNonHasher;
 
 impl BuildHasher for BuildNonHasher {

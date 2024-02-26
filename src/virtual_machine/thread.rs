@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     class::{BootstrapMethod, Class, Constant, FieldType, Method, MethodDescriptor, MethodHandle},
-    data::{ClassArea, Heap, SharedClassArea, SharedHeap, SharedMethodArea},
+    data::{Heap, SharedClassArea, SharedHeap, SharedMethodArea},
 };
 
 use super::{
@@ -1320,7 +1320,7 @@ impl Thread {
 }
 
 fn allocate_multi_array(
-    class_area: &impl ClassArea,
+    class_area: &SharedClassArea,
     heap: &mut Heap,
     depth: &[u32],
     arr_type: FieldType,
