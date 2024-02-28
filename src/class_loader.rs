@@ -6,7 +6,7 @@ use crate::{
         FieldType, InnerClass, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, MethodDescriptor,
         MethodHandle, StackMapFrame, VerificationTypeInfo,
     },
-    data::{Heap, WorkingClassArea, WorkingMethodArea},
+    data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea},
     virtual_machine::{add_native_methods, hydrate_code},
 };
 
@@ -321,6 +321,7 @@ pub fn load_class(
         // println!("{attributes:?}");
         // println!("{access:?}");
         let code = match &code_attributes[..] {
+            [] if access_flags.is_abstract() => RawCode::Abstract,
             _ if access_flags.is_abstract() => {
                 return Err(format!(
                     "Abstract method {descriptor:?} {this_class}.{name} must not contain code"
@@ -330,7 +331,6 @@ pub fn load_class(
                 let bytes = code.data.clone();
                 RawCode::Code(bytes)
             }
-            [] if access_flags.is_abstract() => RawCode::Abstract,
             _ => {
                 return Err(String::from(
                     "Concrete methods must have exactly one code attribute",
@@ -588,7 +588,8 @@ fn get_attribute(
     bytes: &mut impl Iterator<Item = u8>,
 ) -> Result<Attribute, String> {
     let name_idx = get_u16(bytes)?;
-    let name = str_index(constants, name_idx as usize)?;
+    let name = str_index(constants, name_idx as usize)
+        .map_err(|err| format!("While getting attribute name: {err}"))?;
     let attr_length = get_u32(bytes)?;
     Ok(Attribute {
         name,
@@ -598,6 +599,7 @@ fn get_attribute(
 
 #[allow(clippy::too_many_lines)]
 fn parse_code_attribute(
+    class_area: &SharedClassArea,
     constants: &[Constant],
     bytes: Vec<u8>,
     verbose: bool,
@@ -623,6 +625,11 @@ fn parse_code_attribute(
         exception_table.push((start_pc, end_pc, handler_pc, catch_type));
     }
 
+    if verbose {
+        println!("{exception_table:?}");
+        println!("Getting attributes...");
+    }
+
     let attrs_count = get_u16(&mut bytes)?;
     let mut attributes = Vec::new();
     for _ in 0..attrs_count {
@@ -637,6 +644,9 @@ fn parse_code_attribute(
     };
     let stack_map = match &stack_map_attrs[..] {
         [attr] => {
+            if verbose {
+                println!("Parsing stack map...");
+            }
             let mut stack_map = Vec::new();
             let mut bytes = attr.data.iter().copied();
             let frame_count = get_u16(&mut bytes)?;
@@ -725,6 +735,9 @@ fn parse_code_attribute(
 
     let (local_ty_table, attributes) = split_attributes(attributes, "LocalVariableTypeTable");
 
+    if verbose {
+        println!("Loading LocalVariableTypeTable...");
+    }
     let local_type_table = match &local_ty_table[..] {
         [ty_table] => {
             let mut bytes = ty_table.data.iter().copied().peekable();
@@ -748,7 +761,9 @@ fn parse_code_attribute(
             ))
         }
     };
-
+    if verbose {
+        println!("Loading LocalVariableTable...");
+    }
     let (local_var_table, attributes) = split_attributes(attributes, "LocalVariableTable");
 
     let local_var_table = match &local_var_table[..] {
@@ -779,7 +794,11 @@ fn parse_code_attribute(
         }
     };
 
-    let code = hydrate_code(constants, code, verbose)?;
+    if verbose {
+        println!("Hydrating code...");
+    }
+
+    let code = hydrate_code(class_area, constants, code, verbose)?;
 
     Ok((
         ByteCode {

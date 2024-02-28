@@ -814,6 +814,7 @@ impl Thread {
                                     "Getting Field {name} of {} at {object_index}",
                                     class.this
                                 );
+                                println!("{object_borrow:?}");
                             }
                             let object_fields = object_borrow.class_mut(&class.this).unwrap();
 

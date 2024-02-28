@@ -3,6 +3,7 @@ use std::{fmt::Debug, iter::Peekable, sync::Arc};
 use crate::{
     class::{Constant, FieldType, MethodDescriptor},
     class_loader::parse_field_type,
+    data::SharedClassArea,
 };
 
 #[derive(Clone)]
@@ -188,6 +189,7 @@ pub enum Cmp {
 /// # Panics
 /// # Errors
 pub fn hydrate_code(
+    class_area: &SharedClassArea,
     constants: &[Constant],
     code: Vec<u8>,
     verbose: bool,
@@ -206,33 +208,64 @@ pub fn hydrate_code(
     if verbose {
         println!("{code:?}");
     }
-    Ok(code
-        .iter()
+    code.iter()
         .cloned()
-        .map(|(idx, instr)| match instr {
-            Instruction::Goto(goto) => {
-                let target = (idx as i32).wrapping_add(goto) as usize;
-                let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
-                Instruction::Goto(goto as i32)
-            }
-            Instruction::IfCmpZ(cmp, goto) => {
-                let target = (idx as i16).wrapping_add(goto) as usize;
-                let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
-                Instruction::IfCmpZ(cmp, goto as i16)
-            }
-            Instruction::IfNull(cmp, goto) => {
-                let target = (idx as i16).wrapping_add(goto) as usize;
-                let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
-                Instruction::IfNull(cmp, goto as i16)
-            }
-            Instruction::ICmp(cmp, goto) => {
-                let target = (idx as i16).wrapping_add(goto) as usize;
-                let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
-                Instruction::ICmp(cmp, goto as i16)
-            }
-            other => other,
+        .map(|(idx, instr)| {
+            Ok(match instr {
+                Instruction::Goto(goto) => {
+                    let target = (idx as i32).wrapping_add(goto) as usize;
+                    let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
+                    Instruction::Goto(goto as i32)
+                }
+                Instruction::IfCmpZ(cmp, goto) => {
+                    let target = (idx as i16).wrapping_add(goto) as usize;
+                    let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
+                    Instruction::IfCmpZ(cmp, goto as i16)
+                }
+                Instruction::IfNull(cmp, goto) => {
+                    let target = (idx as i16).wrapping_add(goto) as usize;
+                    let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
+                    Instruction::IfNull(cmp, goto as i16)
+                }
+                Instruction::ICmp(cmp, goto) => {
+                    let target = (idx as i16).wrapping_add(goto) as usize;
+                    let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
+                    Instruction::ICmp(cmp, goto as i16)
+                }
+                Instruction::GetField(class, field, ty) => {
+                    let class = concrete_field(class_area, &class, &field, &ty)?;
+                    Instruction::GetField(class, field, ty)
+                }
+                Instruction::PutField(class, field, ty) => {
+                    let class = concrete_field(class_area, &class, &field, &ty)?;
+                    Instruction::PutField(class, field, ty)
+                }
+                other => other,
+            })
         })
-        .collect())
+        .collect::<Result<_, String>>()
+}
+
+fn concrete_field(
+    class_area: &SharedClassArea,
+    class: &str,
+    field: &str,
+    ty: &FieldType,
+) -> Result<Arc<str>, String> {
+    let mut current = class_area
+        .search(class)
+        .ok_or_else(|| format!("Couldn't find class {class}"))?;
+    while !current
+        .fields
+        .iter()
+        .any(|(t, _)| &*t.name == field && &t.descriptor == ty)
+    {
+        let next_class = &current.super_class;
+        current = class_area
+            .search(next_class)
+            .ok_or_else(|| format!("Couldn't find class {next_class}"))?;
+    }
+    Ok(current.this.clone())
 }
 
 #[allow(clippy::too_many_lines)]

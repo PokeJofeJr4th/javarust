@@ -8,7 +8,7 @@ use crate::{
         AccessFlags, Attribute, BootstrapMethod, Class, ClassVersion, Code, Constant, Field,
         InnerClass, Method, MethodDescriptor, NativeMethod, NativeTodo,
     },
-    data::WorkingClassArea,
+    data::{SharedClassArea, WorkingClassArea},
 };
 
 use super::parse_code_attribute;
@@ -39,7 +39,7 @@ impl RawClass {
         let mut methods = self.methods.clone();
         let mut class = self.super_class.clone();
         while &*class != "java/lang/Object" {
-            let class_ref = class_area.search(&class).unwrap();
+            let class_ref = class_area.search(&class).expect(&class);
             for method in &class_ref.methods {
                 if !methods
                     .iter()
@@ -177,7 +177,12 @@ impl RawMethod {
     }
 
     /// # Errors
-    pub fn cook(self, constants: &[Constant], verbose: bool) -> Result<Method, String> {
+    pub fn cook(
+        self,
+        class_area: &SharedClassArea,
+        constants: &[Constant],
+        verbose: bool,
+    ) -> Result<Method, String> {
         let (code, max_locals) = match &self.code {
             RawCode::Abstract => (Code::Abstract, self.descriptor.parameter_size as u16),
             RawCode::Native(native_method) => (
@@ -185,8 +190,11 @@ impl RawMethod {
                 self.descriptor.parameter_size as u16,
             ),
             RawCode::Code(code) => {
+                if verbose {
+                    println!("Cooking method {:?} {}", self.descriptor, self.name);
+                }
                 let (bytecode, max_locals) =
-                    parse_code_attribute(constants, code.clone(), verbose)?;
+                    parse_code_attribute(class_area, constants, code.clone(), verbose)?;
                 (Code::Code(bytecode), max_locals)
             }
         };

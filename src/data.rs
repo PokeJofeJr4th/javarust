@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    class::{Class, Constant, Method, MethodDescriptor},
+    class::{Class, Method, MethodDescriptor},
     class_loader::{RawClass, RawMethod},
     virtual_machine::object::{Object, StringObj},
 };
@@ -84,6 +84,7 @@ impl SharedClassArea {
     }
 }
 
+/// we have nothing to lose but our chains
 pub struct WorkingClassArea {
     classes: HashMap<Arc<str>, RawClass>,
 }
@@ -174,6 +175,16 @@ impl MethodArea {
     }
 }
 
+impl Debug for MethodArea {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (class, method) in self.methods.values() {
+            write!(f, "\n{} ", class.this)?;
+            method.fmt(f)?;
+        }
+        Ok(())
+    }
+}
+
 impl Default for MethodArea {
     fn default() -> Self {
         Self::new()
@@ -213,7 +224,6 @@ impl WorkingMethodArea {
     pub fn to_shared(
         self,
         class_area: &SharedClassArea,
-        constants: &[Constant],
         verbose: bool,
     ) -> Result<SharedMethodArea, String> {
         Ok(MethodArea {
@@ -221,15 +231,11 @@ impl WorkingMethodArea {
                 .methods
                 .into_iter()
                 .map(|(h, (class, method))| {
-                    Ok((
-                        h,
-                        (
-                            class_area
-                                .search(&class)
-                                .ok_or_else(|| format!("Couldn't find class {class}"))?,
-                            Arc::new(method.cook(constants, verbose)?),
-                        ),
-                    ))
+                    let class = class_area
+                        .search(&class)
+                        .ok_or_else(|| format!("Couldn't find class {class}"))?;
+                    let cooked = method.cook(class_area, &class.constants, verbose)?;
+                    Ok((h, (class, Arc::new(cooked))))
                 })
                 .collect::<Result<_, String>>()?,
         }

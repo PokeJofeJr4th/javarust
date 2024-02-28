@@ -77,12 +77,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     };
     let class_area = class_area.to_shared();
-    let method_area = method_area.to_shared(
-        &class_area,
-        &class_area.search(&class).unwrap().constants,
-        args.verbose,
-    )?;
+    let method_area = method_area.to_shared(&class_area, args.verbose)?;
     let heap = heap.make_shared();
+    if args.verbose {
+        println!("{method_area:#?}");
+    }
     if args.run {
         virtual_machine::start_vm(&class, method_area, class_area, heap, args.verbose);
     }

@@ -78,6 +78,12 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         .methods
         .push(object_to_string.name(object_name.clone()));
 
+    let mut enum_class = RawClass::new(
+        AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE | AccessFlags::ACC_ABSTRACT,
+        "java/lang/Enum".into(),
+        object_name.clone(),
+    );
+
     let array = RawClass::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         "java/lang/Array".into(),
@@ -565,6 +571,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     );
     class_area.extend([
         object,
+        enum_class,
         array,
         arrays,
         string,
