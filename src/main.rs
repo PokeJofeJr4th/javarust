@@ -55,7 +55,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     filenames.retain(|p| p != &first_file);
     filenames.insert(0, first_file);
     for filename in filenames {
-        println!("Reading class from {filename:?}...");
+        if args.verbose {
+            println!("Reading class from {filename:?}...");
+        }
         let bytes = fs::read(filename)?;
         // let bytes = [
         //     0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 0, 0, 3, 1, 0, 2, 0x30, 0x30, 3, 0, 0, 0, 0xFF, 0, 0, 0,

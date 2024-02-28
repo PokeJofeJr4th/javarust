@@ -5,8 +5,8 @@ use std::{
 
 use crate::{
     class::{
-        AccessFlags, Attribute, BootstrapMethod, Class, ClassVersion, Code, Constant, Field,
-        InnerClass, Method, MethodDescriptor, NativeMethod, NativeTodo,
+        AccessFlags, Attribute, BootstrapMethod, ByteCode, Class, ClassVersion, Code, Constant,
+        Field, InnerClass, Method, MethodDescriptor, NativeMethod, NativeTodo,
     },
     data::{SharedClassArea, WorkingClassArea},
 };
@@ -146,6 +146,7 @@ impl Debug for MethodName {
 }
 
 pub enum RawCode {
+    ByteCode(ByteCode, u16),
     Code(Vec<u8>),
     Native(Arc<Box<dyn NativeMethod>>),
     Abstract,
@@ -198,6 +199,7 @@ impl RawMethod {
                     parse_code_attribute(class_area, constants, code.clone(), verbose)?;
                 (Code::Code(bytecode), max_locals)
             }
+            RawCode::ByteCode(code, locals) => (Code::Code(code.clone()), *locals),
         };
         Ok(Method {
             max_locals,

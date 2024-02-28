@@ -124,14 +124,37 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
             };
             (&*enum_class).get_mut(&thread.heap.lock().unwrap(), obj_ref as usize, |instance| {
                 instance.fields = vec![string, id];
-            })?;
-            Ok(())
+            })
         })),
         ..Default::default()
     };
-    enum_class
-        .methods
-        .push(enum_init.name(enum_class.this.clone()));
+    let enum_to_string = RawMethod {
+        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        name: "toString".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 0,
+            parameters: Vec::new(),
+            return_type: Some(FieldType::Object(java_lang_string.clone())),
+        },
+        code: RawCode::native(NativeSingleMethod(
+            |thread: &mut Thread, stackframe: &Mutex<StackFrame>, _verbose| {
+                let enum_ref = stackframe.lock().unwrap().locals[0];
+                let Some(enum_class) = thread.class_area.search("java/lang/Enum") else {
+                    return Err(String::from("Couldn't find class java/lang/Enum"));
+                };
+                (&*enum_class).get(
+                    &thread.heap.lock().unwrap(),
+                    enum_ref as usize,
+                    |instance| instance.fields[0],
+                )
+            },
+        )),
+        ..Default::default()
+    };
+    enum_class.methods.extend([
+        enum_init.name(enum_class.this.clone()),
+        enum_to_string.name(enum_class.this.clone()),
+    ]);
 
     let array = RawClass::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
@@ -588,6 +611,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         (object.this.clone(), object_init),
         (object.this.clone(), object_to_string),
         (enum_class.this.clone(), enum_init),
+        (enum_class.this.clone(), enum_to_string),
         (arrays.this.clone(), arrays_to_string),
         (arrays.this.clone(), arrays_to_string_obj_arr),
         (arrays.this.clone(), deep_to_string),

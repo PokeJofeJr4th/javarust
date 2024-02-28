@@ -65,6 +65,7 @@ impl Debug for LocalVarEntry {
     }
 }
 
+#[derive(Clone)]
 pub enum Code {
     Code(ByteCode),
     Native(Arc<Box<dyn NativeMethod>>),
@@ -234,6 +235,7 @@ impl<
     }
 }
 
+#[derive(Clone, Default)]
 pub struct ByteCode {
     pub max_stack: u16,
     pub code: Vec<Instruction>,
@@ -270,7 +272,7 @@ impl Debug for ByteCode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum StackMapFrame {
     Same {
         offset_delta: u8,
@@ -301,7 +303,7 @@ pub enum StackMapFrame {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum VerificationTypeInfo {
     Top,
     Integer,
