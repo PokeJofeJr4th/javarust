@@ -19,7 +19,10 @@ use self::{
     },
 };
 
-use super::{object::ObjectFinder, StackFrame, Thread};
+use super::{
+    object::{Array1, Array2, ArrayType, ObjectFinder},
+    StackFrame, Thread,
+};
 
 pub mod arrays;
 pub mod primitives;
@@ -151,9 +154,14 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         )),
         ..Default::default()
     };
+    let enum_name = RawMethod {
+        name: "name".into(),
+        ..enum_to_string.clone()
+    };
     enum_class.methods.extend([
         enum_init.name(enum_class.this.clone()),
         enum_to_string.name(enum_class.this.clone()),
+        enum_name.name(enum_class.this.clone()),
     ]);
 
     let array = RawClass::new(
@@ -546,6 +554,55 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         0,
     ));
 
+    let arraycopy = RawMethod {
+        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
+        name: "arraycopy".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 5,
+            parameters: vec![
+                FieldType::Object(java_lang_object.clone()),
+                FieldType::Int,
+                FieldType::Object(java_lang_object.clone()),
+                FieldType::Int,
+                FieldType::Int,
+            ],
+            return_type: None,
+        },
+        code: RawCode::native(NativeVoid(|thread, stackframe, _verbose| {
+            let [src_idx, start, dest_idx, start_dest, count, ..] =
+                stackframe.lock().unwrap().locals[..]
+            else {
+                return Err(String::from("Invalid arguments provided"));
+            };
+            let arr_size = ArrayType.get(&thread.heap.lock().unwrap(), src_idx as usize, |ty| {
+                ty.get_size()
+            })?;
+            if arr_size == 1 {
+                let copied =
+                    Array1.get(&thread.heap.lock().unwrap(), src_idx as usize, |fields| {
+                        fields.contents[(start as usize)..(start + count) as usize].to_vec()
+                    })?;
+                Array1.get_mut(&thread.heap.lock().unwrap(), dest_idx as usize, |fields| {
+                    for (i, value) in copied.into_iter().enumerate() {
+                        fields.contents[start_dest as usize + i] = value;
+                    }
+                })
+            } else {
+                let copied =
+                    Array2.get(&thread.heap.lock().unwrap(), src_idx as usize, |fields| {
+                        fields.contents[(start as usize)..(start + count) as usize].to_vec()
+                    })?;
+                Array2.get_mut(&thread.heap.lock().unwrap(), dest_idx as usize, |fields| {
+                    for (i, value) in copied.into_iter().enumerate() {
+                        fields.contents[start_dest as usize + i] = value;
+                    }
+                })
+            }
+        })),
+        ..Default::default()
+    };
+    system.methods.push(arraycopy.name(system.this.clone()));
+
     let make_concat_with_constants = RawMethod {
         access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
         name: "makeConcatWithConstants".into(),
@@ -612,6 +669,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         (object.this.clone(), object_to_string),
         (enum_class.this.clone(), enum_init),
         (enum_class.this.clone(), enum_to_string),
+        (enum_class.this.clone(), enum_name),
         (arrays.this.clone(), arrays_to_string),
         (arrays.this.clone(), arrays_to_string_obj_arr),
         (arrays.this.clone(), deep_to_string),
@@ -624,6 +682,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         (string_builder.this.clone(), set_char_at),
         (random.this.clone(), random_init),
         (random.this.clone(), next_int),
+        (system.this.clone(), arraycopy),
         (printstream.this.clone(), println_string),
         (printstream.this.clone(), println_object),
         (printstream.this.clone(), println_float),

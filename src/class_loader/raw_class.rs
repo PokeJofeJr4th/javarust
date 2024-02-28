@@ -145,6 +145,7 @@ impl Debug for MethodName {
     }
 }
 
+#[derive(Clone)]
 pub enum RawCode {
     ByteCode(ByteCode, u16),
     Code(Vec<u8>),
@@ -158,6 +159,7 @@ impl RawCode {
     }
 }
 
+#[derive(Clone)]
 pub struct RawMethod {
     pub access_flags: AccessFlags,
     pub name: Arc<str>,
