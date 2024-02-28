@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::ops::{BitAnd, BitOr};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 
 use crate::class_loader::MethodName;
 
@@ -15,6 +15,7 @@ pub use self::code::{
 mod code;
 
 pub struct Class {
+    pub initialized: Once,
     pub version: ClassVersion,
     pub constants: Vec<Constant>,
     pub access: AccessFlags,
@@ -37,6 +38,7 @@ impl Class {
     #[must_use]
     pub fn new(access: AccessFlags, this: Arc<str>, super_class: Arc<str>) -> Self {
         Self {
+            initialized: Once::new(),
             version: ClassVersion {
                 minor_version: 0,
                 major_version: 0,
@@ -70,6 +72,7 @@ impl Debug for Class {
             write!(f, " implements {}", self.interfaces.join(", "))?;
         }
         let mut s = f.debug_struct("");
+        s.field("initialized", &self.initialized.is_completed());
         if let Some(signature) = &self.signature {
             s.field("signature", signature);
         }
@@ -382,6 +385,19 @@ pub struct Field {
     pub constant_value: Option<Constant>,
     pub signature: Option<Arc<str>>,
     pub attributes: Vec<Attribute>,
+}
+
+impl Default for Field {
+    fn default() -> Self {
+        Self {
+            access_flags: AccessFlags(0),
+            name: "<>".into(),
+            descriptor: FieldType::Object("java/lang/Object".into()),
+            constant_value: None,
+            signature: None,
+            attributes: Vec::new(),
+        }
+    }
 }
 
 impl Debug for Field {

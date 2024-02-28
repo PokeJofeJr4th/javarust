@@ -102,7 +102,7 @@ pub fn to_string(
             match field_type {
                 FieldType::Int => |arr: ArrayFields<'_, u32>| {
                     format!("{:?}", unsafe {
-                        &*std::ptr::addr_of!(arr.contents).cast::<Vec<i32>>()
+                        &*std::ptr::addr_of!(arr.contents).cast::<&[i32]>()
                     })
                     .into()
                 },

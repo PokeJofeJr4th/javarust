@@ -1,6 +1,6 @@
 use std::{
     fmt::Debug,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Once},
 };
 
 use crate::{
@@ -52,6 +52,7 @@ impl RawClass {
         }
         // get methods through superclasses
         Class {
+            initialized: Once::new(),
             version: self.version,
             constants: self.constants.clone(),
             access: self.access,

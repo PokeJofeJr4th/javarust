@@ -35,7 +35,8 @@ pub static mut RANDOM_CLASS: Option<Arc<Class>> = None;
 #[allow(clippy::too_many_lines)]
 /// # Panics
 pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut WorkingClassArea) {
-    let object_name: Arc<str> = Arc::from("java/lang/Object");
+    let java_lang_object: Arc<str> = Arc::from("java/lang/Object");
+    let java_lang_string: Arc<str> = Arc::from("java/lang/String");
     let object_init = RawMethod {
         access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         name: "<init>".into(),
@@ -55,7 +56,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: MethodDescriptor {
             parameter_size: 0,
             parameters: Vec::new(),
-            return_type: Some(FieldType::Object("java/lang/String".into())),
+            return_type: Some(FieldType::Object(java_lang_string.clone())),
         },
         code: RawCode::native(NativeStringMethod(
             |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
@@ -70,24 +71,72 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
 
     let mut object = RawClass::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
-        object_name.clone(),
-        object_name.clone(),
+        java_lang_object.clone(),
+        java_lang_object.clone(),
     );
-    object.methods.push(object_init.name(object_name.clone()));
     object
         .methods
-        .push(object_to_string.name(object_name.clone()));
+        .push(object_init.name(java_lang_object.clone()));
+    object
+        .methods
+        .push(object_to_string.name(java_lang_object.clone()));
 
     let mut enum_class = RawClass::new(
         AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE | AccessFlags::ACC_ABSTRACT,
         "java/lang/Enum".into(),
-        object_name.clone(),
+        java_lang_object.clone(),
     );
+    enum_class.field_size = 2;
+    enum_class.fields = vec![
+        (
+            Field {
+                access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+                name: "enum$name".into(),
+                descriptor: FieldType::Object(java_lang_string.clone()),
+                ..Default::default()
+            },
+            0,
+        ),
+        (
+            Field {
+                access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+                name: "enum$id".into(),
+                descriptor: FieldType::Int,
+                ..Default::default()
+            },
+            1,
+        ),
+    ];
+    let enum_init = RawMethod {
+        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        name: "<init>".into(),
+        descriptor: MethodDescriptor {
+            parameter_size: 2,
+            parameters: vec![FieldType::Object(java_lang_string.clone()), FieldType::Int],
+            return_type: None,
+        },
+        code: RawCode::native(NativeVoid(|thread, stackframe, _verbose| {
+            let [obj_ref, string, id] = stackframe.lock().unwrap().locals[..] else {
+                return Err(String::from("Wrong number of locals ;-;"));
+            };
+            let Some(enum_class) = thread.class_area.search("java/lang/Enum") else {
+                return Err(String::from("Couldn't find class java/lang/Enum"));
+            };
+            (&*enum_class).get_mut(&thread.heap.lock().unwrap(), obj_ref as usize, |instance| {
+                instance.fields = vec![string, id];
+            })?;
+            Ok(())
+        })),
+        ..Default::default()
+    };
+    enum_class
+        .methods
+        .push(enum_init.name(enum_class.this.clone()));
 
     let array = RawClass::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         "java/lang/Array".into(),
-        object_name.clone(),
+        java_lang_object.clone(),
     );
 
     let arrays_to_string = RawMethod {
@@ -96,7 +145,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: MethodDescriptor {
             parameter_size: 1,
             parameters: vec![FieldType::Array(Box::new(FieldType::Int))],
-            return_type: Some(FieldType::Object("java/lang/String".into())),
+            return_type: Some(FieldType::Object(java_lang_string.clone())),
         },
         code: RawCode::native(NativeStringMethod(arrays::to_string)),
         ..Default::default()
@@ -109,7 +158,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
             parameters: vec![FieldType::Array(Box::new(FieldType::Object(
                 "java/lang/Object".into(),
             )))],
-            return_type: Some(FieldType::Object("java/lang/String".into())),
+            return_type: Some(FieldType::Object(java_lang_string.clone())),
         },
         signature: None,
         code: RawCode::native(NativeStringMethod(arrays::to_string)),
@@ -122,9 +171,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: MethodDescriptor {
             parameter_size: 1,
             parameters: vec![FieldType::Array(Box::new(FieldType::Object(
-                object_name.clone(),
+                java_lang_object.clone(),
             )))],
-            return_type: Some(FieldType::Object("java/lang/String".into())),
+            return_type: Some(FieldType::Object(java_lang_string.clone())),
         },
         code: RawCode::native(NativeStringMethod(deep_to_string)),
         ..Default::default()
@@ -132,14 +181,14 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     let mut arrays = RawClass::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         "java/util/Arrays".into(),
-        object_name.clone(),
+        java_lang_object.clone(),
     );
     arrays.methods.extend([
         arrays_to_string.name(arrays.this.clone()),
         arrays_to_string_obj_arr.name(arrays.this.clone()),
         deep_to_string.name(arrays.this.clone()),
     ]);
-    let array_methods = make_primitives(method_area, class_area, object_name.clone());
+    let array_methods = make_primitives(method_area, class_area, java_lang_object.clone());
     arrays.methods.extend(
         array_methods
             .iter()
@@ -173,8 +222,8 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         name: "valueOf".into(),
         descriptor: MethodDescriptor {
             parameter_size: 1,
-            parameters: vec![FieldType::Object(object_name.clone())],
-            return_type: Some(FieldType::Object("java/lang/String".into())),
+            parameters: vec![FieldType::Object(java_lang_object.clone())],
+            return_type: Some(FieldType::Object(java_lang_string.clone())),
         },
         code: RawCode::native(NativeStringValueOf),
         ..Default::default()
@@ -185,7 +234,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: MethodDescriptor {
             parameter_size: 0,
             parameters: Vec::new(),
-            return_type: Some(FieldType::Object("java/lang/String".into())),
+            return_type: Some(FieldType::Object(java_lang_string.clone())),
         },
         code: RawCode::native(NativeSingleMethod(
             |_: &mut _, stackframe: &Mutex<StackFrame>, _| Ok(stackframe.lock().unwrap().locals[0]),
@@ -194,8 +243,8 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     };
     let mut string = RawClass::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
-        "java/lang/String".into(),
-        object_name.clone(),
+        java_lang_string.clone(),
+        java_lang_object.clone(),
     );
     string.methods.extend([
         string_length.name(string.this.clone()),
@@ -209,7 +258,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         name: "<init>".into(),
         descriptor: MethodDescriptor {
             parameter_size: 1,
-            parameters: vec![FieldType::Object("java/lang/String".into())],
+            parameters: vec![FieldType::Object(java_lang_string.clone())],
             return_type: None,
         },
         code: RawCode::native(NativeVoid(string_builder::init)),
@@ -232,7 +281,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: MethodDescriptor {
             parameter_size: 0,
             parameters: Vec::new(),
-            return_type: Some(FieldType::Object("java/lang/String".into())),
+            return_type: Some(FieldType::Object(java_lang_string.clone())),
         },
         code: RawCode::native(NativeStringMethod(string_builder::to_string)),
         ..Default::default()
@@ -240,7 +289,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     let mut string_builder = RawClass::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         "java/lang/StringBuilder".into(),
-        object_name.clone(),
+        java_lang_object.clone(),
     );
     string_builder.methods.extend([
         builder_init.name(string_builder.this.clone()),
@@ -307,7 +356,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     let mut random = RawClass::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         "java/util/Random".into(),
-        object_name.clone(),
+        java_lang_object.clone(),
     );
     random.methods.extend([
         random_init.name(random.this.clone()),
@@ -319,7 +368,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         name: "println".into(),
         descriptor: MethodDescriptor {
             parameter_size: 1,
-            parameters: vec![FieldType::Object("java/lang/String".into())],
+            parameters: vec![FieldType::Object(java_lang_string.clone())],
             return_type: None,
         },
         code: RawCode::native(NativeVoid(native_println_object)),
@@ -440,7 +489,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     let mut printstream = RawClass::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         "java/io/PrintStream".into(),
-        object_name.clone(),
+        java_lang_object.clone(),
     );
     printstream.methods.extend([
         println_string.name(printstream.this.clone()),
@@ -458,7 +507,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     let mut system = RawClass::new(
         AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
         "java/lang/System".into(),
-        object_name.clone(),
+        java_lang_object.clone(),
     );
     // system.static_data.lock().unwrap().push(system_out);
     system.static_data.push(u32::MAX);
@@ -481,9 +530,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
             parameter_size: 5,
             parameters: vec![
                 FieldType::Object("java/lang/invoke/MethodHandles$Lookup".into()),
-                FieldType::Object("java/lang/String".into()),
+                FieldType::Object(java_lang_string.clone()),
                 FieldType::Object("java/lang/invoke/MethodType".into()),
-                FieldType::Object("java/lang/String".into()),
+                FieldType::Object(java_lang_string),
                 FieldType::Array(Box::new(FieldType::Object("java/lang/Object".into()))),
             ],
             return_type: Some(FieldType::Object("java/lang/invoke/CallSite".into())),
@@ -495,7 +544,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     let mut string_concat_factory = RawClass::new(
         AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE,
         "java/lang/invoke/StringConcatFactory".into(),
-        object_name.clone(),
+        java_lang_object.clone(),
     );
     string_concat_factory
         .methods
@@ -524,7 +573,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     let mut math = RawClass::new(
         AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE,
         "java/lang/Math".into(),
-        object_name,
+        java_lang_object,
     );
     math.methods.push(sqrt_double.name(math.this.clone()));
 
@@ -538,6 +587,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     method_area.extend([
         (object.this.clone(), object_init),
         (object.this.clone(), object_to_string),
+        (enum_class.this.clone(), enum_init),
         (arrays.this.clone(), arrays_to_string),
         (arrays.this.clone(), arrays_to_string_obj_arr),
         (arrays.this.clone(), deep_to_string),

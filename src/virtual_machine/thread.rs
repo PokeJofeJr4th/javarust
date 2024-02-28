@@ -727,6 +727,10 @@ impl Thread {
                     return Err(format!("Couldn't resolve class {class}"));
                 };
 
+                if self.maybe_initialize_class(&class, &stackframe) {
+                    return Ok(());
+                }
+
                 let staticindex = class
                     .statics
                     .iter()
@@ -759,6 +763,10 @@ impl Thread {
                 let Some(class) = self.class_area.search(&class) else {
                     return Err(format!("Couldn't resolve class {class}"));
                 };
+
+                if self.maybe_initialize_class(&class, &stackframe) {
+                    return Ok(());
+                }
 
                 let staticindex = class
                     .statics
@@ -915,7 +923,7 @@ impl Thread {
 
                 if verbose {
                     println!(
-                        "Invoking Virtual Method {} on {}",
+                        "Invoking Method {} on {}",
                         resolved_method.name, resolved_class.this
                     );
                 }
@@ -937,10 +945,19 @@ impl Thread {
             }
             Instruction::InvokeSpecial(class, name, method_type) => {
                 // invoke an instance method
+                let current_class = if &*name == "<init>" {
+                    class
+                } else {
+                    self.class_area
+                        .search(&class)
+                        .ok_or_else(|| format!("Can't find class {class}"))?
+                        .super_class
+                        .clone()
+                };
                 let (class_ref, method_ref) = self
                     .method_area
-                    .search(&class, &name, &method_type)
-                    .ok_or_else(|| format!("Error during InvokeSpecial; {class}.{name}"))?;
+                    .search(&current_class, &name, &method_type)
+                    .ok_or_else(|| format!("Error during InvokeSpecial; {current_class}.{name}"))?;
                 let args_start =
                     stackframe.lock().unwrap().operand_stack.len() - method_type.parameter_size - 1;
                 let stack = &mut stackframe.lock().unwrap().operand_stack;
@@ -981,6 +998,11 @@ impl Thread {
                     .ok_or_else(|| {
                         format!("Error during InvokeStatic; {class}.{name}: {method_type:?}")
                     })?;
+
+                if self.maybe_initialize_class(&class_ref, &stackframe) {
+                    return Ok(());
+                }
+
                 if verbose {
                     println!(
                         "Invoking Static Method {} on {}",
@@ -1027,6 +1049,9 @@ impl Thread {
                 let Some(class) = self.class_area.search(&class) else {
                     return Err(format!("Couldn't find class {class}"));
                 };
+                if self.maybe_initialize_class(&class, &stackframe) {
+                    return Ok(());
+                }
                 let objectref = self
                     .heap
                     .lock()
@@ -1145,6 +1170,32 @@ impl Thread {
             other => return Err(format!("Invalid Opcode: {other:?}")),
         }
         Ok(())
+    }
+
+    fn maybe_initialize_class(&mut self, class: &Class, stackframe: &Mutex<StackFrame>) -> bool {
+        if class.initialized.is_completed() {
+            return false;
+        }
+        // mark the class as initialized
+        class.initialized.call_once(|| ());
+        let Some((class, method)) = self.method_area.search(
+            &class.this,
+            "<clinit>",
+            &MethodDescriptor {
+                parameter_size: 0,
+                parameters: Vec::new(),
+                return_type: None,
+            },
+        ) else {
+            return false;
+        };
+        stackframe
+            .lock()
+            .unwrap()
+            .operand_stack
+            .push((self.pc_register - 1) as u32);
+        self.invoke_method(method, class);
+        true
     }
 
     fn get_code(stackframe: &Mutex<StackFrame>, idx: usize) -> Instruction {
