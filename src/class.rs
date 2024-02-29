@@ -256,6 +256,29 @@ impl Debug for Constant {
     }
 }
 
+#[macro_export]
+macro_rules! access {
+    ($($acc:ident)*) => {
+        $($crate::access!(@$acc))|*
+    };
+
+    (@public) => {
+        $crate::class::AccessFlags::ACC_PUBLIC
+    };
+
+    (@static) => {
+        $crate::class::AccessFlags::ACC_STATIC
+    };
+
+    (@native) => {
+        $crate::class::AccessFlags::ACC_NATIVE
+    };
+
+    (@abstract) => {
+        $crate::class::AccessFlags::ACC_ABSTRACT
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 /// Flag Name           Value   Interpretation
 /// `ACC_PUBLIC`          0x0001  Declared public; may be accessed from outside its package.
@@ -479,6 +502,27 @@ pub struct MethodDescriptor {
     pub return_type: Option<FieldType>,
 }
 
+#[macro_export]
+macro_rules! method {
+    (($($params:tt),*) -> void) => {{
+        let parameters: Vec<$crate::class::FieldType> = vec![$($crate::field!($params)),*];
+        MethodDescriptor {
+            parameter_size: parameters.iter().map(|param| param.get_size()).sum(),
+            parameters,
+            return_type: None,
+        }
+    }};
+
+    (($($params:tt),*) -> $($out:tt)*) => {{
+        let parameters: Vec<$crate::class::FieldType> = vec![$($crate::field!($params)),*];
+        MethodDescriptor {
+            parameter_size: parameters.iter().map(|param| param.get_size()).sum(),
+            parameters,
+            return_type: Some($crate::field!($($out)*)),
+        }
+    }};
+}
+
 impl Hash for MethodDescriptor {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.parameters.hash(state);
@@ -521,6 +565,43 @@ pub enum FieldType {
     Short,
     Boolean,
     Array(Box<FieldType>),
+}
+
+#[macro_export]
+macro_rules! field {
+    (byte) => {
+        $crate::class::FieldType::Byte
+    };
+    (short) => {
+        $crate::class::FieldType::Short
+    };
+    (int) => {
+        $crate::class::FieldType::Int
+    };
+    (long) => {
+        $crate::class::FieldType::Long
+    };
+    (float) => {
+        $crate::class::FieldType::Float
+    };
+    (double) => {
+        $crate::class::FieldType::Double
+    };
+    (char) => {
+        $crate::class::FieldType::Char
+    };
+    (boolean) => {
+        $crate::class::FieldType::Boolean
+    };
+    ([]$($rest:tt)*) => {
+        $crate::class::FieldType::Array(Box::new($crate::field!($($rest)*)))
+    };
+    (Object($id:expr)) => {
+        $crate::class::FieldType::Object($id)
+    };
+    (($($t:tt)*)) => {
+        $crate::field!($($t)*)
+    }
 }
 
 impl Display for FieldType {

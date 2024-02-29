@@ -3,12 +3,14 @@ use std::sync::{Arc, Mutex};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use crate::{
+    access,
     class::{
-        AccessFlags, Class, Field, FieldType, MethodDescriptor, NativeDoubleMethod,
-        NativeSingleMethod, NativeStringMethod, NativeTodo, NativeVoid,
+        Class, Field, FieldType, MethodDescriptor, NativeDoubleMethod, NativeSingleMethod,
+        NativeStringMethod, NativeTodo, NativeVoid,
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
+    method,
 };
 
 use self::{
@@ -41,26 +43,18 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     let java_lang_object: Arc<str> = Arc::from("java/lang/Object");
     let java_lang_string: Arc<str> = Arc::from("java/lang/String");
     let object_init = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "<init>".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 0,
-            parameters: Vec::new(),
-            return_type: None,
-        },
+        descriptor: method!(() -> void),
         signature: None,
         attributes: Vec::new(),
         code: RawCode::native(NativeVoid(|_: &mut _, _: &_, _| Ok(()))),
         ..Default::default()
     };
     let object_to_string = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "toString".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 0,
-            parameters: Vec::new(),
-            return_type: Some(FieldType::Object(java_lang_string.clone())),
-        },
+        descriptor: method!(() -> Object(java_lang_string.clone())),
         code: RawCode::native(NativeStringMethod(
             |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
                 let obj_ref = stackframe.lock().unwrap().locals[0];
@@ -73,7 +67,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     };
 
     let mut object = RawClass::new(
-        AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access!(public native),
         java_lang_object.clone(),
         java_lang_object.clone(),
     );
@@ -85,7 +79,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         .push(object_to_string.name(java_lang_object.clone()));
 
     let mut enum_class = RawClass::new(
-        AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE | AccessFlags::ACC_ABSTRACT,
+        access!(public abstract native),
         "java/lang/Enum".into(),
         java_lang_object.clone(),
     );
@@ -93,7 +87,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     enum_class.fields = vec![
         (
             Field {
-                access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+                access_flags: access!(public native),
                 name: "enum$name".into(),
                 descriptor: FieldType::Object(java_lang_string.clone()),
                 ..Default::default()
@@ -102,7 +96,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         ),
         (
             Field {
-                access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+                access_flags: access!(public native),
                 name: "enum$id".into(),
                 descriptor: FieldType::Int,
                 ..Default::default()
@@ -111,13 +105,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         ),
     ];
     let enum_init = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "<init>".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 2,
-            parameters: vec![FieldType::Object(java_lang_string.clone()), FieldType::Int],
-            return_type: None,
-        },
+        descriptor: method!(((Object(java_lang_string.clone())), int) -> void),
         code: RawCode::native(NativeVoid(|thread, stackframe, _verbose| {
             let [obj_ref, string, id] = stackframe.lock().unwrap().locals[..] else {
                 return Err(String::from("Wrong number of locals ;-;"));
@@ -132,13 +122,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         ..Default::default()
     };
     let enum_to_string = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "toString".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 0,
-            parameters: Vec::new(),
-            return_type: Some(FieldType::Object(java_lang_string.clone())),
-        },
+        descriptor: method!(() -> Object(java_lang_object.clone())),
         code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, stackframe: &Mutex<StackFrame>, _verbose| {
                 let enum_ref = stackframe.lock().unwrap().locals[0];
@@ -165,52 +151,36 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     ]);
 
     let array = RawClass::new(
-        AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access!(public native),
         "java/lang/Array".into(),
         java_lang_object.clone(),
     );
 
     let arrays_to_string = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
+        access_flags: access!(public static native),
         name: "toString".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 1,
-            parameters: vec![FieldType::Array(Box::new(FieldType::Int))],
-            return_type: Some(FieldType::Object(java_lang_string.clone())),
-        },
+        descriptor: method!((([]int)) -> Object(java_lang_string.clone())),
         code: RawCode::native(NativeStringMethod(arrays::to_string)),
         ..Default::default()
     };
     let arrays_to_string_obj_arr = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
+        access_flags: access!(public static native),
         name: "toString".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 1,
-            parameters: vec![FieldType::Array(Box::new(FieldType::Object(
-                "java/lang/Object".into(),
-            )))],
-            return_type: Some(FieldType::Object(java_lang_string.clone())),
-        },
+        descriptor: method!((([]Object(java_lang_object.clone()))) -> Object(java_lang_string.clone())),
         signature: None,
         code: RawCode::native(NativeStringMethod(arrays::to_string)),
         attributes: Vec::new(),
         ..Default::default()
     };
     let deep_to_string = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
+        access_flags: access!(public static native),
         name: "deepToString".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 1,
-            parameters: vec![FieldType::Array(Box::new(FieldType::Object(
-                java_lang_object.clone(),
-            )))],
-            return_type: Some(FieldType::Object(java_lang_string.clone())),
-        },
+        descriptor: method!((([]Object(java_lang_object.clone()))) -> Object(java_lang_string.clone())),
         code: RawCode::native(NativeStringMethod(deep_to_string)),
         ..Default::default()
     };
     let mut arrays = RawClass::new(
-        AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access!(public native),
         "java/util/Arrays".into(),
         java_lang_object.clone(),
     );
@@ -227,53 +197,37 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     );
 
     let string_length = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "length".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 0,
-            parameters: Vec::new(),
-            return_type: Some(FieldType::Int),
-        },
+        descriptor: method!(() -> int),
         code: RawCode::native(NativeSingleMethod(native_string_len)),
         ..Default::default()
     };
     let char_at = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "charAt".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 1,
-            parameters: vec![FieldType::Int],
-            return_type: Some(FieldType::Char),
-        },
+        descriptor: method!((int) -> char),
         code: RawCode::native(NativeSingleMethod(native_string_char_at)),
         ..Default::default()
     };
     let string_value_of = RawMethod {
-        access_flags: AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC | AccessFlags::ACC_NATIVE,
+        access_flags: access!(public native),
         name: "valueOf".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 1,
-            parameters: vec![FieldType::Object(java_lang_object.clone())],
-            return_type: Some(FieldType::Object(java_lang_string.clone())),
-        },
+        descriptor: method!(((Object(java_lang_object.clone()))) -> Object(java_lang_string.clone())),
         code: RawCode::native(NativeStringValueOf),
         ..Default::default()
     };
     let string_to_string = RawMethod {
-        access_flags: AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE,
+        access_flags: access!(public native),
         name: "toString".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 0,
-            parameters: Vec::new(),
-            return_type: Some(FieldType::Object(java_lang_string.clone())),
-        },
+        descriptor: method!(() -> Object(java_lang_string.clone())),
         code: RawCode::native(NativeSingleMethod(
             |_: &mut _, stackframe: &Mutex<StackFrame>, _| Ok(stackframe.lock().unwrap().locals[0]),
         )),
         ..Default::default()
     };
     let mut string = RawClass::new(
-        AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access!(public native),
         java_lang_string.clone(),
         java_lang_object.clone(),
     );
@@ -285,40 +239,28 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     ]);
 
     let builder_init = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "<init>".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 1,
-            parameters: vec![FieldType::Object(java_lang_string.clone())],
-            return_type: None,
-        },
+        descriptor: method!(((Object(java_lang_string.clone()))) -> void),
         code: RawCode::native(NativeVoid(string_builder::init)),
         ..Default::default()
     };
     let set_char_at = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "setCharAt".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 2,
-            parameters: vec![FieldType::Int, FieldType::Char],
-            return_type: None,
-        },
+        descriptor: method!((int, char) -> void),
         code: RawCode::native(NativeVoid(string_builder::set_char_at)),
         ..Default::default()
     };
     let to_string = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "toString".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 0,
-            parameters: Vec::new(),
-            return_type: Some(FieldType::Object(java_lang_string.clone())),
-        },
+        descriptor: method!(() -> Object(java_lang_string.clone())),
         code: RawCode::native(NativeStringMethod(string_builder::to_string)),
         ..Default::default()
     };
     let mut string_builder = RawClass::new(
-        AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access!(public native),
         "java/lang/StringBuilder".into(),
         java_lang_object.clone(),
     );
@@ -329,13 +271,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     ]);
 
     let random_init = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "<init>".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 0,
-            parameters: Vec::new(),
-            return_type: None,
-        },
+        descriptor: method!(() -> void),
         code: RawCode::native(NativeVoid(
             |thread: &mut Thread, stackframe: &Mutex<StackFrame>, _verbose: bool| {
                 let obj = stackframe.lock().unwrap().locals[0];
@@ -353,13 +291,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         ..Default::default()
     };
     let next_int = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "nextInt".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 1,
-            parameters: vec![FieldType::Int],
-            return_type: Some(FieldType::Int),
-        },
+        descriptor: method!((int) -> int),
         code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, stackframe: &Mutex<StackFrame>, verbose: bool| {
                 let obj_ref = stackframe.lock().unwrap().locals[0];
@@ -385,7 +319,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         ..Default::default()
     };
     let mut random = RawClass::new(
-        AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access!(public native),
         "java/util/Random".into(),
         java_lang_object.clone(),
     );
@@ -395,35 +329,23 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     ]);
 
     let println_string = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "println".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 1,
-            parameters: vec![FieldType::Object(java_lang_string.clone())],
-            return_type: None,
-        },
+        descriptor: method!(((Object(java_lang_string.clone()))) -> void),
         code: RawCode::native(NativeVoid(native_println_object)),
         ..Default::default()
     };
     let println_object = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "println".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 1,
-            parameters: vec![FieldType::Object("java/lang/Object".into())],
-            return_type: None,
-        },
+        descriptor: method!(((Object(java_lang_object.clone()))) -> void),
         code: RawCode::native(NativeVoid(native_println_object)),
         ..Default::default()
     };
     let println_char = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "println".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 1,
-            parameters: vec![FieldType::Char],
-            return_type: None,
-        },
+        descriptor: method!((char) -> void),
         code: RawCode::native(NativeVoid(
             |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
                 let char = char::from_u32(stackframe.lock().unwrap().locals[1])
@@ -435,13 +357,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         ..Default::default()
     };
     let println_bool = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "println".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 1,
-            parameters: vec![FieldType::Boolean],
-            return_type: None,
-        },
+        descriptor: method!((boolean) -> void),
         code: RawCode::native(NativeVoid(
             |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
                 let bool = stackframe.lock().unwrap().locals[1] != 0;
@@ -452,13 +370,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         ..Default::default()
     };
     let println_int = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "println".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 1,
-            parameters: vec![FieldType::Int],
-            return_type: None,
-        },
+        descriptor: method!((int) -> void),
         code: RawCode::native(NativeVoid(
             |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
                 let int = stackframe.lock().unwrap().locals[1] as i32;
@@ -469,13 +383,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         ..Default::default()
     };
     let println_long = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "println".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 2,
-            parameters: vec![FieldType::Long],
-            return_type: None,
-        },
+        descriptor: method!((long) -> void),
         code: RawCode::native(NativeVoid(
             |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
                 let locals = &stackframe.lock().unwrap().locals;
@@ -487,13 +397,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         ..Default::default()
     };
     let println_float = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "println".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 1,
-            parameters: vec![FieldType::Float],
-            return_type: None,
-        },
+        descriptor: method!((float) -> void),
         code: RawCode::native(NativeVoid(
             |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
                 let float = f32::from_bits(stackframe.lock().unwrap().locals[1]);
@@ -504,13 +410,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         ..Default::default()
     };
     let println_empty = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "println".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 0,
-            parameters: Vec::new(),
-            return_type: None,
-        },
+        descriptor: method!(() -> void),
         code: RawCode::native(NativeVoid(|_: &mut _, _: &_, _| {
             println!();
             Ok(())
@@ -518,7 +420,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         ..Default::default()
     };
     let mut printstream = RawClass::new(
-        AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access!(public native),
         "java/io/PrintStream".into(),
         java_lang_object.clone(),
     );
@@ -536,7 +438,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     // let system_out = heap.allocate(Object::from_class(class_area, &printstream));
 
     let mut system = RawClass::new(
-        AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access!(public native),
         "java/lang/System".into(),
         java_lang_object.clone(),
     );
@@ -544,7 +446,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     system.static_data.push(u32::MAX);
     system.statics.push((
         Field {
-            access_flags: AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
+            access_flags: access!(public native),
             name: "out".into(),
             descriptor: FieldType::Object("java/io/PrintStream".into()),
             attributes: Vec::new(),
@@ -555,19 +457,15 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     ));
 
     let arraycopy = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
+        access_flags: access!(public native),
         name: "arraycopy".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 5,
-            parameters: vec![
-                FieldType::Object(java_lang_object.clone()),
-                FieldType::Int,
-                FieldType::Object(java_lang_object.clone()),
-                FieldType::Int,
-                FieldType::Int,
-            ],
-            return_type: None,
-        },
+        descriptor: method!((
+            (Object(java_lang_object.clone())), 
+            int, 
+            (Object(java_lang_object.clone())), 
+            int, 
+            int
+        ) -> void),
         code: RawCode::native(NativeVoid(|thread, stackframe, _verbose| {
             let [src_idx, start, dest_idx, start_dest, count, ..] =
                 stackframe.lock().unwrap().locals[..]
@@ -604,7 +502,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     system.methods.push(arraycopy.name(system.this.clone()));
 
     let make_concat_with_constants = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
+        access_flags: access!(public static native),
         name: "makeConcatWithConstants".into(),
         descriptor: MethodDescriptor {
             parameter_size: 5,
@@ -622,7 +520,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     };
 
     let mut string_concat_factory = RawClass::new(
-        AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE,
+        access!(public native),
         "java/lang/invoke/StringConcatFactory".into(),
         java_lang_object.clone(),
     );
@@ -631,13 +529,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         .push(make_concat_with_constants.name(string_concat_factory.this.clone()));
 
     let sqrt_double = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC,
+        access_flags: access!(public static native),
         name: "sqrt".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 2,
-            parameters: vec![FieldType::Double],
-            return_type: Some(FieldType::Double),
-        },
+        descriptor: method!((double) -> double),
         code: RawCode::native(NativeDoubleMethod(
             |_: &mut _, stackframe: &Mutex<StackFrame>, _| {
                 let stackframe = stackframe.lock().unwrap();
@@ -651,7 +545,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         ..Default::default()
     };
     let mut math = RawClass::new(
-        AccessFlags::ACC_PUBLIC | AccessFlags::ACC_NATIVE,
+        access!(public native),
         "java/lang/Math".into(),
         java_lang_object,
     );
