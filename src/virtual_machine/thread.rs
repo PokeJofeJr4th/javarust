@@ -1167,6 +1167,10 @@ impl Thread {
                     }
                 }
             }
+            Instruction::AThrow => {
+                let objref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                self.throw(stackframe, objref)?;
+            }
             other => return Err(format!("Invalid Opcode: {other:?}")),
         }
         Ok(())
@@ -1220,6 +1224,51 @@ impl Thread {
         let stackframe = StackFrame::from_method(method, class);
         self.stack.push(Arc::new(Mutex::new(stackframe)));
         self.pc_register = 0;
+    }
+
+    fn throw(
+        &mut self,
+        mut stackframe: Arc<Mutex<StackFrame>>,
+        exception_ptr: u32,
+    ) -> Result<(), String> {
+        loop {
+            for entry in &stackframe
+                .lock()
+                .unwrap()
+                .method
+                .code
+                .as_bytecode()
+                .unwrap()
+                .exception_table
+            {
+                if !(entry.start_pc..entry.end_pc).contains(&(self.pc_register as u16)) {
+                    continue;
+                }
+                if entry.catch_type.is_none()
+                    || entry.catch_type.as_ref().is_some_and(|catch_type| {
+                        AnyObj
+                            .get(&self.heap.lock().unwrap(), exception_ptr as usize, |obj| {
+                                obj.isinstance(&self.class_area, catch_type)
+                            })
+                            .is_ok_and(|a| a)
+                    })
+                {
+                    self.pc_register = entry.handler_pc as usize;
+                    return Ok(());
+                }
+            }
+            self.stack.pop();
+            match self.stack.last() {
+                Some(s) => stackframe = s.clone(),
+                None => return Err(String::from("Exception propagated past main")),
+            }
+            self.pc_register = stackframe
+                .lock()
+                .unwrap()
+                .operand_stack
+                .pop()
+                .unwrap_or_default() as usize;
+        }
     }
 
     #[allow(clippy::too_many_lines)]

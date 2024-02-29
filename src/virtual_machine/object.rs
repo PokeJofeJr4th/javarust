@@ -156,6 +156,24 @@ impl Object {
     pub fn this_class(&self) -> Arc<str> {
         self.class.clone()
     }
+
+    #[must_use]
+    /// # Panics
+    pub fn isinstance(&self, class_area: &SharedClassArea, class: &str) -> bool {
+        let mut current = class_area.search(class).unwrap();
+        while &*current.this != "java/lang/Object" {
+            if &*current.this == class {
+                return true;
+            }
+            for i in &current.interfaces {
+                if &**i == class {
+                    return true;
+                }
+            }
+            current = class_area.search(&current.super_class).unwrap();
+        }
+        false
+    }
 }
 
 pub trait ObjectFinder {

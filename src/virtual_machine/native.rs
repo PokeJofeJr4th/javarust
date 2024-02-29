@@ -30,6 +30,7 @@ pub mod arrays;
 pub mod primitives;
 pub mod string;
 pub mod string_builder;
+pub mod throwable;
 
 pub static mut OBJECT_CLASS: Option<Arc<Class>> = None;
 pub static mut STRING_CLASS: Option<Arc<Class>> = None;
@@ -448,13 +449,11 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: method!(() -> void),
         code: RawCode::native(NativeVoid(|thread, _stackframe, _verbose| {
             let system_class = thread.class_area.search("java/lang/System").unwrap();
-            system_class.static_data.lock().unwrap()[0] = 
-            thread.heap.lock().unwrap().allocate(
-                Object::from_class(
-                    &thread.class_area, 
-                    &thread.class_area.search("java/io/PrintStream").unwrap()
-                )
-            );
+            system_class.static_data.lock().unwrap()[0] =
+                thread.heap.lock().unwrap().allocate(Object::from_class(
+                    &thread.class_area,
+                    &thread.class_area.search("java/io/PrintStream").unwrap(),
+                ));
             Ok(())
         })),
         ..Default::default()
@@ -528,7 +527,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 FieldType::Object("java/lang/invoke/MethodHandles$Lookup".into()),
                 FieldType::Object(java_lang_string.clone()),
                 FieldType::Object("java/lang/invoke/MethodType".into()),
-                FieldType::Object(java_lang_string),
+                FieldType::Object(java_lang_string.clone()),
                 FieldType::Array(Box::new(FieldType::Object("java/lang/Object".into()))),
             ],
             return_type: Some(FieldType::Object("java/lang/invoke/CallSite".into())),
@@ -565,17 +564,17 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     let mut math = RawClass::new(
         access!(public native),
         "java/lang/Math".into(),
-        java_lang_object,
+        java_lang_object.clone(),
     );
     math.methods.push(sqrt_double.name(math.this.clone()));
 
-    // unsafe {
-    //     OBJECT_CLASS = Some(object.clone());
-    //     STRING_CLASS = Some(string.clone());
-    //     STRING_BUILDER_CLASS = Some(string_builder.clone());
-    //     ARRAY_CLASS = Some(array.clone());
-    //     RANDOM_CLASS = Some(random.clone());
-    // }
+    throwable::add_native_methods(
+        &java_lang_object,
+        &java_lang_string,
+        method_area,
+        class_area,
+    );
+
     method_area.extend([
         (object.this.clone(), object_init),
         (object.this.clone(), object_to_string),
@@ -628,4 +627,5 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         string_concat_factory,
         math,
     ]);
+    drop((java_lang_object, java_lang_string));
 }

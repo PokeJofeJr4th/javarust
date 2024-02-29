@@ -1,7 +1,7 @@
 use std::{fmt::Debug, iter::Peekable, sync::Arc};
 
 use crate::{
-    class::{Constant, FieldType, MethodDescriptor},
+    class::{Constant, ExceptionTableEntry, FieldType, MethodDescriptor},
     class_loader::parse_field_type,
     data::SharedClassArea,
 };
@@ -192,6 +192,7 @@ pub fn hydrate_code(
     class_area: &SharedClassArea,
     constants: &[Constant],
     code: Vec<u8>,
+    exception_table: &mut [ExceptionTableEntry],
     verbose: bool,
 ) -> Result<Vec<Instruction>, String> {
     if verbose {
@@ -208,28 +209,34 @@ pub fn hydrate_code(
     if verbose {
         println!("{code:?}");
     }
+    let translate_pc = |pc: usize| -> Option<usize> { code.iter().position(|(idx, _)| *idx == pc) };
+    for entry in exception_table.iter_mut() {
+        entry.end_pc = translate_pc(entry.end_pc as usize).unwrap() as u16;
+        entry.start_pc = translate_pc(entry.start_pc as usize).unwrap() as u16;
+        entry.handler_pc = translate_pc(entry.handler_pc as usize).unwrap() as u16;
+    }
     code.iter()
         .cloned()
         .map(|(idx, instr)| {
             Ok(match instr {
                 Instruction::Goto(goto) => {
                     let target = (idx as i32).wrapping_add(goto) as usize;
-                    let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
+                    let goto = translate_pc(target).unwrap();
                     Instruction::Goto(goto as i32)
                 }
                 Instruction::IfCmpZ(cmp, goto) => {
                     let target = (idx as i16).wrapping_add(goto) as usize;
-                    let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
+                    let goto = translate_pc(target).unwrap();
                     Instruction::IfCmpZ(cmp, goto as i16)
                 }
                 Instruction::IfNull(cmp, goto) => {
                     let target = (idx as i16).wrapping_add(goto) as usize;
-                    let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
+                    let goto = translate_pc(target).unwrap();
                     Instruction::IfNull(cmp, goto as i16)
                 }
                 Instruction::ICmp(cmp, goto) => {
                     let target = (idx as i16).wrapping_add(goto) as usize;
-                    let goto = code.iter().position(|(idx, _)| *idx == target).unwrap();
+                    let goto = translate_pc(target).unwrap();
                     Instruction::ICmp(cmp, goto as i16)
                 }
                 Instruction::GetField(class, field, ty) => {

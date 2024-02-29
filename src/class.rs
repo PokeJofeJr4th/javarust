@@ -7,9 +7,9 @@ use crate::class_loader::MethodName;
 
 pub use self::code::Code;
 pub use self::code::{
-    ByteCode, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, NativeDoubleMethod, NativeMethod,
-    NativeSingleMethod, NativeStringMethod, NativeTodo, NativeVoid, StackMapFrame,
-    VerificationTypeInfo,
+    ByteCode, ExceptionTableEntry, LineTableEntry, LocalVarEntry, LocalVarTypeEntry,
+    NativeDoubleMethod, NativeMethod, NativeSingleMethod, NativeStringMethod, NativeTodo,
+    NativeVoid, StackMapFrame, VerificationTypeInfo,
 };
 
 mod code;
@@ -506,7 +506,7 @@ pub struct MethodDescriptor {
 macro_rules! method {
     (($($params:tt),*) -> void) => {{
         let parameters: Vec<$crate::class::FieldType> = vec![$($crate::field!($params)),*];
-        MethodDescriptor {
+        $crate::class::MethodDescriptor {
             parameter_size: parameters.iter().map(|param| param.get_size()).sum(),
             parameters,
             return_type: None,
@@ -515,7 +515,7 @@ macro_rules! method {
 
     (($($params:tt),*) -> $($out:tt)*) => {{
         let parameters: Vec<$crate::class::FieldType> = vec![$($crate::field!($params)),*];
-        MethodDescriptor {
+        $crate::class::MethodDescriptor {
             parameter_size: parameters.iter().map(|param| param.get_size()).sum(),
             parameters,
             return_type: Some($crate::field!($($out)*)),

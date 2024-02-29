@@ -235,11 +235,36 @@ impl<
     }
 }
 
+#[derive(Clone)]
+pub struct ExceptionTableEntry {
+    pub start_pc: u16,
+    pub end_pc: u16,
+    pub handler_pc: u16,
+    pub catch_type: Option<Arc<str>>,
+}
+
+impl Debug for ExceptionTableEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.catch_type {
+            Some(catch) => write!(
+                f,
+                "{{{}..{}: catch {catch} => {}}}",
+                self.start_pc, self.end_pc, self.handler_pc
+            ),
+            None => write!(
+                f,
+                "{{{}..{}: catch => {}}}",
+                self.start_pc, self.end_pc, self.handler_pc
+            ),
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct ByteCode {
     pub max_stack: u16,
     pub code: Vec<Instruction>,
-    pub exception_table: Vec<(u16, u16, u16, Option<Arc<str>>)>,
+    pub exception_table: Vec<ExceptionTableEntry>,
     pub line_number_table: Vec<LineTableEntry>,
     pub local_type_table: Vec<LocalVarTypeEntry>,
     pub local_var_table: Vec<LocalVarEntry>,
