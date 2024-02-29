@@ -22,7 +22,7 @@ use self::{
 };
 
 use super::{
-    object::{Array1, Array2, ArrayType, ObjectFinder},
+    object::{Array1, Array2, ArrayType, Object, ObjectFinder},
     StackFrame, Thread,
 };
 
@@ -442,7 +442,25 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         "java/lang/System".into(),
         java_lang_object.clone(),
     );
-    // system.static_data.lock().unwrap().push(system_out);
+    let system_clinit = RawMethod {
+        name: "<clinit>".into(),
+        access_flags: access!(public static native),
+        descriptor: method!(() -> void),
+        code: RawCode::native(NativeVoid(|thread, _stackframe, _verbose| {
+            let system_class = thread.class_area.search("java/lang/System").unwrap();
+            system_class.static_data.lock().unwrap()[0] = 
+            thread.heap.lock().unwrap().allocate(
+                Object::from_class(
+                    &thread.class_area, 
+                    &thread.class_area.search("java/io/PrintStream").unwrap()
+                )
+            );
+            Ok(())
+        })),
+        ..Default::default()
+    };
+    system.methods.push(system_clinit.name(system.this.clone()));
+
     system.static_data.push(u32::MAX);
     system.statics.push((
         Field {
@@ -577,6 +595,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         (random.this.clone(), random_init),
         (random.this.clone(), next_int),
         (system.this.clone(), arraycopy),
+        (system.this.clone(), system_clinit),
         (printstream.this.clone(), println_string),
         (printstream.this.clone(), println_object),
         (printstream.this.clone(), println_float),
