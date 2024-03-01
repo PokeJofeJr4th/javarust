@@ -1169,7 +1169,7 @@ impl Thread {
             }
             Instruction::AThrow => {
                 let objref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
-                self.throw(stackframe, objref)?;
+                self.throw(stackframe, objref, verbose)?;
             }
             other => return Err(format!("Invalid Opcode: {other:?}")),
         }
@@ -1230,44 +1230,50 @@ impl Thread {
         &mut self,
         mut stackframe: Arc<Mutex<StackFrame>>,
         exception_ptr: u32,
+        verbose: bool,
     ) -> Result<(), String> {
         loop {
-            for entry in &stackframe
-                .lock()
-                .unwrap()
+            let mut stackframe_borrow = stackframe.lock().unwrap();
+            for entry in &stackframe_borrow
                 .method
                 .code
                 .as_bytecode()
                 .unwrap()
                 .exception_table
             {
-                if !(entry.start_pc..entry.end_pc).contains(&(self.pc_register as u16)) {
+                if !(entry.start_pc..=entry.end_pc).contains(&(self.pc_register as u16)) {
                     continue;
                 }
                 if entry.catch_type.is_none()
                     || entry.catch_type.as_ref().is_some_and(|catch_type| {
                         AnyObj
                             .get(&self.heap.lock().unwrap(), exception_ptr as usize, |obj| {
-                                obj.isinstance(&self.class_area, catch_type)
+                                obj.isinstance(&self.class_area, catch_type, verbose)
                             })
                             .is_ok_and(|a| a)
                     })
                 {
+                    if verbose {
+                        println!("Found an exception handler! {entry:?}");
+                    }
                     self.pc_register = entry.handler_pc as usize;
+                    stackframe_borrow.operand_stack.push(exception_ptr);
                     return Ok(());
                 }
             }
+            if verbose {
+                println!(
+                    "No exception handlers found : {:?}",
+                    stackframe_borrow.method.name
+                );
+            }
+            drop(stackframe_borrow);
             self.stack.pop();
             match self.stack.last() {
                 Some(s) => stackframe = s.clone(),
                 None => return Err(String::from("Exception propagated past main")),
             }
-            self.pc_register = stackframe
-                .lock()
-                .unwrap()
-                .operand_stack
-                .pop()
-                .unwrap_or_default() as usize;
+            self.pc_register = stackframe.lock().unwrap().operand_stack.pop().unwrap() as usize;
         }
     }
 

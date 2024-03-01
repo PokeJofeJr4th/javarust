@@ -159,16 +159,25 @@ impl Object {
 
     #[must_use]
     /// # Panics
-    pub fn isinstance(&self, class_area: &SharedClassArea, class: &str) -> bool {
+    pub fn isinstance(&self, class_area: &SharedClassArea, class: &str, verbose: bool) -> bool {
         let mut current = class_area.search(class).unwrap();
+        if verbose {
+            println!("Checking if {} is an instance of {}", current.this, class);
+        }
         while &*current.this != "java/lang/Object" {
             if &*current.this == class {
                 return true;
             }
             for i in &current.interfaces {
+                if verbose {
+                    println!("Checking interface {i}");
+                }
                 if &**i == class {
                     return true;
                 }
+            }
+            if verbose {
+                println!("Checking {}", current.super_class);
             }
             current = class_area.search(&current.super_class).unwrap();
         }
