@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use crate::{
     access,
-    class::{Field, FieldType, NativeVoid},
+    class::{Field, FieldType, NativeStringMethod, NativeVoid},
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
     method,
 };
 
+#[allow(clippy::too_many_lines)]
 pub fn add_native_methods(
     java_lang_object: &Arc<str>,
     java_lang_string: &Arc<str>,
@@ -101,10 +102,20 @@ pub fn add_native_methods(
         code: RawCode::native(NativeVoid(|_, _, _| Ok(()))),
         ..Default::default()
     };
+    let illegal_argument_exception_to_string = RawMethod {
+        access_flags: access!(public native),
+        name: "toString".into(),
+        descriptor: method!(() -> Object(java_lang_string.clone())),
+        code: RawCode::native(NativeStringMethod(|_: &mut _, _: &_, _| {
+            Ok("java.lang.IllegalArgumentException".into())
+        })),
+        ..Default::default()
+    };
 
-    illegal_argument_exception
-        .methods
-        .extend([illegal_argument_exception_init.name(illegal_argument_exception.this.clone())]);
+    illegal_argument_exception.methods.extend([
+        illegal_argument_exception_init.name(illegal_argument_exception.this.clone()),
+        illegal_argument_exception_to_string.name(illegal_argument_exception.this.clone()),
+    ]);
 
     method_area.extend([
         (throwable.this.clone(), throwable_init),
@@ -113,6 +124,10 @@ pub fn add_native_methods(
         (
             illegal_argument_exception.this.clone(),
             illegal_argument_exception_init,
+        ),
+        (
+            illegal_argument_exception.this.clone(),
+            illegal_argument_exception_to_string,
         ),
     ]);
     class_area.extend([
