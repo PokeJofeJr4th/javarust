@@ -18,6 +18,8 @@ pub use self::instruction::{hydrate_code, Cmp, Instruction, Op};
 pub struct StackFrame {
     pub locals: Vec<u32>,
     pub operand_stack: Vec<u32>,
+    /// list of pointers that should be collected at the end of execution
+    pub garbage: Vec<u32>,
     pub method: Arc<Method>,
     pub class: Arc<Class>,
 }
@@ -27,6 +29,7 @@ impl StackFrame {
         Self {
             locals: (0..=method.max_locals).map(|_| 0).collect(),
             operand_stack: Vec::new(),
+            garbage: Vec::new(),
             class,
             method,
         }

@@ -13,20 +13,23 @@ use crate::{
 
 pub type SharedHeap = Arc<Mutex<Heap>>;
 
+#[derive(Default)]
 pub struct Heap {
-    contents: Vec<Arc<Mutex<Object>>>,
+    contents: Vec<Option<Arc<Mutex<Object>>>>,
+    refcount: Vec<u32>,
     string_cache: HashMap<Arc<str>, u32>,
 }
 
 impl Heap {
     #[must_use]
     pub fn get(&self, idx: usize) -> Option<Arc<Mutex<Object>>> {
-        self.contents.get(idx).cloned()
+        self.contents.get(idx)?.clone()
     }
 
     #[must_use]
     pub fn allocate(&mut self, obj: Object) -> u32 {
-        self.contents.push(Arc::new(Mutex::new(obj)));
+        self.contents.push(Some(Arc::new(Mutex::new(obj))));
+        self.refcount.push(0);
         (self.contents.len() - 1) as u32
     }
 
@@ -44,6 +47,7 @@ impl Heap {
     pub fn new() -> Self {
         Self {
             contents: Vec::new(),
+            refcount: Vec::new(),
             string_cache: HashMap::new(),
         }
     }
@@ -52,22 +56,42 @@ impl Heap {
     pub fn make_shared(self) -> SharedHeap {
         Arc::new(Mutex::new(self))
     }
-}
 
-impl Default for Heap {
-    fn default() -> Self {
-        Self::new()
+    pub fn inc_ref(&mut self, idx: usize) {
+        if idx == u32::MAX as usize {
+            return;
+        }
+        self.refcount[idx] += 1;
+    }
+
+    pub fn dec_ref(&mut self, idx: usize) {
+        if idx == u32::MAX as usize {
+            return;
+        }
+        self.refcount[idx] -= 1;
+        // if self.refcount[idx] == 0 {
+        //     self.contents[idx] = None;
+        // }
+    }
+
+    pub fn collect_garbage(&mut self) {
+        // for (idx, count) in self.refcount.iter().copied().enumerate() {
+        //     if count == 0 {
+        //         self.contents[idx] = None;
+        //     }
+        // }
     }
 }
 
 impl Debug for Heap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list()
-            .entries(
-                self.contents
-                    .iter()
-                    .map(|obj| format!("{:?}", &obj.lock().unwrap())),
-            )
+            .entries(self.contents.iter().map(|obj| {
+                obj.as_ref().map_or_else(
+                    || String::from("null"),
+                    |obj| format!("{:?}", &obj.lock().unwrap()),
+                )
+            }))
             .finish()
     }
 }

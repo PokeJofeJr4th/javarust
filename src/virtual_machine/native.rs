@@ -449,11 +449,12 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: method!(() -> void),
         code: RawCode::native(NativeVoid(|thread, _stackframe, _verbose| {
             let system_class = thread.class_area.search("java/lang/System").unwrap();
-            system_class.static_data.lock().unwrap()[0] =
-                thread.heap.lock().unwrap().allocate(Object::from_class(
-                    &thread.class_area,
-                    &thread.class_area.search("java/io/PrintStream").unwrap(),
-                ));
+            let out_ref = thread.heap.lock().unwrap().allocate(Object::from_class(
+                &thread.class_area,
+                &thread.class_area.search("java/io/PrintStream").unwrap(),
+            ));
+            system_class.static_data.lock().unwrap()[0] = out_ref;
+            thread.heap.lock().unwrap().inc_ref(out_ref as usize);
             Ok(())
         })),
         ..Default::default()

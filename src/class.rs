@@ -629,6 +629,11 @@ impl FieldType {
             _ => 1,
         }
     }
+
+    #[must_use]
+    pub const fn is_reference(&self) -> bool {
+        matches!(self, Self::Array(_) | Self::Object(_))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
