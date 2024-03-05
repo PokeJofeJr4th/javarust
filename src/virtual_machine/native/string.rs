@@ -2,6 +2,7 @@ use std::sync::Mutex;
 
 use crate::{
     class::{FieldType, MethodDescriptor, NativeMethod},
+    data::NULL,
     virtual_machine::{
         object::{AnyObj, ObjectFinder, StringObj},
         StackFrame, Thread,
@@ -27,7 +28,7 @@ pub fn native_string_value_of(
     verbose: bool,
 ) -> Result<(), String> {
     let obj_ref = stackframe.lock().unwrap().locals[0];
-    if obj_ref == u32::MAX {
+    if obj_ref == NULL {
         let str_ref = thread.heap.lock().unwrap().allocate_str("null".into());
         stackframe.lock().unwrap().operand_stack.push(str_ref);
     } else {

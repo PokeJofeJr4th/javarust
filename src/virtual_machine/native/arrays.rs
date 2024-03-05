@@ -1,11 +1,10 @@
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    class::FieldType,
-    virtual_machine::{
+    class::FieldType, data::NULL, virtual_machine::{
         object::{Array1, Array2, ArrayFields, ArrayType, ObjectFinder},
         StackFrame, Thread,
-    },
+    }
 };
 
 #[allow(clippy::only_used_in_recursion)]
@@ -117,7 +116,7 @@ pub fn to_string(
                         "[{}]",
                         arr.contents
                             .iter()
-                            .map(|item| if *item == u32::MAX {
+                            .map(|item| if *item == NULL {
                                 String::from("null")
                             } else {
                                 format!("&{item:0>8X}")

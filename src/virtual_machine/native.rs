@@ -9,7 +9,7 @@ use crate::{
         NativeStringMethod, NativeTodo, NativeVoid,
     },
     class_loader::{RawClass, RawCode, RawMethod},
-    data::{WorkingClassArea, WorkingMethodArea},
+    data::{WorkingClassArea, WorkingMethodArea, NULL},
     method,
 };
 
@@ -454,14 +454,14 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 &thread.class_area.search("java/io/PrintStream").unwrap(),
             ));
             system_class.static_data.lock().unwrap()[0] = out_ref;
-            thread.heap.lock().unwrap().inc_ref(out_ref as usize);
+            thread.heap.lock().unwrap().inc_ref(out_ref);
             Ok(())
         })),
         ..Default::default()
     };
     system.methods.push(system_clinit.name(system.this.clone()));
 
-    system.static_data.push(u32::MAX);
+    system.static_data.push(NULL);
     system.statics.push((
         Field {
             access_flags: access!(public native),

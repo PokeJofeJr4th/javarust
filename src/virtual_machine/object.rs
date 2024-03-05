@@ -2,7 +2,7 @@ use std::{any::Any, sync::Arc};
 
 use crate::{
     class::{Class, Code, FieldType, Method, MethodDescriptor},
-    data::{Heap, SharedClassArea, SharedMethodArea},
+    data::{Heap, SharedClassArea, SharedMethodArea, NULL},
 };
 
 use super::native;
@@ -40,7 +40,7 @@ impl Object {
                     .iter()
                     .flat_map(|(field, _idx)| match &field.descriptor {
                         FieldType::Array(_) | FieldType::Object(_) => {
-                            std::iter::repeat(u32::MAX).take(1)
+                            std::iter::repeat(NULL).take(1)
                         }
                         other => std::iter::repeat(0).take(other.get_size()),
                     })
@@ -431,7 +431,7 @@ impl Array1 {
     #[must_use]
     pub fn new(class_area: &SharedClassArea, count: usize, arr_type: FieldType) -> Object {
         let default_value = if matches!(arr_type, FieldType::Object(_)) {
-            u32::MAX
+            NULL
         } else {
             0
         };

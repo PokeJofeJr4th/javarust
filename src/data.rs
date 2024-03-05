@@ -11,6 +11,9 @@ use crate::{
     virtual_machine::object::{Object, StringObj},
 };
 
+pub const NULL: u32 = 0;
+pub const HEAP_START: u32 = 0x8000;
+
 pub type SharedHeap = Arc<Mutex<Heap>>;
 
 #[derive(Default)]
@@ -23,14 +26,14 @@ pub struct Heap {
 impl Heap {
     #[must_use]
     pub fn get(&self, idx: usize) -> Option<Arc<Mutex<Object>>> {
-        self.contents.get(idx)?.clone()
+        self.contents.get(idx - HEAP_START as usize)?.clone()
     }
 
     #[must_use]
     pub fn allocate(&mut self, obj: Object) -> u32 {
         self.contents.push(Some(Arc::new(Mutex::new(obj))));
         self.refcount.push(0);
-        (self.contents.len() - 1) as u32
+        (self.contents.len() - 1 + HEAP_START as usize) as u32
     }
 
     #[must_use]
@@ -57,29 +60,21 @@ impl Heap {
         Arc::new(Mutex::new(self))
     }
 
-    pub fn inc_ref(&mut self, idx: usize) {
-        if idx == u32::MAX as usize {
+    pub fn inc_ref(&mut self, idx: u32) {
+        if idx == NULL {
             return;
         }
-        self.refcount[idx] += 1;
+        self.refcount[(idx - HEAP_START) as usize] += 1;
     }
 
-    pub fn dec_ref(&mut self, idx: usize) {
-        if idx == u32::MAX as usize {
+    pub fn dec_ref(&mut self, idx: u32) {
+        if idx == NULL {
             return;
         }
-        self.refcount[idx] -= 1;
-        // if self.refcount[idx] == 0 {
-        //     self.contents[idx] = None;
-        // }
-    }
-
-    pub fn collect_garbage(&mut self) {
-        // for (idx, count) in self.refcount.iter().copied().enumerate() {
-        //     if count == 0 {
-        //         self.contents[idx] = None;
-        //     }
-        // }
+        self.refcount[(idx - HEAP_START) as usize] -= 1;
+        if self.refcount[(idx - HEAP_START) as usize] == 0 {
+            self.contents[(idx - HEAP_START) as usize] = None;
+        }
     }
 }
 

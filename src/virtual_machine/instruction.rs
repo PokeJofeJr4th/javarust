@@ -3,7 +3,7 @@ use std::{fmt::Debug, iter::Peekable, sync::Arc};
 use crate::{
     class::{Constant, ExceptionTableEntry, FieldType, MethodDescriptor},
     class_loader::parse_field_type,
-    data::SharedClassArea,
+    data::{SharedClassArea, NULL},
 };
 
 #[derive(Clone)]
@@ -287,7 +287,7 @@ pub fn parse_instruction(
         0x01 => {
             // aconst_null
             // push a null pointer onto the operand stack
-            Ok(Instruction::Push1(u32::MAX))
+            Ok(Instruction::Push1(NULL))
         }
         iconst_i @ 0x02..=0x08 => {
             // iconst_<i>

@@ -4,6 +4,7 @@ use std::ops::{BitAnd, BitOr};
 use std::sync::{Arc, Mutex, Once};
 
 use crate::class_loader::MethodName;
+use crate::data::NULL;
 
 pub use self::code::Code;
 pub use self::code::{
@@ -207,7 +208,7 @@ impl Constant {
                 let bits = f.to_bits();
                 vec![bits as u32, (bits >> 32) as u32]
             }
-            _ => vec![u32::MAX],
+            _ => vec![NULL],
         }
     }
 }

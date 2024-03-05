@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     class::{BootstrapMethod, Class, Constant, FieldType, Method, MethodDescriptor, MethodHandle},
-    data::{Heap, SharedClassArea, SharedHeap, SharedMethodArea},
+    data::{Heap, SharedClassArea, SharedHeap, SharedMethodArea, NULL},
 };
 
 use super::{
@@ -55,8 +55,7 @@ impl Thread {
             }
             Instruction::LoadString(str) => {
                 let str_ptr = self.heap.lock().unwrap().allocate_str(str);
-                self.heap.lock().unwrap().inc_ref(str_ptr as usize);
-                stackframe.lock().unwrap().garbage.push(str_ptr);
+                self.remember_temp(&stackframe, str_ptr);
                 stackframe.lock().unwrap().operand_stack.push(str_ptr);
             }
             Instruction::Load2(index) => {
@@ -751,8 +750,8 @@ impl Thread {
                         self.heap
                             .lock()
                             .unwrap()
-                            .dec_ref(static_fields[staticindex] as usize);
-                        self.heap.lock().unwrap().inc_ref(value as usize);
+                            .dec_ref(static_fields[staticindex]);
+                        self.heap.lock().unwrap().inc_ref(value);
                     }
                     static_fields[staticindex] = value;
                     drop(static_fields);
@@ -793,8 +792,7 @@ impl Thread {
                     let value = static_fields[staticindex];
                     drop(static_fields);
                     if field_type.is_reference() {
-                        stackframe.lock().unwrap().garbage.push(value);
-                        self.heap.lock().unwrap().inc_ref(value as usize);
+                        self.remember_temp(&stackframe, value);
                     }
                     stackframe.lock().unwrap().operand_stack.push(value);
                 } else {
@@ -841,8 +839,7 @@ impl Thread {
                             if field_type.get_size() == 1 {
                                 let value = object_fields.fields[field_index];
                                 if field_type.is_reference() {
-                                    stackframe.lock().unwrap().garbage.push(value);
-                                    self.heap.lock().unwrap().inc_ref(value as usize);
+                                    self.remember_temp(&stackframe, value);
                                 }
                                 stackframe.lock().unwrap().operand_stack.push(value);
                             } else {
@@ -894,11 +891,8 @@ impl Thread {
 
                         if field_type.get_size() == 1 {
                             if field_type.is_reference() {
-                                self.heap
-                                    .lock()
-                                    .unwrap()
-                                    .dec_ref(object_fields.fields[field_index] as usize);
-                                self.heap.lock().unwrap().dec_ref(value as usize);
+                                self.forgor(object_fields.fields[field_index]);
+                                self.remember(value as u32);
                             }
                             object_fields.fields[field_index] = value as u32;
                         } else {
@@ -1088,13 +1082,12 @@ impl Thread {
                     .unwrap()
                     .allocate(Object::from_class(&self.class_area, &class));
                 stackframe.lock().unwrap().operand_stack.push(objectref);
-                stackframe.lock().unwrap().garbage.push(objectref);
-                self.heap.lock().unwrap().inc_ref(objectref as usize);
+                self.remember_temp(&stackframe, objectref);
             }
             Instruction::IfNull(is_rev, branch) => {
                 // ifnull | ifnonnull
                 let ptr = stackframe.lock().unwrap().operand_stack.pop().unwrap();
-                if (ptr == u32::MAX) ^ (is_rev) {
+                if (ptr == NULL) ^ (is_rev) {
                     self.pc_register = branch as usize;
                 }
             }
@@ -1130,8 +1123,8 @@ impl Thread {
                     })?;
                 if is_reference_array {
                     // if it's a reference type, increment the ref count
-                    self.heap.lock().unwrap().inc_ref(value as usize);
-                    self.heap.lock().unwrap().dec_ref(old as usize);
+                    self.remember(value);
+                    self.forgor(old);
                 }
             }
             Instruction::ArrayStore2 => {
@@ -1190,7 +1183,7 @@ impl Thread {
             }
             Instruction::CheckedCast(ty) => {
                 let objref = *stackframe.lock().unwrap().operand_stack.last().unwrap();
-                if objref != u32::MAX {
+                if objref != NULL {
                     // get the fields of the given class; if it works, we have a subclass
                     let class_name = &self.class_area.search(&ty).unwrap().this;
                     let obj_works = AnyObj
@@ -1219,16 +1212,16 @@ impl Thread {
     }
 
     fn remember_temp(&self, stackframe: &Mutex<StackFrame>, value: u32) {
-        self.heap.lock().unwrap().inc_ref(value as usize);
+        self.heap.lock().unwrap().inc_ref(value);
         stackframe.lock().unwrap().garbage.push(value);
     }
 
     fn remember(&self, value: u32) {
-        self.heap.lock().unwrap().inc_ref(value as usize);
+        self.heap.lock().unwrap().inc_ref(value);
     }
 
     fn forgor(&self, value: u32) {
-        self.heap.lock().unwrap().dec_ref(value as usize);
+        self.heap.lock().unwrap().dec_ref(value);
     }
 
     fn maybe_initialize_class(&mut self, class: &Class, stackframe: &Mutex<StackFrame>) -> bool {
@@ -1443,26 +1436,28 @@ impl Thread {
         Ok(())
     }
 
+    fn collect_garbage(&self, stackframe: &Mutex<StackFrame>) {
+        let mut heap_borrow = self.heap.lock().unwrap();
+        for ptr in core::mem::take(&mut stackframe.lock().unwrap().garbage) {
+            heap_borrow.dec_ref(ptr);
+        }
+    }
+
     /// # Panics
     pub fn return_void(&mut self) {
+        self.collect_garbage(self.stack.last().unwrap());
         self.stack.pop();
         if self.stack.is_empty() {
             return;
         }
         let stackframe = self.stack.last().unwrap();
         let return_address = stackframe.lock().unwrap().operand_stack.pop().unwrap();
-        self.heap.lock().unwrap().collect_garbage();
         self.pc_register = return_address as usize;
     }
 
     /// # Panics
     pub fn return_one(&mut self, verbose: bool) {
         let old_stackframe = self.stack.pop().unwrap();
-        let ret_value = old_stackframe.lock().unwrap().operand_stack.pop().unwrap();
-        if verbose {
-            println!("{ret_value}");
-        }
-        let stackframe = self.stack.last().unwrap();
         let is_reference = old_stackframe
             .lock()
             .unwrap()
@@ -1472,14 +1467,18 @@ impl Thread {
             .as_ref()
             .unwrap()
             .is_reference();
+        let ret_value = old_stackframe.lock().unwrap().operand_stack.pop().unwrap();
+        if verbose {
+            println!("{ret_value}");
+        }
+        let stackframe = self.stack.last().unwrap();
         if is_reference {
-            self.heap.lock().unwrap().inc_ref(ret_value as usize);
-            stackframe.lock().unwrap().garbage.push(ret_value);
+            self.remember_temp(stackframe, ret_value);
         }
         let ret_address = stackframe.lock().unwrap().operand_stack.pop().unwrap();
         self.pc_register = ret_address as usize;
-        self.heap.lock().unwrap().collect_garbage();
         stackframe.lock().unwrap().operand_stack.push(ret_value);
+        self.collect_garbage(&old_stackframe);
     }
 
     /// # Panics
@@ -1492,8 +1491,8 @@ impl Thread {
         let stackframe = self.stack.last().unwrap();
         let ret_address = stackframe.lock().unwrap().operand_stack.pop().unwrap();
         self.pc_register = ret_address as usize;
-        self.heap.lock().unwrap().collect_garbage();
         push_long(&mut stackframe.lock().unwrap().operand_stack, ret_value);
+        self.collect_garbage(&old_stackframe);
     }
 }
 
@@ -1516,7 +1515,7 @@ fn allocate_multi_array(
             let current_array = (0..*size)
                 .map(|_| {
                     let idx = allocate_multi_array(class_area, heap, rest, *inner_type.clone())?;
-                    heap.inc_ref(idx as usize);
+                    heap.inc_ref(idx);
                     Ok(idx)
                 })
                 .collect::<Result<Vec<_>, String>>()?;
