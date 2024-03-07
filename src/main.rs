@@ -11,6 +11,7 @@
 use std::{error::Error, fs, path::PathBuf};
 
 use clap::Parser;
+use data::Heap;
 
 pub mod class;
 pub mod class_loader;
@@ -34,7 +35,7 @@ struct Args {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let mut firstclass = None;
-    let (mut method_area, mut class_area, heap) = class_loader::load_environment();
+    let (mut method_area, mut class_area) = class_loader::load_environment();
     let mut raw_filenames = args.filenames;
     // include any paths from a project file
     if let Some(projpath) = args.project {
@@ -89,7 +90,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     let class_area = class_area.to_shared();
     let method_area = method_area.to_shared(&class_area, args.verbose)?;
-    let heap = heap.make_shared();
+    let heap = Heap::new(class_area.clone()).make_shared();
     if args.verbose {
         println!("{method_area:#?}");
     }

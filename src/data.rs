@@ -8,7 +8,7 @@ use std::{
 use crate::{
     class::{Class, Method, MethodDescriptor},
     class_loader::{RawClass, RawMethod},
-    virtual_machine::object::{Object, StringObj},
+    virtual_machine::object::{Array1, ArrayFields, Object, ObjectFinder, StringObj},
 };
 
 pub const NULL: u32 = 0;
@@ -16,12 +16,12 @@ pub const HEAP_START: u32 = 0x8000;
 
 pub type SharedHeap = Arc<Mutex<Heap>>;
 
-#[derive(Default)]
 pub struct Heap {
     contents: Vec<Option<Object>>,
-    refcount: Vec<u32>,
+    refcounts: Vec<u32>,
     string_cache: HashMap<Arc<str>, u32>,
     string_cache_mirror: HashMap<u32, Arc<str>>,
+    class_area: SharedClassArea,
 }
 
 impl Heap {
@@ -38,7 +38,7 @@ impl Heap {
     #[must_use]
     pub fn allocate(&mut self, obj: Object) -> u32 {
         self.contents.push(Some(obj));
-        self.refcount.push(0);
+        self.refcounts.push(0);
         (self.contents.len() - 1 + HEAP_START as usize) as u32
     }
 
@@ -57,12 +57,13 @@ impl Heap {
     }
 
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(class_area: SharedClassArea) -> Self {
         Self {
             contents: Vec::new(),
-            refcount: Vec::new(),
+            refcounts: Vec::new(),
             string_cache: HashMap::new(),
             string_cache_mirror: HashMap::new(),
+            class_area,
         }
     }
 
@@ -75,7 +76,7 @@ impl Heap {
         if ptr == NULL {
             return;
         }
-        self.refcount[(ptr - HEAP_START) as usize] += 1;
+        self.refcounts[(ptr - HEAP_START) as usize] += 1;
     }
 
     pub fn dec_ref(&mut self, ptr: u32) {
@@ -83,14 +84,39 @@ impl Heap {
             return;
         }
         let idx = (ptr - HEAP_START) as usize;
-        self.refcount[idx] -= 1;
-        if self.refcount[idx] == 0 {
+        self.refcounts[idx] -= 1;
+        if self.refcounts[idx] == 0 {
             // println!("Deallocating {idx}");
-            // get rid of its cached string value
-            if let Some(str) = self.string_cache_mirror.get(&ptr) {
-                self.string_cache.remove(str);
+            self.deallocate(ptr, idx);
+        }
+    }
+
+    fn deallocate(&mut self, ptr: u32, idx: usize) {
+        // get rid of its cached string value
+        if let Some(str) = self.string_cache_mirror.remove(&ptr) {
+            self.string_cache.remove(&str);
+        }
+        let Some(obj) = core::mem::take(&mut self.contents[idx]) else {
+            return;
+        };
+        // deallocate any references that object had within it
+        let obj_class = self.class_area.search(&obj.class).unwrap();
+        for (field, idx) in &obj_class.fields {
+            if field.descriptor.is_reference() {
+                self.dec_ref(obj.fields[*idx]);
             }
-            self.contents[idx] = None;
+        }
+        // deallocate any references that an array had within it
+        if let Ok(Some(contents)) = Array1.extract(&obj, |fields: ArrayFields<u32>| {
+            if fields.arr_type.is_reference() {
+                Some(fields.contents.to_vec())
+            } else {
+                None
+            }
+        }) {
+            for c in contents {
+                self.dec_ref(c);
+            }
         }
     }
 }

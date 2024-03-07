@@ -906,7 +906,7 @@ impl Thread {
                         resolved_method.name, resolved_class.this
                     );
                 }
-                self.invoke_method(resolved_method.clone(), resolved_class);
+                self.invoke_method(resolved_method, resolved_class);
                 self.pc_register = 0;
 
                 let new_stackframe = self.stack.last().unwrap().clone();
@@ -923,8 +923,6 @@ impl Thread {
                     println!("new locals: {new_locals:?}");
                 }
                 drop(stackframe_lock);
-
-                self.rember_args(&new_stackframe, &resolved_method, false, verbose);
             }
             Instruction::InvokeSpecial(class, name, method_type) => {
                 // invoke an instance method
@@ -957,7 +955,7 @@ impl Thread {
                         method_ref.name, class_ref.this
                     );
                 }
-                self.invoke_method(method_ref.clone(), class_ref);
+                self.invoke_method(method_ref, class_ref);
                 self.pc_register = 0;
 
                 let new_stackframe = self.stack.last().unwrap().clone();
@@ -974,8 +972,6 @@ impl Thread {
                     println!("new locals: {new_locals:?}");
                 }
                 drop(stackframe_lock);
-
-                self.rember_args(&new_stackframe, &method_ref, false, verbose);
             }
             Instruction::InvokeStatic(class, name, method_type) => {
                 // make a static method
@@ -1003,7 +999,7 @@ impl Thread {
                 stack.extend((&mut stack_iter).take(args_start));
                 stack.push(self.pc_register as u32);
 
-                self.invoke_method(method_ref.clone(), class_ref);
+                self.invoke_method(method_ref, class_ref);
                 self.pc_register = 0;
 
                 let new_stackframe = self.stack.last().unwrap().clone();
@@ -1020,8 +1016,6 @@ impl Thread {
                     println!("new locals: {new_locals:?}");
                 }
                 drop(stackframe_lock);
-
-                self.rember_args(&new_stackframe, &method_ref, true, verbose);
             }
             Instruction::InvokeDynamic(bootstrap_index, method_name, method_type) => {
                 let bootstrap_method = stackframe.lock().unwrap().class.bootstrap_methods
@@ -1206,28 +1200,6 @@ impl Thread {
         self.heap.lock().unwrap().dec_ref(value);
         if verbose {
             println!("forgor {value}");
-        }
-    }
-
-    fn rember_args(
-        &mut self,
-        stackframe: &Mutex<StackFrame>,
-        method: &Method,
-        is_static: bool,
-        verbose: bool,
-    ) {
-        let mut idx = 0;
-        if !is_static {
-            idx = 1;
-            let this = stackframe.lock().unwrap().locals[0];
-            self.rember_temp(stackframe, this, verbose);
-        }
-        for param in &method.descriptor.parameters {
-            if param.is_reference() {
-                let local = stackframe.lock().unwrap().locals[idx];
-                self.rember_temp(stackframe, local, verbose);
-            }
-            idx += param.get_size();
         }
     }
 

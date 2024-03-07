@@ -4,7 +4,7 @@ use crate::{
     class::{
         code::{ByteCode, ExceptionTableEntry, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, StackMapFrame, VerificationTypeInfo}, AccessFlags, Attribute, BootstrapMethod, ClassVersion, Constant, Field, FieldType, InnerClass, MethodDescriptor, MethodHandle
     },
-    data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea},
+    data::{SharedClassArea, WorkingClassArea, WorkingMethodArea},
     virtual_machine::{add_native_methods, hydrate_code},
 };
 
@@ -90,11 +90,11 @@ pub enum RawConstant {
 }
 
 #[must_use]
-pub fn load_environment() -> (WorkingMethodArea, WorkingClassArea, Heap) {
+pub fn load_environment() -> (WorkingMethodArea, WorkingClassArea) {
     let mut method_area = WorkingMethodArea::new();
     let mut class_area = WorkingClassArea::new();
     add_native_methods(&mut method_area, &mut class_area);
-    (method_area, class_area, Heap::new())
+    (method_area, class_area)
 }
 
 #[allow(clippy::too_many_lines)]
