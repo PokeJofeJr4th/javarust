@@ -18,31 +18,41 @@ pub type SharedHeap = Arc<Mutex<Heap>>;
 
 #[derive(Default)]
 pub struct Heap {
-    contents: Vec<Option<Arc<Mutex<Object>>>>,
+    contents: Vec<Option<Object>>,
     refcount: Vec<u32>,
     string_cache: HashMap<Arc<str>, u32>,
+    string_cache_mirror: HashMap<u32, Arc<str>>,
 }
 
 impl Heap {
     #[must_use]
-    pub fn get(&self, idx: usize) -> Option<Arc<Mutex<Object>>> {
-        self.contents.get(idx - HEAP_START as usize)?.clone()
+    pub fn get(&self, idx: usize) -> Option<&Object> {
+        self.contents.get(idx - HEAP_START as usize)?.as_ref()
+    }
+
+    #[must_use]
+    pub fn get_mut(&mut self, idx: usize) -> Option<&mut Object> {
+        self.contents.get_mut(idx - HEAP_START as usize)?.as_mut()
     }
 
     #[must_use]
     pub fn allocate(&mut self, obj: Object) -> u32 {
-        self.contents.push(Some(Arc::new(Mutex::new(obj))));
+        self.contents.push(Some(obj));
         self.refcount.push(0);
         (self.contents.len() - 1 + HEAP_START as usize) as u32
     }
 
     #[must_use]
     pub fn allocate_str(&mut self, string: Arc<str>) -> u32 {
-        if let Some(idx) = self.string_cache.get(&string) {
-            return *idx;
+        if let Some(&idx) = self.string_cache.get(&string) {
+            return idx;
         }
         let idx = self.allocate(StringObj::new(string.clone()));
-        self.string_cache.insert(string, idx);
+        // leak the string ref if it's retrieved from the cache in this way
+        // println!("Leaking string {idx}");
+        // self.inc_ref(idx);
+        self.string_cache.insert(string.clone(), idx);
+        self.string_cache_mirror.insert(idx, string);
         idx
     }
 
@@ -52,6 +62,7 @@ impl Heap {
             contents: Vec::new(),
             refcount: Vec::new(),
             string_cache: HashMap::new(),
+            string_cache_mirror: HashMap::new(),
         }
     }
 
@@ -60,20 +71,26 @@ impl Heap {
         Arc::new(Mutex::new(self))
     }
 
-    pub fn inc_ref(&mut self, idx: u32) {
-        if idx == NULL {
+    pub fn inc_ref(&mut self, ptr: u32) {
+        if ptr == NULL {
             return;
         }
-        self.refcount[(idx - HEAP_START) as usize] += 1;
+        self.refcount[(ptr - HEAP_START) as usize] += 1;
     }
 
-    pub fn dec_ref(&mut self, idx: u32) {
-        if idx == NULL {
+    pub fn dec_ref(&mut self, ptr: u32) {
+        if ptr == NULL {
             return;
         }
-        self.refcount[(idx - HEAP_START) as usize] -= 1;
-        if self.refcount[(idx - HEAP_START) as usize] == 0 {
-            self.contents[(idx - HEAP_START) as usize] = None;
+        let idx = (ptr - HEAP_START) as usize;
+        self.refcount[idx] -= 1;
+        if self.refcount[idx] == 0 {
+            // println!("Deallocating {idx}");
+            // get rid of its cached string value
+            if let Some(str) = self.string_cache_mirror.get(&ptr) {
+                self.string_cache.remove(str);
+            }
+            self.contents[idx] = None;
         }
     }
 }
@@ -82,10 +99,8 @@ impl Debug for Heap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list()
             .entries(self.contents.iter().map(|obj| {
-                obj.as_ref().map_or_else(
-                    || String::from("null"),
-                    |obj| format!("{:?}", &obj.lock().unwrap()),
-                )
+                obj.as_ref()
+                    .map_or_else(|| String::from("null"), |obj| format!("{obj:?}"))
             }))
             .finish()
     }

@@ -7,13 +7,9 @@ use crate::class_loader::MethodName;
 use crate::data::NULL;
 
 pub use self::code::Code;
-pub use self::code::{
-    ByteCode, ExceptionTableEntry, LineTableEntry, LocalVarEntry, LocalVarTypeEntry,
-    NativeDoubleMethod, NativeMethod, NativeSingleMethod, NativeStringMethod, NativeTodo,
-    NativeVoid, StackMapFrame, VerificationTypeInfo,
-};
+use self::code::NativeTodo;
 
-mod code;
+pub mod code;
 
 pub struct Class {
     pub initialized: Once,

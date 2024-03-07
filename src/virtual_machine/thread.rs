@@ -55,7 +55,8 @@ impl Thread {
             }
             Instruction::LoadString(str) => {
                 let str_ptr = self.heap.lock().unwrap().allocate_str(str);
-                self.remember_temp(&stackframe, str_ptr);
+                // never forget a static string
+                self.rember(str_ptr, verbose);
                 stackframe.lock().unwrap().operand_stack.push(str_ptr);
             }
             Instruction::Load2(index) => {
@@ -747,11 +748,8 @@ impl Thread {
                 if field_type.get_size() == 1 {
                     let value = stackframe.lock().unwrap().operand_stack.pop().unwrap();
                     if static_ty.descriptor.is_reference() {
-                        self.heap
-                            .lock()
-                            .unwrap()
-                            .dec_ref(static_fields[staticindex]);
-                        self.heap.lock().unwrap().inc_ref(value);
+                        self.forgor(static_fields[staticindex], verbose);
+                        self.rember(value, verbose);
                     }
                     static_fields[staticindex] = value;
                     drop(static_fields);
@@ -792,7 +790,7 @@ impl Thread {
                     let value = static_fields[staticindex];
                     drop(static_fields);
                     if field_type.is_reference() {
-                        self.remember_temp(&stackframe, value);
+                        self.rember_temp(&stackframe, value, verbose);
                     }
                     stackframe.lock().unwrap().operand_stack.push(value);
                 } else {
@@ -824,7 +822,7 @@ impl Thread {
 
                 AnyObj
                     .get_mut(
-                        &self.heap.lock().unwrap(),
+                        &mut self.heap.lock().unwrap(),
                         object_index as usize,
                         |object_borrow| {
                             if verbose {
@@ -839,7 +837,7 @@ impl Thread {
                             if field_type.get_size() == 1 {
                                 let value = object_fields.fields[field_index];
                                 if field_type.is_reference() {
-                                    self.remember_temp(&stackframe, value);
+                                    self.rember_temp(&stackframe, value, verbose);
                                 }
                                 stackframe.lock().unwrap().operand_stack.push(value);
                             } else {
@@ -879,7 +877,7 @@ impl Thread {
                 let object_index = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
                 AnyObj.get_mut(
-                    &self.heap.lock().unwrap(),
+                    &mut self.heap.lock().unwrap(),
                     object_index as usize,
                     |object_borrow| -> Result<(), String> {
                         if verbose {
@@ -891,8 +889,8 @@ impl Thread {
 
                         if field_type.get_size() == 1 {
                             if field_type.is_reference() {
-                                self.forgor(object_fields.fields[field_index]);
-                                self.remember(value as u32);
+                                self.forgor(object_fields.fields[field_index], verbose);
+                                self.rember(value as u32, verbose);
                             }
                             object_fields.fields[field_index] = value as u32;
                         } else {
@@ -944,12 +942,13 @@ impl Thread {
                         resolved_method.name, resolved_class.this
                     );
                 }
-                self.invoke_method(resolved_method, resolved_class);
+                self.invoke_method(resolved_method.clone(), resolved_class);
                 self.pc_register = 0;
 
                 let new_stackframe = self.stack.last().unwrap().clone();
 
-                let new_locals = &mut new_stackframe.lock().unwrap().locals;
+                let mut stackframe_lock = new_stackframe.lock().unwrap();
+                let new_locals = &mut stackframe_lock.locals;
                 for (index, value) in stack_iter.enumerate() {
                     if verbose {
                         println!("new_locals[{index}]={value}");
@@ -959,6 +958,9 @@ impl Thread {
                 if verbose {
                     println!("new locals: {new_locals:?}");
                 }
+                drop(stackframe_lock);
+
+                self.rember_args(&new_stackframe, &resolved_method, false, verbose);
             }
             Instruction::InvokeSpecial(class, name, method_type) => {
                 // invoke an instance method
@@ -991,12 +993,13 @@ impl Thread {
                         method_ref.name, class_ref.this
                     );
                 }
-                self.invoke_method(method_ref, class_ref);
+                self.invoke_method(method_ref.clone(), class_ref);
                 self.pc_register = 0;
 
                 let new_stackframe = self.stack.last().unwrap().clone();
 
-                let new_locals = &mut new_stackframe.lock().unwrap().locals;
+                let mut stackframe_lock = new_stackframe.lock().unwrap();
+                let new_locals = &mut stackframe_lock.locals;
                 for (index, value) in stack_iter.enumerate() {
                     if verbose {
                         println!("new_locals[{index}]={value}");
@@ -1006,6 +1009,9 @@ impl Thread {
                 if verbose {
                     println!("new locals: {new_locals:?}");
                 }
+                drop(stackframe_lock);
+
+                self.rember_args(&new_stackframe, &method_ref, false, verbose);
             }
             Instruction::InvokeStatic(class, name, method_type) => {
                 // make a static method
@@ -1033,28 +1039,25 @@ impl Thread {
                 stack.extend((&mut stack_iter).take(args_start));
                 stack.push(self.pc_register as u32);
 
-                self.invoke_method(method_ref, class_ref);
+                self.invoke_method(method_ref.clone(), class_ref);
                 self.pc_register = 0;
 
                 let new_stackframe = self.stack.last().unwrap().clone();
 
-                let new_locals = &mut new_stackframe.lock().unwrap().locals;
+                let mut stackframe_lock = new_stackframe.lock().unwrap();
+                let new_locals = &mut stackframe_lock.locals;
                 for (index, value) in stack_iter.enumerate() {
                     if verbose {
                         println!("new_locals[{index}]={value}");
                     }
                     new_locals[index] = value;
                 }
-                // let mut idx = 0;
-                // for param in &method_ref.descriptor.parameters {
-                //     if matches!(param, FieldType::Object(_) | FieldType::Array(_)) {
-                //         self.heap.lock().unwrap().inc_ref(new_locals[idx] as usize);
-                //     }
-                //     idx += param.get_size();
-                // }
                 if verbose {
                     println!("new locals: {new_locals:?}");
                 }
+                drop(stackframe_lock);
+
+                self.rember_args(&new_stackframe, &method_ref, true, verbose);
             }
             Instruction::InvokeDynamic(bootstrap_index, method_name, method_type) => {
                 let bootstrap_method = stackframe.lock().unwrap().class.bootstrap_methods
@@ -1082,7 +1085,7 @@ impl Thread {
                     .unwrap()
                     .allocate(Object::from_class(&self.class_area, &class));
                 stackframe.lock().unwrap().operand_stack.push(objectref);
-                self.remember_temp(&stackframe, objectref);
+                self.rember_temp(&stackframe, objectref, verbose);
             }
             Instruction::IfNull(is_rev, branch) => {
                 // ifnull | ifnonnull
@@ -1097,6 +1100,7 @@ impl Thread {
                 let new_array = Array1::new(&self.class_area, count as usize, field_type);
                 let objectref = self.heap.lock().unwrap().allocate(new_array);
                 stackframe.lock().unwrap().operand_stack.push(objectref);
+                self.rember_temp(&stackframe, objectref, verbose);
             }
             Instruction::NewArray2(field_type) => {
                 // {ty}newarray
@@ -1104,6 +1108,7 @@ impl Thread {
                 let new_array = Array2::new(&self.class_area, count as usize, field_type);
                 let objectref = self.heap.lock().unwrap().allocate(new_array);
                 stackframe.lock().unwrap().operand_stack.push(objectref);
+                self.rember_temp(&stackframe, objectref, verbose);
             }
             Instruction::ArrayStore1 => {
                 // store 1 value into an array
@@ -1111,20 +1116,20 @@ impl Thread {
                 let index = stackframe.lock().unwrap().operand_stack.pop().unwrap();
                 let array_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
-                let is_reference_array =
-                    ArrayType.get(&self.heap.lock().unwrap(), array_ref as usize, |arrty| {
-                        matches!(arrty, FieldType::Object(_) | FieldType::Array(_))
-                    })?;
                 let old =
-                    Array1.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
+                    Array1.get_mut(&mut self.heap.lock().unwrap(), array_ref as usize, |arr| {
                         let old = arr.contents[index as usize];
                         arr.contents[index as usize] = value;
                         old
                     })?;
-                if is_reference_array {
+                if ArrayType.get(
+                    &self.heap.lock().unwrap(),
+                    array_ref as usize,
+                    FieldType::is_reference,
+                )? {
                     // if it's a reference type, increment the ref count
-                    self.remember(value);
-                    self.forgor(old);
+                    self.rember(value, verbose);
+                    self.forgor(old, verbose);
                 }
             }
             Instruction::ArrayStore2 => {
@@ -1133,7 +1138,7 @@ impl Thread {
                 let index = stackframe.lock().unwrap().operand_stack.pop().unwrap();
                 let array_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
-                Array2.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
+                Array2.get_mut(&mut self.heap.lock().unwrap(), array_ref as usize, |arr| {
                     arr.contents[index as usize] = value;
                 })?;
             }
@@ -1143,10 +1148,17 @@ impl Thread {
                 let array_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
                 let value =
-                    Array1.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
+                    Array1.get_mut(&mut self.heap.lock().unwrap(), array_ref as usize, |arr| {
                         arr.contents[index as usize]
                     })?;
                 stackframe.lock().unwrap().operand_stack.push(value);
+                if ArrayType.get(
+                    &self.heap.lock().unwrap(),
+                    array_ref as usize,
+                    FieldType::is_reference,
+                )? {
+                    self.rember_temp(&stackframe, value, verbose);
+                }
             }
             Instruction::ArrayLoad2 => {
                 // load 2 values from an array
@@ -1154,7 +1166,7 @@ impl Thread {
                 let array_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
                 let value =
-                    Array2.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
+                    Array2.get_mut(&mut self.heap.lock().unwrap(), array_ref as usize, |arr| {
                         arr.contents[index as usize]
                     })?;
                 push_long(&mut stackframe.lock().unwrap().operand_stack, value);
@@ -1173,6 +1185,7 @@ impl Thread {
                     arr_type,
                 )?;
                 stackframe.lock().unwrap().operand_stack.push(allocation);
+                self.rember_temp(&stackframe, allocation, verbose);
             }
             Instruction::ArrayLength => {
                 let arr_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap() as usize;
@@ -1211,17 +1224,48 @@ impl Thread {
         Ok(())
     }
 
-    fn remember_temp(&self, stackframe: &Mutex<StackFrame>, value: u32) {
+    fn rember_temp(&self, stackframe: &Mutex<StackFrame>, value: u32, verbose: bool) {
         self.heap.lock().unwrap().inc_ref(value);
         stackframe.lock().unwrap().garbage.push(value);
+        if verbose {
+            println!("Rember (temporary) {value}");
+        }
     }
 
-    fn remember(&self, value: u32) {
+    fn rember(&self, value: u32, verbose: bool) {
         self.heap.lock().unwrap().inc_ref(value);
+        if verbose {
+            println!("Rember {value}");
+        }
     }
 
-    fn forgor(&self, value: u32) {
+    fn forgor(&self, value: u32, verbose: bool) {
         self.heap.lock().unwrap().dec_ref(value);
+        if verbose {
+            println!("forgor {value}");
+        }
+    }
+
+    fn rember_args(
+        &mut self,
+        stackframe: &Mutex<StackFrame>,
+        method: &Method,
+        is_static: bool,
+        verbose: bool,
+    ) {
+        let mut idx = 0;
+        if !is_static {
+            idx = 1;
+            let this = stackframe.lock().unwrap().locals[0];
+            self.rember_temp(stackframe, this, verbose);
+        }
+        for param in &method.descriptor.parameters {
+            if param.is_reference() {
+                let local = stackframe.lock().unwrap().locals[idx];
+                self.rember_temp(stackframe, local, verbose);
+            }
+            idx += param.get_size();
+        }
     }
 
     fn maybe_initialize_class(&mut self, class: &Class, stackframe: &Mutex<StackFrame>) -> bool {
@@ -1427,6 +1471,7 @@ impl Thread {
                 }
                 let heap_pointer = self.heap.lock().unwrap().allocate_str(Arc::from(&*output));
                 stackframe.lock().unwrap().operand_stack.push(heap_pointer);
+                self.rember_temp(stackframe, heap_pointer, verbose);
                 if verbose {
                     println!("makeConcatWithConstants: {heap_pointer}");
                 }
@@ -1439,6 +1484,7 @@ impl Thread {
     fn collect_garbage(&self, stackframe: &Mutex<StackFrame>) {
         let mut heap_borrow = self.heap.lock().unwrap();
         for ptr in core::mem::take(&mut stackframe.lock().unwrap().garbage) {
+            // println!("Collecting Garbage {ptr}");
             heap_borrow.dec_ref(ptr);
         }
     }
@@ -1473,7 +1519,7 @@ impl Thread {
         }
         let stackframe = self.stack.last().unwrap();
         if is_reference {
-            self.remember_temp(stackframe, ret_value);
+            self.rember_temp(stackframe, ret_value, verbose);
         }
         let ret_address = stackframe.lock().unwrap().operand_stack.pop().unwrap();
         self.pc_register = ret_address as usize;

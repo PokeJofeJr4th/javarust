@@ -5,8 +5,9 @@ use std::{
 
 use crate::{
     class::{
-        AccessFlags, Attribute, BootstrapMethod, ByteCode, Class, ClassVersion, Code, Constant,
-        Field, InnerClass, Method, MethodDescriptor, NativeMethod, NativeTodo,
+        code::{ByteCode, NativeMethod, NativeTodo},
+        AccessFlags, Attribute, BootstrapMethod, Class, ClassVersion, Code, Constant, Field,
+        InnerClass, Method, MethodDescriptor,
     },
     data::{SharedClassArea, WorkingClassArea},
 };

@@ -1,20 +1,23 @@
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    class::FieldType, data::NULL, virtual_machine::{
+    class::FieldType,
+    data::NULL,
+    virtual_machine::{
         object::{Array1, Array2, ArrayFields, ArrayType, ObjectFinder},
         StackFrame, Thread,
-    }
+    },
 };
 
 #[allow(clippy::only_used_in_recursion)]
 pub fn deep_to_string(
     thread: &mut Thread,
     stackframe: &Mutex<StackFrame>,
+    [index]: [u32; 1],
     verbose: bool,
 ) -> Result<Arc<str>, String> {
     let heap = thread.heap.lock().unwrap();
-    let index = stackframe.lock().unwrap().operand_stack.pop().unwrap() as usize;
+    let index = index as usize;
     let arr_type = ArrayType.get(&heap, index, Clone::clone)?;
     match arr_type {
         FieldType::Array(_) => {
@@ -24,10 +27,7 @@ pub fn deep_to_string(
                 "[{}]",
                 indices_vec
                     .into_iter()
-                    .map(|idx| {
-                        stackframe.lock().unwrap().operand_stack.push(idx);
-                        deep_to_string(thread, stackframe, verbose)
-                    })
+                    .map(|idx| { deep_to_string(thread, stackframe, [idx], verbose) })
                     .collect::<Result<Vec<_>, _>>()?
                     .join(", ")
             )
@@ -69,10 +69,11 @@ pub fn deep_to_string(
 
 pub fn to_string(
     thread: &mut Thread,
-    stackframe: &Mutex<StackFrame>,
+    _stackframe: &Mutex<StackFrame>,
+    [arr_ref]: [u32; 1],
     _verbose: bool,
 ) -> Result<Arc<str>, String> {
-    let arr_ref = stackframe.lock().unwrap().locals[0] as usize;
+    let arr_ref = arr_ref as usize;
     let field_type = ArrayType.get(&thread.heap.lock().unwrap(), arr_ref, Clone::clone)?;
     if field_type.get_size() == 2 {
         Array2.get(

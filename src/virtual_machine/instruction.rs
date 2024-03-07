@@ -1,7 +1,7 @@
 use std::{fmt::Debug, iter::Peekable, sync::Arc};
 
 use crate::{
-    class::{Constant, ExceptionTableEntry, FieldType, MethodDescriptor},
+    class::{code::ExceptionTableEntry, Constant, FieldType, MethodDescriptor},
     class_loader::parse_field_type,
     data::{SharedClassArea, NULL},
 };

@@ -147,11 +147,15 @@ impl NativeMethod for NativeTodo {
 }
 
 #[derive(Clone, Copy)]
-pub struct NativeSingleMethod<T>(pub T);
+pub struct NativeSingleMethod<T, const N: usize = 1>(pub T);
 
 impl<
-        T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<u32, String> + Send + Sync + 'static,
-    > NativeMethod for NativeSingleMethod<T>
+        T: Fn(&mut Thread, &Mutex<StackFrame>, [u32; N], bool) -> Result<u32, String>
+            + Send
+            + Sync
+            + 'static,
+        const N: usize,
+    > NativeMethod for NativeSingleMethod<T, N>
 {
     fn run(
         &self,
@@ -159,7 +163,11 @@ impl<
         stackframe: &Mutex<StackFrame>,
         is_verbose: bool,
     ) -> Result<(), String> {
-        let single = self.0(thread, stackframe, is_verbose)?;
+        let Ok(values) = <[u32; N]>::try_from(stackframe.lock().unwrap().locals[..N].to_vec())
+        else {
+            panic!("Function does not have enough local variables for its signature");
+        };
+        let single = self.0(thread, stackframe, values, is_verbose)?;
         stackframe.lock().unwrap().operand_stack.push(single);
         thread.return_one(is_verbose);
         Ok(())
@@ -167,11 +175,15 @@ impl<
 }
 
 #[derive(Clone, Copy)]
-pub struct NativeDoubleMethod<T>(pub T);
+pub struct NativeDoubleMethod<T, const N: usize = 1>(pub T);
 
 impl<
-        T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<u64, String> + Send + Sync + 'static,
-    > NativeMethod for NativeDoubleMethod<T>
+        T: Fn(&mut Thread, &Mutex<StackFrame>, [u32; N], bool) -> Result<u64, String>
+            + Send
+            + Sync
+            + 'static,
+        const N: usize,
+    > NativeMethod for NativeDoubleMethod<T, N>
 {
     fn run(
         &self,
@@ -179,7 +191,11 @@ impl<
         stackframe: &Mutex<StackFrame>,
         is_verbose: bool,
     ) -> Result<(), String> {
-        let double = self.0(thread, stackframe, is_verbose)?;
+        let Ok(values) = <[u32; N]>::try_from(stackframe.lock().unwrap().locals[..N].to_vec())
+        else {
+            panic!("Function does not have enough local variables for its signature");
+        };
+        let double = self.0(thread, stackframe, values, is_verbose)?;
         push_long(&mut stackframe.lock().unwrap().operand_stack, double);
         thread.return_two(is_verbose);
         Ok(())
@@ -187,14 +203,15 @@ impl<
 }
 
 #[derive(Clone, Copy)]
-pub struct NativeStringMethod<T>(pub T);
+pub struct NativeStringMethod<T, const N: usize = 1>(pub T);
 
 impl<
-        T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<Arc<str>, String>
+        T: Fn(&mut Thread, &Mutex<StackFrame>, [u32; N], bool) -> Result<Arc<str>, String>
             + Send
             + Sync
             + 'static,
-    > NativeMethod for NativeStringMethod<T>
+        const N: usize,
+    > NativeMethod for NativeStringMethod<T, N>
 {
     fn run(
         &self,
@@ -202,7 +219,11 @@ impl<
         stackframe: &Mutex<StackFrame>,
         is_verbose: bool,
     ) -> Result<(), String> {
-        let str = self.0(thread, stackframe, is_verbose)?;
+        let Ok(values) = <[u32; N]>::try_from(stackframe.lock().unwrap().locals[..N].to_vec())
+        else {
+            panic!("Function does not have enough local variables for its signature");
+        };
+        let str = self.0(thread, stackframe, values, is_verbose)?;
         let heap_allocation = thread.heap.lock().unwrap().allocate_str(str);
         stackframe
             .lock()
@@ -215,13 +236,15 @@ impl<
 }
 
 #[derive(Clone, Copy)]
-pub struct NativeVoid<
-    T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<(), String> + Send + Sync,
->(pub T);
+pub struct NativeVoid<T, const N: usize = 1>(pub T);
 
 impl<
-        T: Fn(&mut Thread, &Mutex<StackFrame>, bool) -> Result<(), String> + Send + Sync + 'static,
-    > NativeMethod for NativeVoid<T>
+        T: Fn(&mut Thread, &Mutex<StackFrame>, [u32; N], bool) -> Result<(), String>
+            + Send
+            + Sync
+            + 'static,
+        const N: usize,
+    > NativeMethod for NativeVoid<T, N>
 {
     fn run(
         &self,
@@ -229,7 +252,25 @@ impl<
         stackframe: &Mutex<StackFrame>,
         is_verbose: bool,
     ) -> Result<(), String> {
-        self.0(thread, stackframe, is_verbose)?;
+        let Ok(values) = <[u32; N]>::try_from(stackframe.lock().unwrap().locals[..N].to_vec())
+        else {
+            panic!("Function does not have enough local variables for its signature");
+        };
+        self.0(thread, stackframe, values, is_verbose)?;
+        thread.return_void();
+        Ok(())
+    }
+}
+
+pub struct NativeNoop;
+
+impl NativeMethod for NativeNoop {
+    fn run(
+        &self,
+        thread: &mut Thread,
+        _stackframe: &Mutex<StackFrame>,
+        _is_verbose: bool,
+    ) -> Result<(), String> {
         thread.return_void();
         Ok(())
     }

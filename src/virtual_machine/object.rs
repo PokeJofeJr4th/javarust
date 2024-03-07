@@ -198,19 +198,19 @@ pub trait ObjectFinder {
     ) -> Result<T, String> {
         heap.get(index)
             .ok_or_else(|| String::from("Null pointer exception"))
-            .and_then(|obj| self.extract(&obj.lock().unwrap(), func))
+            .and_then(|obj| self.extract(obj, func))
     }
 
     /// # Errors
     fn get_mut<T>(
         &self,
-        heap: &Heap,
+        heap: &mut Heap,
         index: usize,
         func: impl FnOnce(Self::TargetMut<'_>) -> T,
     ) -> Result<T, String> {
-        heap.get(index)
+        heap.get_mut(index)
             .ok_or_else(|| String::from("Null pointer exception"))
-            .and_then(|obj| self.extract_mut(&mut obj.lock().unwrap(), func))
+            .and_then(|obj| self.extract_mut(obj, func))
     }
 
     /// # Errors
@@ -282,7 +282,7 @@ impl ObjectFinder for StringObj {
     }
 }
 
-impl ObjectFinder for &Class {
+impl ObjectFinder for Class {
     type Target<'a> = &'a Instance;
     type TargetMut<'a> = &'a mut Instance;
 
