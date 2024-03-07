@@ -25,84 +25,25 @@ impl Instance {
 
 #[derive(Debug)]
 pub struct Object {
-    fields: Instance,
-    class: Arc<str>,
-    super_object: Option<Box<Object>>,
+    pub fields: Vec<u32>,
+    pub native_fields: Vec<Box<dyn Any + Send + Sync>>,
+    pub class: Arc<str>,
 }
 
 impl Object {
     /// # Panics
-    pub fn from_class(class_area: &SharedClassArea, class: &Class) -> Self {
+    pub fn from_class(class: &Class) -> Self {
         Self {
-            fields: Instance {
-                fields: class
-                    .fields
-                    .iter()
-                    .flat_map(|(field, _idx)| match &field.descriptor {
-                        FieldType::Array(_) | FieldType::Object(_) => {
-                            std::iter::repeat(NULL).take(1)
-                        }
-                        other => std::iter::repeat(0).take(other.get_size()),
-                    })
-                    .collect::<Vec<_>>(),
-                native_fields: Vec::new(),
-            },
+            fields: class
+                .fields
+                .iter()
+                .flat_map(|(field, _idx)| match &field.descriptor {
+                    FieldType::Array(_) | FieldType::Object(_) => std::iter::repeat(NULL).take(1),
+                    other => std::iter::repeat(0).take(other.get_size()),
+                })
+                .collect::<Vec<_>>(),
+            native_fields: Vec::new(),
             class: class.this.clone(),
-            super_object: if &*class.super_class == "java/lang/Object" {
-                None
-            } else {
-                Some(Box::new(Self::from_class(
-                    class_area,
-                    &class_area.search(&class.super_class).unwrap(),
-                )))
-            },
-        }
-    }
-
-    /// # Panics
-    pub fn with_fields(class_area: &SharedClassArea, class: &Class, fields: Instance) -> Self {
-        Self {
-            fields,
-            class: class.this.clone(),
-            super_object: if &*class.super_class == "java/lang/Object" {
-                None
-            } else {
-                Some(Box::new(Self::from_class(
-                    class_area,
-                    &class_area.search(&class.super_class).unwrap(),
-                )))
-            },
-        }
-    }
-
-    /// Create a class with Object as its superclass
-    /// # Panics
-    pub fn orphan_with_fields(class: &Class, fields: Instance) -> Self {
-        Self {
-            fields,
-            class: class.this.clone(),
-            super_object: Some(Box::new(Self {
-                fields: Instance::new(),
-                class: "java/lang/Object".into(),
-                super_object: None,
-            })),
-        }
-    }
-
-    pub fn class_mut(&mut self, class: &str) -> Option<&mut Instance> {
-        if &*self.class == class {
-            Some(&mut self.fields)
-        } else {
-            self.super_object.as_mut()?.class_mut(class)
-        }
-    }
-
-    #[must_use]
-    pub fn class(&self, class: &str) -> Option<&Instance> {
-        if &*self.class == class {
-            Some(&self.fields)
-        } else {
-            self.super_object.as_ref()?.class(class)
         }
     }
 
@@ -235,13 +176,11 @@ impl StringObj {
     /// # Panics
     #[must_use]
     pub fn new(str: Arc<str>) -> Object {
-        Object::orphan_with_fields(
-            unsafe { native::STRING_CLASS.as_ref().unwrap() },
-            Instance {
-                fields: Vec::new(),
-                native_fields: vec![Box::new(str)],
-            },
-        )
+        Object {
+            class: unsafe { native::STRING_CLASS.as_ref().unwrap().this.clone() },
+            fields: Vec::new(),
+            native_fields: vec![Box::new(str)],
+        }
     }
 }
 
@@ -255,8 +194,6 @@ impl ObjectFinder for StringObj {
         func: impl FnOnce(Self::Target<'_>) -> T,
     ) -> Result<T, String> {
         object
-            .class(unsafe { &native::STRING_CLASS.as_ref().unwrap().this })
-            .ok_or_else(|| String::from("Object is not an instance of java/lang/String"))?
             .native_fields
             .first()
             .ok_or_else(|| String::from("Native string binding missing"))?
@@ -271,8 +208,6 @@ impl ObjectFinder for StringObj {
         func: impl FnOnce(Self::TargetMut<'_>) -> T,
     ) -> Result<T, String> {
         object
-            .class_mut(unsafe { &native::STRING_CLASS.as_ref().unwrap().this })
-            .unwrap()
             .native_fields
             .get_mut(0)
             .ok_or_else(|| String::from("Native string binding missing"))?
@@ -283,18 +218,15 @@ impl ObjectFinder for StringObj {
 }
 
 impl ObjectFinder for Class {
-    type Target<'a> = &'a Instance;
-    type TargetMut<'a> = &'a mut Instance;
+    type Target<'a> = &'a Object;
+    type TargetMut<'a> = &'a mut Object;
 
     fn extract<T>(
         &self,
         object: &Object,
         func: impl FnOnce(Self::Target<'_>) -> T,
     ) -> Result<T, String> {
-        object
-            .class(&self.this)
-            .ok_or_else(|| format!("Expected a(n) {}; got a(n) {}", self.this, object.class))
-            .map(func)
+        Ok(func(object))
     }
 
     fn extract_mut<T>(
@@ -302,11 +234,7 @@ impl ObjectFinder for Class {
         object: &mut Object,
         func: impl FnOnce(Self::TargetMut<'_>) -> T,
     ) -> Result<T, String> {
-        Ok(func(
-            object
-                .class_mut(&self.this)
-                .ok_or_else(|| format!("Expected a(n) {}", self.this))?,
-        ))
+        Ok(func(object))
     }
 }
 
@@ -345,8 +273,6 @@ impl ObjectFinder for StringBuilder {
         func: impl FnOnce(Self::Target<'_>) -> T,
     ) -> Result<T, String> {
         object
-            .class(unsafe { &native::STRING_BUILDER_CLASS.as_ref().unwrap().this })
-            .ok_or_else(|| String::from("Given object is not an instance of StringBuilder"))?
             .native_fields
             .first()
             .ok_or_else(|| String::from("StringBuilder native field missing"))?
@@ -361,8 +287,6 @@ impl ObjectFinder for StringBuilder {
         func: impl FnOnce(Self::TargetMut<'_>) -> T,
     ) -> Result<T, String> {
         object
-            .class_mut(unsafe { &native::STRING_BUILDER_CLASS.as_ref().unwrap().this })
-            .ok_or_else(|| "Expected a java/lang/StringBuilder".to_string())?
             .native_fields
             .get_mut(0)
             .ok_or_else(|| String::from("StringBuilder native field missing"))?
@@ -384,16 +308,11 @@ impl ObjectFinder for ArrayType {
         func: impl FnOnce(Self::Target<'_>) -> T,
     ) -> Result<T, String> {
         object
-            .class(unsafe { &native::ARRAY_CLASS.as_ref().unwrap().this })
-            .ok_or_else(|| String::from("Object is not an array"))
-            .and_then(|instance| {
-                instance
-                    .native_fields
-                    .first()
-                    .ok_or_else(|| String::from("Native fields missing"))?
-                    .downcast_ref::<FieldType>()
-                    .ok_or_else(|| String::from("Native feld is wrong type"))
-            })
+            .native_fields
+            .first()
+            .ok_or_else(|| String::from("Native fields missing"))?
+            .downcast_ref::<FieldType>()
+            .ok_or_else(|| String::from("Native feld is wrong type"))
             .map(func)
     }
 
@@ -403,8 +322,6 @@ impl ObjectFinder for ArrayType {
         func: impl FnOnce(Self::TargetMut<'_>) -> T,
     ) -> Result<T, String> {
         object
-            .class_mut(unsafe { &native::ARRAY_CLASS.as_ref().unwrap().this })
-            .ok_or_else(|| "Expected an array".to_string())?
             .native_fields
             .get_mut(0)
             .ok_or_else(|| String::from("Native field is missing"))?
@@ -429,30 +346,23 @@ pub struct Array1;
 impl Array1 {
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
-    pub fn new(class_area: &SharedClassArea, count: usize, arr_type: FieldType) -> Object {
+    pub fn new(count: usize, arr_type: FieldType) -> Object {
         let default_value = if matches!(arr_type, FieldType::Object(_)) {
             NULL
         } else {
             0
         };
-        Self::from_vec(class_area, vec![default_value; count], arr_type)
+        Self::from_vec(vec![default_value; count], arr_type)
     }
 
     #[must_use]
     /// # Panics
-    pub fn from_vec(
-        class_area: &SharedClassArea,
-        contents: Vec<u32>,
-        arr_type: FieldType,
-    ) -> Object {
-        Object::with_fields(
-            class_area,
-            unsafe { native::ARRAY_CLASS.as_ref().unwrap() },
-            Instance {
-                fields: Vec::new(),
-                native_fields: vec![Box::new(arr_type), Box::new(contents)],
-            },
-        )
+    pub fn from_vec(contents: Vec<u32>, arr_type: FieldType) -> Object {
+        Object {
+            class: unsafe { native::ARRAY_CLASS.as_ref().unwrap().this.clone() },
+            fields: Vec::new(),
+            native_fields: vec![Box::new(arr_type), Box::new(contents)],
+        }
     }
 }
 
@@ -465,11 +375,7 @@ impl ObjectFinder for Array1 {
         object: &Object,
         func: impl FnOnce(Self::Target<'_>) -> T,
     ) -> Result<T, String> {
-        let [arr_type, contents] = &object
-            .class(unsafe { &native::ARRAY_CLASS.as_ref().unwrap().this })
-            .ok_or_else(|| String::from("Provided object is not an Array"))?
-            .native_fields[..]
-        else {
+        let [arr_type, contents] = &object.native_fields[..] else {
             return Err(String::from(
                 "Array class has wrong number of native fields",
             ));
@@ -488,11 +394,7 @@ impl ObjectFinder for Array1 {
         object: &mut Object,
         func: impl FnOnce(Self::TargetMut<'_>) -> T,
     ) -> Result<T, String> {
-        let [arr_type, contents] = &mut object
-            .class_mut(unsafe { &native::ARRAY_CLASS.as_ref().unwrap().this })
-            .unwrap()
-            .native_fields[..]
-        else {
+        let [arr_type, contents] = &mut object.native_fields[..] else {
             return Err(String::from(
                 "Array class has wrong number of native fields",
             ));
@@ -512,25 +414,18 @@ pub struct Array2;
 impl Array2 {
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
-    pub fn new(class_area: &SharedClassArea, count: usize, arr_type: FieldType) -> Object {
-        Self::from_vec(class_area, vec![0u64; count], arr_type)
+    pub fn new(count: usize, arr_type: FieldType) -> Object {
+        Self::from_vec(vec![0u64; count], arr_type)
     }
 
     #[must_use]
     /// # Panics
-    pub fn from_vec(
-        class_area: &SharedClassArea,
-        contents: Vec<u64>,
-        arr_type: FieldType,
-    ) -> Object {
-        Object::with_fields(
-            class_area,
-            unsafe { native::ARRAY_CLASS.as_ref().unwrap() },
-            Instance {
-                fields: Vec::new(),
-                native_fields: vec![Box::new(arr_type), Box::new(contents)],
-            },
-        )
+    pub fn from_vec(contents: Vec<u64>, arr_type: FieldType) -> Object {
+        Object {
+            class: unsafe { native::ARRAY_CLASS.as_ref().unwrap().this.clone() },
+            fields: Vec::new(),
+            native_fields: vec![Box::new(arr_type), Box::new(contents)],
+        }
     }
 }
 
@@ -543,11 +438,7 @@ impl ObjectFinder for Array2 {
         object: &Object,
         func: impl FnOnce(Self::Target<'_>) -> T,
     ) -> Result<T, String> {
-        let [arr_type, contents] = &object
-            .class(unsafe { &native::ARRAY_CLASS.as_ref().unwrap().this })
-            .ok_or_else(|| String::from("Object isn't an array"))?
-            .native_fields[..]
-        else {
+        let [arr_type, contents] = &object.native_fields[..] else {
             return Err(String::from("Array class has wrong number of fields"));
         };
         let Some(arr_type) = arr_type.downcast_ref::<FieldType>() else {
@@ -564,11 +455,7 @@ impl ObjectFinder for Array2 {
         object: &mut Object,
         func: impl FnOnce(Self::TargetMut<'_>) -> T,
     ) -> Result<T, String> {
-        let [arr_type, contents] = &mut object
-            .class_mut(unsafe { &native::ARRAY_CLASS.as_ref().unwrap().this })
-            .unwrap()
-            .native_fields[..]
-        else {
+        let [arr_type, contents] = &mut object.native_fields[..] else {
             return Err(String::from(
                 "Array object has the wrong number of native fields",
             ));

@@ -7,7 +7,7 @@ use crate::virtual_machine::{
 
 pub fn init(
     thread: &mut Thread,
-    stackframe: &Mutex<StackFrame>,
+    _stackframe: &Mutex<StackFrame>,
     [obj_ref, str_ref]: [u32; 2],
     _verbose: bool,
 ) -> Result<(), String> {
@@ -17,11 +17,7 @@ pub fn init(
         init_string.to_string()
     })?;
     AnyObj.get_mut(&mut heap_borrow, obj_ref as usize, |heap_obj| {
-        heap_obj
-            .class_mut(&stackframe.lock().unwrap().class.this)
-            .unwrap()
-            .native_fields
-            .push(Box::new(init_string));
+        heap_obj.native_fields.push(Box::new(init_string));
     })
 }
 

@@ -38,6 +38,8 @@ impl RawClass {
     /// # Panics
     pub fn to_class(&self, class_area: &WorkingClassArea) -> Class {
         let mut methods = self.methods.clone();
+        let mut fields = self.fields.clone();
+        let mut field_size = self.field_size;
         let mut class = self.super_class.clone();
         while &*class != "java/lang/Object" {
             let class_ref = class_area.search(&class).expect(&class);
@@ -48,6 +50,10 @@ impl RawClass {
                 {
                     methods.push(method.clone());
                 }
+            }
+            for (field, _) in &class_ref.fields {
+                fields.push((field.clone(), field_size));
+                field_size += field.descriptor.get_size();
             }
             class = class_ref.super_class.clone();
         }
@@ -60,8 +66,8 @@ impl RawClass {
             this: self.this.clone(),
             super_class: self.super_class.clone(),
             interfaces: self.interfaces.clone(),
-            field_size: self.field_size,
-            fields: self.fields.clone(),
+            field_size,
+            fields,
             static_data: Mutex::new(self.static_data.clone()),
             statics: self.statics.clone(),
             methods,

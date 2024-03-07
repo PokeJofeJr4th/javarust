@@ -804,20 +804,8 @@ impl Thread {
                         .extend([upper, lower]);
                 }
             }
-            Instruction::GetField(class, name, field_type) => {
+            Instruction::GetField(Some(idx), _class, _name, field_type) => {
                 // get a field from an object
-                let Some(class) = self.class_area.search(&class) else {
-                    return Err(format!("Couldn't resolve class {class}"));
-                };
-
-                let field_index = class
-                    .fields
-                    .iter()
-                    .find(|(field, _)| field.name == name)
-                    .ok_or_else(|| {
-                        format!("Couldn't find field `{name}` on class `{}`", class.this)
-                    })?
-                    .1;
                 let object_index = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
                 AnyObj
@@ -825,24 +813,15 @@ impl Thread {
                         &mut self.heap.lock().unwrap(),
                         object_index as usize,
                         |object_borrow| {
-                            if verbose {
-                                println!(
-                                    "Getting Field {name} of {} at {object_index}",
-                                    class.this
-                                );
-                                println!("{object_borrow:?}");
-                            }
-                            let object_fields = object_borrow.class_mut(&class.this).unwrap();
-
                             if field_type.get_size() == 1 {
-                                let value = object_fields.fields[field_index];
+                                let value = object_borrow.fields[idx];
                                 if field_type.is_reference() {
                                     self.rember_temp(&stackframe, value, verbose);
                                 }
                                 stackframe.lock().unwrap().operand_stack.push(value);
                             } else {
-                                let upper = object_fields.fields[field_index];
-                                let lower = object_fields.fields[field_index + 1];
+                                let upper = object_borrow.fields[idx];
+                                let lower = object_borrow.fields[idx + 1];
                                 stackframe
                                     .lock()
                                     .unwrap()
@@ -853,22 +832,10 @@ impl Thread {
                     )
                     .unwrap();
             }
-            Instruction::PutField(class, name, field_type) => {
+            Instruction::PutField(Some(idx), _class, _name, field_type) => {
                 // putfield
                 // set a field in an object
 
-                let Some(class) = self.class_area.search(&class) else {
-                    return Err(format!("Couldn't resolve class {class}"));
-                };
-
-                let field_index = class
-                    .fields
-                    .iter()
-                    .find(|(field, _)| field.name == name)
-                    .ok_or_else(|| {
-                        format!("Couldn't find field `{name}` on class `{}`", class.this)
-                    })?
-                    .1;
                 let value = if field_type.get_size() == 1 {
                     stackframe.lock().unwrap().operand_stack.pop().unwrap() as u64
                 } else {
@@ -883,19 +850,16 @@ impl Thread {
                         if verbose {
                             println!("Object class: {}", object_borrow.this_class());
                         }
-                        let object_fields = object_borrow
-                            .class_mut(&class.this)
-                            .ok_or_else(|| format!("Expected a(n) {}", class.this))?;
 
                         if field_type.get_size() == 1 {
                             if field_type.is_reference() {
-                                self.forgor(object_fields.fields[field_index], verbose);
+                                self.forgor(object_borrow.fields[idx], verbose);
                                 self.rember(value as u32, verbose);
                             }
-                            object_fields.fields[field_index] = value as u32;
+                            object_borrow.fields[idx] = value as u32;
                         } else {
-                            object_fields.fields[field_index] = (value >> 32) as u32;
-                            object_fields.fields[field_index + 1] = value as u32;
+                            object_borrow.fields[idx] = (value >> 32) as u32;
+                            object_borrow.fields[idx + 1] = value as u32;
                         }
                         Ok(())
                     },
@@ -1083,7 +1047,7 @@ impl Thread {
                     .heap
                     .lock()
                     .unwrap()
-                    .allocate(Object::from_class(&self.class_area, &class));
+                    .allocate(Object::from_class(&class));
                 stackframe.lock().unwrap().operand_stack.push(objectref);
                 self.rember_temp(&stackframe, objectref, verbose);
             }
@@ -1097,7 +1061,7 @@ impl Thread {
             Instruction::NewArray1(field_type) => {
                 // {ty}newarray
                 let count = stackframe.lock().unwrap().operand_stack.pop().unwrap();
-                let new_array = Array1::new(&self.class_area, count as usize, field_type);
+                let new_array = Array1::new(count as usize, field_type);
                 let objectref = self.heap.lock().unwrap().allocate(new_array);
                 stackframe.lock().unwrap().operand_stack.push(objectref);
                 self.rember_temp(&stackframe, objectref, verbose);
@@ -1105,7 +1069,7 @@ impl Thread {
             Instruction::NewArray2(field_type) => {
                 // {ty}newarray
                 let count = stackframe.lock().unwrap().operand_stack.pop().unwrap();
-                let new_array = Array2::new(&self.class_area, count as usize, field_type);
+                let new_array = Array2::new(count as usize, field_type);
                 let objectref = self.heap.lock().unwrap().allocate(new_array);
                 stackframe.lock().unwrap().operand_stack.push(objectref);
                 self.rember_temp(&stackframe, objectref, verbose);
@@ -1179,7 +1143,6 @@ impl Thread {
                 drop(stackframe_ref);
                 // make all the thingies
                 let allocation = allocate_multi_array(
-                    &self.class_area,
                     &mut self.heap.lock().unwrap(),
                     &dimension_sizes,
                     arr_type,
@@ -1543,16 +1506,15 @@ impl Thread {
 }
 
 fn allocate_multi_array(
-    class_area: &SharedClassArea,
     heap: &mut Heap,
     depth: &[u32],
     arr_type: FieldType,
 ) -> Result<u32, String> {
     match depth {
         [size] => Ok(heap.allocate(if arr_type.get_size() == 2 {
-            Array2::new(class_area, *size as usize, arr_type)
+            Array2::new(*size as usize, arr_type)
         } else {
-            Array1::new(class_area, *size as usize, arr_type)
+            Array1::new(*size as usize, arr_type)
         })),
         [size, rest @ ..] => {
             let FieldType::Array(inner_type) = arr_type else {
@@ -1560,12 +1522,12 @@ fn allocate_multi_array(
             };
             let current_array = (0..*size)
                 .map(|_| {
-                    let idx = allocate_multi_array(class_area, heap, rest, *inner_type.clone())?;
+                    let idx = allocate_multi_array(heap, rest, *inner_type.clone())?;
                     heap.inc_ref(idx);
                     Ok(idx)
                 })
                 .collect::<Result<Vec<_>, String>>()?;
-            Ok(heap.allocate(Array1::from_vec(class_area, current_array, *inner_type)))
+            Ok(heap.allocate(Array1::from_vec(current_array, *inner_type)))
         }
         [] => Err(String::from("Can't create 0-dimensional array")),
     }

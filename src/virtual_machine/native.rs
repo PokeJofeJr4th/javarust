@@ -445,7 +445,6 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
             |thread: &mut Thread, _: &_, []: [u32; 0], _verbose| {
                 let system_class = thread.class_area.search("java/lang/System").unwrap();
                 let out_ref = thread.heap.lock().unwrap().allocate(Object::from_class(
-                    &thread.class_area,
                     &thread.class_area.search("java/io/PrintStream").unwrap(),
                 ));
                 system_class.static_data.lock().unwrap()[0] = out_ref;

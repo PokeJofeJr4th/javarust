@@ -47,8 +47,8 @@ pub enum Instruction {
     Return2,
     GetStatic(Arc<str>, Arc<str>, FieldType),
     PutStatic(Arc<str>, Arc<str>, FieldType),
-    GetField(Arc<str>, Arc<str>, FieldType),
-    PutField(Arc<str>, Arc<str>, FieldType),
+    GetField(Option<usize>, Arc<str>, Arc<str>, FieldType),
+    PutField(Option<usize>, Arc<str>, Arc<str>, FieldType),
     InvokeVirtual(Arc<str>, Arc<str>, MethodDescriptor),
     InvokeInterface(Arc<str>, Arc<str>, MethodDescriptor),
     InvokeSpecial(Arc<str>, Arc<str>, MethodDescriptor),
@@ -117,8 +117,8 @@ impl Debug for Instruction {
             Self::Return2 => write!(f, "ret2"),
             Self::GetStatic(class, name, ty) => write!(f, "getstatic {ty} {class}.{name}"),
             Self::PutStatic(class, name, ty) => write!(f, "putstatic {ty} {class}.{name}"),
-            Self::GetField(class, name, ty) => write!(f, "getfield {ty} {class}.{name}"),
-            Self::PutField(class, name, ty) => write!(f, "putfield {ty} {class}.{name}"),
+            Self::GetField(_, class, name, ty) => write!(f, "getfield {ty} {class}.{name}"),
+            Self::PutField(_, class, name, ty) => write!(f, "putfield {ty} {class}.{name}"),
             Self::InvokeVirtual(class, name, ty) => {
                 write!(f, "invokevirtual {ty:?} {class}.{name}")
             }
@@ -239,13 +239,13 @@ pub fn hydrate_code(
                     let goto = translate_pc(target).unwrap();
                     Instruction::ICmp(cmp, goto as i16)
                 }
-                Instruction::GetField(class, field, ty) => {
-                    let class = concrete_field(class_area, &class, &field, &ty)?;
-                    Instruction::GetField(class, field, ty)
+                Instruction::GetField(None, class, field, ty) => {
+                    let idx = concrete_field(class_area, &class, &field, &ty)?;
+                    Instruction::GetField(Some(idx), class, field, ty)
                 }
-                Instruction::PutField(class, field, ty) => {
-                    let class = concrete_field(class_area, &class, &field, &ty)?;
-                    Instruction::PutField(class, field, ty)
+                Instruction::PutField(None, class, field, ty) => {
+                    let idx = concrete_field(class_area, &class, &field, &ty)?;
+                    Instruction::PutField(Some(idx), class, field, ty)
                 }
                 other => other,
             })
@@ -258,21 +258,17 @@ fn concrete_field(
     class: &str,
     field: &str,
     ty: &FieldType,
-) -> Result<Arc<str>, String> {
-    let mut current = class_area
+) -> Result<usize, String> {
+    let current = class_area
         .search(class)
         .ok_or_else(|| format!("Couldn't find class {class}"))?;
-    while !current
+    let idx = current
         .fields
         .iter()
-        .any(|(t, _)| &*t.name == field && &t.descriptor == ty)
-    {
-        let next_class = &current.super_class;
-        current = class_area
-            .search(next_class)
-            .ok_or_else(|| format!("Couldn't find class {next_class}"))?;
-    }
-    Ok(current.this.clone())
+        .find(|(f, _)| &*f.name == field && &f.descriptor == ty)
+        .ok_or_else(|| format!("Couldn't find field {ty:?} {class}.{field}"))?
+        .1;
+    Ok(idx)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -904,7 +900,7 @@ pub fn parse_instruction(
                 ));
             };
 
-            Ok(Instruction::GetField(class, name, field_type))
+            Ok(Instruction::GetField(None, class, name, field_type))
         }
         0xB5 => {
             // putfield
@@ -925,7 +921,7 @@ pub fn parse_instruction(
                 ));
             };
 
-            Ok(Instruction::PutField(class, name, field_type))
+            Ok(Instruction::PutField(None, class, name, field_type))
         }
         0xB6 => {
             // invokevirtual
