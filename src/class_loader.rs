@@ -2,7 +2,7 @@ use std::{iter::Peekable, sync::Arc};
 
 use crate::{
     class::{
-        AccessFlags, Attribute, BootstrapMethod, ByteCode, ClassVersion, Constant, ExceptionTableEntry, Field, FieldType, InnerClass, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, MethodDescriptor, MethodHandle, StackMapFrame, VerificationTypeInfo
+        code::{ByteCode, ExceptionTableEntry, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, StackMapFrame, VerificationTypeInfo}, AccessFlags, Attribute, BootstrapMethod, ClassVersion, Constant, Field, FieldType, InnerClass, MethodDescriptor, MethodHandle
     },
     data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea},
     virtual_machine::{add_native_methods, hydrate_code},
@@ -620,7 +620,12 @@ fn parse_code_attribute(
         } else {
             Some(class_index(constants, catch_type as usize)?)
         };
-        exception_table.push(ExceptionTableEntry { start_pc, end_pc, handler_pc, catch_type });
+        exception_table.push(ExceptionTableEntry {
+            start_pc,
+            end_pc,
+            handler_pc,
+            catch_type,
+        });
     }
 
     if verbose {

@@ -6,12 +6,12 @@ use std::{
 
 use crate::{
     class::{BootstrapMethod, Class, Constant, FieldType, Method, MethodDescriptor, MethodHandle},
-    data::{Heap, SharedClassArea, SharedHeap, SharedMethodArea},
+    data::{Heap, SharedClassArea, SharedHeap, SharedMethodArea, NULL},
 };
 
 use super::{
     instruction::Type,
-    object::{AnyObj, Array1, Array2, Object, ObjectFinder, StringObj},
+    object::{AnyObj, Array1, Array2, ArrayType, Object, ObjectFinder, StringObj},
     Cmp, Instruction, Op, StackFrame,
 };
 
@@ -55,6 +55,8 @@ impl Thread {
             }
             Instruction::LoadString(str) => {
                 let str_ptr = self.heap.lock().unwrap().allocate_str(str);
+                // never forget a static string
+                self.rember(str_ptr, verbose);
                 stackframe.lock().unwrap().operand_stack.push(str_ptr);
             }
             Instruction::Load2(index) => {
@@ -731,14 +733,13 @@ impl Thread {
                     return Ok(());
                 }
 
-                let staticindex = class
+                let &(ref static_ty, staticindex) = class
                     .statics
                     .iter()
                     .find(|(field, _)| field.name == name)
                     .ok_or_else(|| {
                         format!("Couldn't find static `{name}` on class `{}`", class.this)
-                    })?
-                    .1;
+                    })?;
                 if verbose {
                     println!("Putting Static {name} of {}", class.this);
                 }
@@ -746,6 +747,10 @@ impl Thread {
 
                 if field_type.get_size() == 1 {
                     let value = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                    if static_ty.descriptor.is_reference() {
+                        self.forgor(static_fields[staticindex], verbose);
+                        self.rember(value, verbose);
+                    }
                     static_fields[staticindex] = value;
                     drop(static_fields);
                 } else {
@@ -784,6 +789,9 @@ impl Thread {
                 if field_type.get_size() == 1 {
                     let value = static_fields[staticindex];
                     drop(static_fields);
+                    if field_type.is_reference() {
+                        self.rember_temp(&stackframe, value, verbose);
+                    }
                     stackframe.lock().unwrap().operand_stack.push(value);
                 } else {
                     let upper = static_fields[staticindex];
@@ -814,7 +822,7 @@ impl Thread {
 
                 AnyObj
                     .get_mut(
-                        &self.heap.lock().unwrap(),
+                        &mut self.heap.lock().unwrap(),
                         object_index as usize,
                         |object_borrow| {
                             if verbose {
@@ -828,6 +836,9 @@ impl Thread {
 
                             if field_type.get_size() == 1 {
                                 let value = object_fields.fields[field_index];
+                                if field_type.is_reference() {
+                                    self.rember_temp(&stackframe, value, verbose);
+                                }
                                 stackframe.lock().unwrap().operand_stack.push(value);
                             } else {
                                 let upper = object_fields.fields[field_index];
@@ -866,7 +877,7 @@ impl Thread {
                 let object_index = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
                 AnyObj.get_mut(
-                    &self.heap.lock().unwrap(),
+                    &mut self.heap.lock().unwrap(),
                     object_index as usize,
                     |object_borrow| -> Result<(), String> {
                         if verbose {
@@ -877,6 +888,10 @@ impl Thread {
                             .ok_or_else(|| format!("Expected a(n) {}", class.this))?;
 
                         if field_type.get_size() == 1 {
+                            if field_type.is_reference() {
+                                self.forgor(object_fields.fields[field_index], verbose);
+                                self.rember(value as u32, verbose);
+                            }
                             object_fields.fields[field_index] = value as u32;
                         } else {
                             object_fields.fields[field_index] = (value >> 32) as u32;
@@ -927,12 +942,13 @@ impl Thread {
                         resolved_method.name, resolved_class.this
                     );
                 }
-                self.invoke_method(resolved_method, resolved_class);
+                self.invoke_method(resolved_method.clone(), resolved_class);
                 self.pc_register = 0;
 
                 let new_stackframe = self.stack.last().unwrap().clone();
 
-                let new_locals = &mut new_stackframe.lock().unwrap().locals;
+                let mut stackframe_lock = new_stackframe.lock().unwrap();
+                let new_locals = &mut stackframe_lock.locals;
                 for (index, value) in stack_iter.enumerate() {
                     if verbose {
                         println!("new_locals[{index}]={value}");
@@ -942,6 +958,9 @@ impl Thread {
                 if verbose {
                     println!("new locals: {new_locals:?}");
                 }
+                drop(stackframe_lock);
+
+                self.rember_args(&new_stackframe, &resolved_method, false, verbose);
             }
             Instruction::InvokeSpecial(class, name, method_type) => {
                 // invoke an instance method
@@ -974,12 +993,13 @@ impl Thread {
                         method_ref.name, class_ref.this
                     );
                 }
-                self.invoke_method(method_ref, class_ref);
+                self.invoke_method(method_ref.clone(), class_ref);
                 self.pc_register = 0;
 
                 let new_stackframe = self.stack.last().unwrap().clone();
 
-                let new_locals = &mut new_stackframe.lock().unwrap().locals;
+                let mut stackframe_lock = new_stackframe.lock().unwrap();
+                let new_locals = &mut stackframe_lock.locals;
                 for (index, value) in stack_iter.enumerate() {
                     if verbose {
                         println!("new_locals[{index}]={value}");
@@ -989,6 +1009,9 @@ impl Thread {
                 if verbose {
                     println!("new locals: {new_locals:?}");
                 }
+                drop(stackframe_lock);
+
+                self.rember_args(&new_stackframe, &method_ref, false, verbose);
             }
             Instruction::InvokeStatic(class, name, method_type) => {
                 // make a static method
@@ -1016,12 +1039,13 @@ impl Thread {
                 stack.extend((&mut stack_iter).take(args_start));
                 stack.push(self.pc_register as u32);
 
-                self.invoke_method(method_ref, class_ref);
+                self.invoke_method(method_ref.clone(), class_ref);
                 self.pc_register = 0;
 
                 let new_stackframe = self.stack.last().unwrap().clone();
 
-                let new_locals = &mut new_stackframe.lock().unwrap().locals;
+                let mut stackframe_lock = new_stackframe.lock().unwrap();
+                let new_locals = &mut stackframe_lock.locals;
                 for (index, value) in stack_iter.enumerate() {
                     if verbose {
                         println!("new_locals[{index}]={value}");
@@ -1031,6 +1055,9 @@ impl Thread {
                 if verbose {
                     println!("new locals: {new_locals:?}");
                 }
+                drop(stackframe_lock);
+
+                self.rember_args(&new_stackframe, &method_ref, true, verbose);
             }
             Instruction::InvokeDynamic(bootstrap_index, method_name, method_type) => {
                 let bootstrap_method = stackframe.lock().unwrap().class.bootstrap_methods
@@ -1058,11 +1085,12 @@ impl Thread {
                     .unwrap()
                     .allocate(Object::from_class(&self.class_area, &class));
                 stackframe.lock().unwrap().operand_stack.push(objectref);
+                self.rember_temp(&stackframe, objectref, verbose);
             }
             Instruction::IfNull(is_rev, branch) => {
                 // ifnull | ifnonnull
                 let ptr = stackframe.lock().unwrap().operand_stack.pop().unwrap();
-                if (ptr == u32::MAX) ^ (is_rev) {
+                if (ptr == NULL) ^ (is_rev) {
                     self.pc_register = branch as usize;
                 }
             }
@@ -1072,6 +1100,7 @@ impl Thread {
                 let new_array = Array1::new(&self.class_area, count as usize, field_type);
                 let objectref = self.heap.lock().unwrap().allocate(new_array);
                 stackframe.lock().unwrap().operand_stack.push(objectref);
+                self.rember_temp(&stackframe, objectref, verbose);
             }
             Instruction::NewArray2(field_type) => {
                 // {ty}newarray
@@ -1079,6 +1108,7 @@ impl Thread {
                 let new_array = Array2::new(&self.class_area, count as usize, field_type);
                 let objectref = self.heap.lock().unwrap().allocate(new_array);
                 stackframe.lock().unwrap().operand_stack.push(objectref);
+                self.rember_temp(&stackframe, objectref, verbose);
             }
             Instruction::ArrayStore1 => {
                 // store 1 value into an array
@@ -1086,9 +1116,21 @@ impl Thread {
                 let index = stackframe.lock().unwrap().operand_stack.pop().unwrap();
                 let array_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
-                Array1.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
-                    arr.contents[index as usize] = value;
-                })?;
+                let old =
+                    Array1.get_mut(&mut self.heap.lock().unwrap(), array_ref as usize, |arr| {
+                        let old = arr.contents[index as usize];
+                        arr.contents[index as usize] = value;
+                        old
+                    })?;
+                if ArrayType.get(
+                    &self.heap.lock().unwrap(),
+                    array_ref as usize,
+                    FieldType::is_reference,
+                )? {
+                    // if it's a reference type, increment the ref count
+                    self.rember(value, verbose);
+                    self.forgor(old, verbose);
+                }
             }
             Instruction::ArrayStore2 => {
                 // store 2 values into an array
@@ -1096,7 +1138,7 @@ impl Thread {
                 let index = stackframe.lock().unwrap().operand_stack.pop().unwrap();
                 let array_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
-                Array2.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
+                Array2.get_mut(&mut self.heap.lock().unwrap(), array_ref as usize, |arr| {
                     arr.contents[index as usize] = value;
                 })?;
             }
@@ -1106,10 +1148,17 @@ impl Thread {
                 let array_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
                 let value =
-                    Array1.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
+                    Array1.get_mut(&mut self.heap.lock().unwrap(), array_ref as usize, |arr| {
                         arr.contents[index as usize]
                     })?;
                 stackframe.lock().unwrap().operand_stack.push(value);
+                if ArrayType.get(
+                    &self.heap.lock().unwrap(),
+                    array_ref as usize,
+                    FieldType::is_reference,
+                )? {
+                    self.rember_temp(&stackframe, value, verbose);
+                }
             }
             Instruction::ArrayLoad2 => {
                 // load 2 values from an array
@@ -1117,7 +1166,7 @@ impl Thread {
                 let array_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
                 let value =
-                    Array2.get_mut(&self.heap.lock().unwrap(), array_ref as usize, |arr| {
+                    Array2.get_mut(&mut self.heap.lock().unwrap(), array_ref as usize, |arr| {
                         arr.contents[index as usize]
                     })?;
                 push_long(&mut stackframe.lock().unwrap().operand_stack, value);
@@ -1136,6 +1185,7 @@ impl Thread {
                     arr_type,
                 )?;
                 stackframe.lock().unwrap().operand_stack.push(allocation);
+                self.rember_temp(&stackframe, allocation, verbose);
             }
             Instruction::ArrayLength => {
                 let arr_ref = stackframe.lock().unwrap().operand_stack.pop().unwrap() as usize;
@@ -1146,15 +1196,13 @@ impl Thread {
             }
             Instruction::CheckedCast(ty) => {
                 let objref = *stackframe.lock().unwrap().operand_stack.last().unwrap();
-                if objref != u32::MAX {
+                if objref != NULL {
                     // get the fields of the given class; if it works, we have a subclass
-                    // TODO: add support for interfaces
-                    let obj_works = self
-                        .class_area
-                        .search(&ty)
-                        .unwrap()
-                        .as_ref()
-                        .get(&self.heap.lock().unwrap(), objref as usize, |_| {})
+                    let class_name = &self.class_area.search(&ty).unwrap().this;
+                    let obj_works = AnyObj
+                        .get(&self.heap.lock().unwrap(), objref as usize, |o| {
+                            o.isinstance(&self.class_area, class_name, verbose)
+                        })
                         .is_ok();
                     if !obj_works {
                         let obj_type =
@@ -1174,6 +1222,50 @@ impl Thread {
             other => return Err(format!("Invalid Opcode: {other:?}")),
         }
         Ok(())
+    }
+
+    fn rember_temp(&self, stackframe: &Mutex<StackFrame>, value: u32, verbose: bool) {
+        self.heap.lock().unwrap().inc_ref(value);
+        stackframe.lock().unwrap().garbage.push(value);
+        if verbose {
+            println!("Rember (temporary) {value}");
+        }
+    }
+
+    fn rember(&self, value: u32, verbose: bool) {
+        self.heap.lock().unwrap().inc_ref(value);
+        if verbose {
+            println!("Rember {value}");
+        }
+    }
+
+    fn forgor(&self, value: u32, verbose: bool) {
+        self.heap.lock().unwrap().dec_ref(value);
+        if verbose {
+            println!("forgor {value}");
+        }
+    }
+
+    fn rember_args(
+        &mut self,
+        stackframe: &Mutex<StackFrame>,
+        method: &Method,
+        is_static: bool,
+        verbose: bool,
+    ) {
+        let mut idx = 0;
+        if !is_static {
+            idx = 1;
+            let this = stackframe.lock().unwrap().locals[0];
+            self.rember_temp(stackframe, this, verbose);
+        }
+        for param in &method.descriptor.parameters {
+            if param.is_reference() {
+                let local = stackframe.lock().unwrap().locals[idx];
+                self.rember_temp(stackframe, local, verbose);
+            }
+            idx += param.get_size();
+        }
     }
 
     fn maybe_initialize_class(&mut self, class: &Class, stackframe: &Mutex<StackFrame>) -> bool {
@@ -1379,6 +1471,7 @@ impl Thread {
                 }
                 let heap_pointer = self.heap.lock().unwrap().allocate_str(Arc::from(&*output));
                 stackframe.lock().unwrap().operand_stack.push(heap_pointer);
+                self.rember_temp(stackframe, heap_pointer, verbose);
                 if verbose {
                     println!("makeConcatWithConstants: {heap_pointer}");
                 }
@@ -1388,8 +1481,17 @@ impl Thread {
         Ok(())
     }
 
+    fn collect_garbage(&self, stackframe: &Mutex<StackFrame>) {
+        let mut heap_borrow = self.heap.lock().unwrap();
+        for ptr in core::mem::take(&mut stackframe.lock().unwrap().garbage) {
+            // println!("Collecting Garbage {ptr}");
+            heap_borrow.dec_ref(ptr);
+        }
+    }
+
     /// # Panics
     pub fn return_void(&mut self) {
+        self.collect_garbage(self.stack.last().unwrap());
         self.stack.pop();
         if self.stack.is_empty() {
             return;
@@ -1402,14 +1504,27 @@ impl Thread {
     /// # Panics
     pub fn return_one(&mut self, verbose: bool) {
         let old_stackframe = self.stack.pop().unwrap();
+        let is_reference = old_stackframe
+            .lock()
+            .unwrap()
+            .method
+            .descriptor
+            .return_type
+            .as_ref()
+            .unwrap()
+            .is_reference();
         let ret_value = old_stackframe.lock().unwrap().operand_stack.pop().unwrap();
         if verbose {
             println!("{ret_value}");
         }
         let stackframe = self.stack.last().unwrap();
+        if is_reference {
+            self.rember_temp(stackframe, ret_value, verbose);
+        }
         let ret_address = stackframe.lock().unwrap().operand_stack.pop().unwrap();
         self.pc_register = ret_address as usize;
         stackframe.lock().unwrap().operand_stack.push(ret_value);
+        self.collect_garbage(&old_stackframe);
     }
 
     /// # Panics
@@ -1423,6 +1538,7 @@ impl Thread {
         let ret_address = stackframe.lock().unwrap().operand_stack.pop().unwrap();
         self.pc_register = ret_address as usize;
         push_long(&mut stackframe.lock().unwrap().operand_stack, ret_value);
+        self.collect_garbage(&old_stackframe);
     }
 }
 
@@ -1443,7 +1559,11 @@ fn allocate_multi_array(
                 return Err(format!("Expected an array type; got {arr_type:?}"));
             };
             let current_array = (0..*size)
-                .map(|_| allocate_multi_array(class_area, heap, rest, *inner_type.clone()))
+                .map(|_| {
+                    let idx = allocate_multi_array(class_area, heap, rest, *inner_type.clone())?;
+                    heap.inc_ref(idx);
+                    Ok(idx)
+                })
                 .collect::<Result<Vec<_>, String>>()?;
             Ok(heap.allocate(Array1::from_vec(class_area, current_array, *inner_type)))
         }

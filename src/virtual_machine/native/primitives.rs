@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    class::{AccessFlags, Field, FieldType, MethodDescriptor, NativeTodo},
+    class::{code::NativeTodo, AccessFlags, Field, FieldType, MethodDescriptor},
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
 };

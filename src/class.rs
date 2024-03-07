@@ -4,15 +4,12 @@ use std::ops::{BitAnd, BitOr};
 use std::sync::{Arc, Mutex, Once};
 
 use crate::class_loader::MethodName;
+use crate::data::NULL;
 
 pub use self::code::Code;
-pub use self::code::{
-    ByteCode, ExceptionTableEntry, LineTableEntry, LocalVarEntry, LocalVarTypeEntry,
-    NativeDoubleMethod, NativeMethod, NativeSingleMethod, NativeStringMethod, NativeTodo,
-    NativeVoid, StackMapFrame, VerificationTypeInfo,
-};
+use self::code::NativeTodo;
 
-mod code;
+pub mod code;
 
 pub struct Class {
     pub initialized: Once,
@@ -207,7 +204,7 @@ impl Constant {
                 let bits = f.to_bits();
                 vec![bits as u32, (bits >> 32) as u32]
             }
-            _ => vec![u32::MAX],
+            _ => vec![NULL],
         }
     }
 }
@@ -628,6 +625,11 @@ impl FieldType {
             Self::Double | Self::Long => 2,
             _ => 1,
         }
+    }
+
+    #[must_use]
+    pub const fn is_reference(&self) -> bool {
+        matches!(self, Self::Array(_) | Self::Object(_))
     }
 }
 

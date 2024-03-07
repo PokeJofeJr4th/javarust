@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use crate::{
     access,
-    class::{Field, FieldType, NativeStringMethod, NativeVoid},
+    class::{
+        code::{NativeNoop, NativeStringMethod},
+        Field, FieldType,
+    },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
     method,
@@ -45,7 +48,7 @@ pub fn add_native_methods(
         access_flags: access!(public native),
         name: "<init>".into(),
         descriptor: method!(() -> void),
-        code: RawCode::native(NativeVoid(|_, _, _| Ok(()))),
+        code: RawCode::native(NativeNoop),
         ..Default::default()
     };
 
@@ -63,7 +66,7 @@ pub fn add_native_methods(
         access_flags: access!(public native),
         name: "<init>".into(),
         descriptor: method!(() -> void),
-        code: RawCode::native(NativeVoid(|_, _, _| Ok(()))),
+        code: RawCode::native(NativeNoop),
         ..Default::default()
     };
 
@@ -81,7 +84,7 @@ pub fn add_native_methods(
         access_flags: access!(public native),
         name: "<init>".into(),
         descriptor: method!(() -> void),
-        code: RawCode::native(NativeVoid(|_, _, _| Ok(()))),
+        code: RawCode::native(NativeNoop),
         ..Default::default()
     };
 
@@ -99,14 +102,14 @@ pub fn add_native_methods(
         access_flags: access!(public native),
         name: "<init>".into(),
         descriptor: method!(() -> void),
-        code: RawCode::native(NativeVoid(|_, _, _| Ok(()))),
+        code: RawCode::native(NativeNoop),
         ..Default::default()
     };
     let illegal_argument_exception_to_string = RawMethod {
         access_flags: access!(public native),
         name: "toString".into(),
         descriptor: method!(() -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeStringMethod(|_: &mut _, _: &_, _| {
+        code: RawCode::native(NativeStringMethod(|_: &mut _, _: &_, _: [_; 0], _| {
             Ok("java.lang.IllegalArgumentException".into())
         })),
         ..Default::default()

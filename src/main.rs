@@ -35,20 +35,29 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let mut firstclass = None;
     let (mut method_area, mut class_area, heap) = class_loader::load_environment();
-    let mut filenames = args.filenames;
+    let mut raw_filenames = args.filenames;
     // include any paths from a project file
     if let Some(projpath) = args.project {
         let projfile = fs::read_to_string(&projpath)?;
         let projpath = projpath.parent().unwrap();
         for line in projfile.lines() {
-            filenames.push(projpath.join(line));
+            raw_filenames.push(projpath.join(line));
         }
     }
-    // make sure all the filenames are unique and the first one is first
-    let mut filenames = filenames
-        .into_iter()
-        .map(|p| p.canonicalize())
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut filenames = Vec::new();
+    while let Some(filename) = raw_filenames.pop() {
+        if filename.ends_with("*") {
+            // TODO: read all the dir
+            for entry in fs::read_dir(filename.parent().unwrap())? {
+                let entry = entry?;
+                if entry.file_type()?.is_file() {
+                    filenames.push(entry.path());
+                }
+            }
+        } else {
+            filenames.push(filename.canonicalize()?);
+        }
+    }
     let first_file = filenames.remove(0);
     filenames.sort();
     filenames.dedup();
