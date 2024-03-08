@@ -25,7 +25,7 @@ use self::{
 };
 
 use super::{
-    object::{Array1, Array2, ArrayType, Object, ObjectFinder},
+    object::{AnyObj, Array1, Array2, ArrayType, Object, ObjectFinder},
     StackFrame, Thread,
 };
 
@@ -63,7 +63,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
             |_: &mut _, _: &_, [obj_ref]: [u32; 1], _| {
                 // basically random bits
                 let fake_addr = 3_141_592u32.wrapping_add(obj_ref);
-                Ok(Arc::from(format!("{fake_addr:0>8X}")))
+                Ok(Some(Arc::from(format!("{fake_addr:0>8X}"))))
             },
         )),
         ..Default::default()
@@ -122,7 +122,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                     |instance| {
                         instance.fields = vec![string, id];
                     },
-                )
+                ).map(Option::Some)
             },
         )),
         ..Default::default()
@@ -140,7 +140,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                     &thread.heap.lock().unwrap(),
                     enum_ref as usize,
                     |instance| instance.fields[0],
-                )
+                ).map(Option::Some)
             },
         )),
         ..Default::default()
@@ -227,7 +227,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         name: "toString".into(),
         descriptor: method!(() -> Object(java_lang_string.clone())),
         code: RawCode::native(NativeSingleMethod(|_: &mut _, _: &_, [l]: [u32; 1], _| {
-            Ok(l)
+            Ok(Some(l))
         })),
         ..Default::default()
     };
@@ -281,7 +281,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: method!(() -> void),
         code: RawCode::native(NativeVoid(
             |thread: &mut Thread, _: &_, [obj]: [u32; 1], _verbose: bool| {
-                unsafe { RANDOM_CLASS.as_ref().unwrap() }.as_ref().get_mut(
+                AnyObj.get_mut(
                     &mut thread.heap.lock().unwrap(),
                     obj as usize,
                     |instance| {
@@ -289,7 +289,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                             .native_fields
                             .push(Box::new(StdRng::from_entropy()));
                     },
-                )
+                ).map(Option::Some)
             },
         )),
         ..Default::default()
@@ -309,7 +309,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 if verbose {
                     println!("java/util/Random.nextInt(int): right_bound={right_bound}");
                 }
-                unsafe { RANDOM_CLASS.as_ref().unwrap() }.as_ref().get_mut(
+                AnyObj.get_mut(
                     &mut thread.heap.lock().unwrap(),
                     obj_ref as usize,
                     |random_obj| {
@@ -318,7 +318,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                             .unwrap()
                             .gen_range(0..right_bound)
                     },
-                )
+                ).map(Option::Some)
             },
         )),
         ..Default::default()
@@ -354,7 +354,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         code: RawCode::native(NativeVoid(|_: &mut _, _: &_, [_, c]: [u32; 2], _| {
             let char = char::from_u32(c).ok_or_else(|| String::from("Invalid Character code"))?;
             println!("{char}");
-            Ok(())
+            Ok(Some(()))
         })),
         ..Default::default()
     };
@@ -365,7 +365,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         code: RawCode::native(NativeVoid(|_: &mut _, _: &_, [b]: [u32; 1], _| {
             let bool = b != 0;
             println!("{bool}");
-            Ok(())
+            Ok(Some(()))
         })),
         ..Default::default()
     };
@@ -376,7 +376,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         code: RawCode::native(NativeVoid(|_: &mut _, _: &_, [i]: [u32; 1], _| {
             let int = i as i32;
             println!("{int}");
-            Ok(())
+            Ok(Some(()))
         })),
         ..Default::default()
     };
@@ -388,7 +388,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
             |_: &mut _, _: &_, [_, left, right]: [u32; 3], _| {
                 let long = ((left as u64) << 32 | (right as u64)) as i64;
                 println!("{long}");
-                Ok(())
+                Ok(Some(()))
             },
         )),
         ..Default::default()
@@ -400,7 +400,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         code: RawCode::native(NativeVoid(|_: &mut _, _: &_, [_, f]: [u32; 2], _| {
             let float = f32::from_bits(f);
             println!("{float}");
-            Ok(())
+            Ok(Some(()))
         })),
         ..Default::default()
     };
@@ -410,7 +410,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: method!(() -> void),
         code: RawCode::native(NativeVoid(|_: &mut _, _: &_, []: [u32; 0], _| {
             println!();
-            Ok(())
+            Ok(Some(()))
         })),
         ..Default::default()
     };
@@ -449,7 +449,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 ));
                 system_class.static_data.lock().unwrap()[0] = out_ref;
                 thread.heap.lock().unwrap().inc_ref(out_ref);
-                Ok(())
+                Ok(Some(()))
             },
         )),
         ..Default::default()
@@ -501,7 +501,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                                 fields.contents[start_dest as usize + i] = value;
                             }
                         },
-                    )
+                    ).map(Option::Some)
                 } else {
                     let copied =
                         Array2.get(&thread.heap.lock().unwrap(), src_idx as usize, |fields| {
@@ -515,7 +515,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                                 fields.contents[start_dest as usize + i] = value;
                             }
                         },
-                    )
+                    ).map(Option::Some)
                 }
             },
         )),
@@ -556,8 +556,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: method!((double) -> double),
         code: RawCode::native(NativeDoubleMethod(
             |_: &mut _, _: &_, [left, right]: [u32; 2], _| {
-                let param = f64::from_bits((left as u64) << 32 | (right as u64));
-                Ok(param.sqrt().to_bits())
+                Ok(Some(f64::from_bits((left as u64) << 32 | (right as u64)).sqrt().to_bits()))
             },
         )),
         ..Default::default()

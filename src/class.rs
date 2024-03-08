@@ -21,6 +21,7 @@ pub struct Class {
     pub interfaces: Vec<Arc<str>>,
     pub field_size: usize,
     pub fields: Vec<(Field, usize)>,
+    pub initial_fields: Vec<u32>,
     pub static_data: Mutex<Vec<u32>>,
     pub statics: Vec<(Field, usize)>,
     pub methods: Vec<MethodName>,
@@ -29,34 +30,6 @@ pub struct Class {
     pub signature: Option<Arc<str>>,
     pub inner_classes: Vec<InnerClass>,
     pub attributes: Vec<Attribute>,
-}
-
-impl Class {
-    #[must_use]
-    pub fn new(access: AccessFlags, this: Arc<str>, super_class: Arc<str>) -> Self {
-        Self {
-            initialized: Once::new(),
-            version: ClassVersion {
-                minor_version: 0,
-                major_version: 0,
-            },
-            constants: Vec::new(),
-            access,
-            this,
-            super_class,
-            interfaces: Vec::new(),
-            field_size: 0,
-            fields: Vec::new(),
-            static_data: Mutex::new(Vec::new()),
-            statics: Vec::new(),
-            methods: Vec::new(),
-            bootstrap_methods: Vec::new(),
-            signature: None,
-            source_file: None,
-            inner_classes: Vec::new(),
-            attributes: Vec::new(),
-        }
-    }
 }
 
 impl Debug for Class {
@@ -89,6 +62,9 @@ impl Debug for Class {
         }
         for Attribute { name, data } in &self.attributes {
             s.field(name, &data);
+        }
+        if false {
+            s.field("initial fields", &self.initial_fields);
         }
         s.finish()
     }

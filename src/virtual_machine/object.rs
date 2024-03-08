@@ -34,14 +34,7 @@ impl Object {
     /// # Panics
     pub fn from_class(class: &Class) -> Self {
         Self {
-            fields: class
-                .fields
-                .iter()
-                .flat_map(|(field, _idx)| match &field.descriptor {
-                    FieldType::Array(_) | FieldType::Object(_) => std::iter::repeat(NULL).take(1),
-                    other => std::iter::repeat(0).take(other.get_size()),
-                })
-                .collect::<Vec<_>>(),
+            fields: class.initial_fields.clone(),
             native_fields: Vec::new(),
             class: class.this.clone(),
         }

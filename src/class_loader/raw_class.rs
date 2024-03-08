@@ -7,9 +7,9 @@ use crate::{
     class::{
         code::{ByteCode, NativeMethod, NativeTodo},
         AccessFlags, Attribute, BootstrapMethod, Class, ClassVersion, Code, Constant, Field,
-        InnerClass, Method, MethodDescriptor,
+        FieldType, InnerClass, Method, MethodDescriptor,
     },
-    data::{SharedClassArea, WorkingClassArea},
+    data::{SharedClassArea, WorkingClassArea, NULL},
 };
 
 use super::parse_code_attribute;
@@ -57,6 +57,14 @@ impl RawClass {
             }
             class = class_ref.super_class.clone();
         }
+        let initial_fields = self
+            .fields
+            .iter()
+            .flat_map(|(field, _idx)| match &field.descriptor {
+                FieldType::Array(_) | FieldType::Object(_) => std::iter::repeat(NULL).take(1),
+                other => std::iter::repeat(0).take(other.get_size()),
+            })
+            .collect::<Vec<_>>();
         // get methods through superclasses
         Class {
             initialized: Once::new(),
@@ -68,6 +76,7 @@ impl RawClass {
             interfaces: self.interfaces.clone(),
             field_size,
             fields,
+            initial_fields,
             static_data: Mutex::new(self.static_data.clone()),
             statics: self.statics.clone(),
             methods,

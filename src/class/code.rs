@@ -117,6 +117,8 @@ impl Debug for Code {
     }
 }
 
+pub type NativeReturn<T> = Result<Option<T>, String>;
+
 pub trait NativeMethod: Send + Sync + 'static {
     /// # Errors
     fn run(
@@ -150,7 +152,7 @@ impl NativeMethod for NativeTodo {
 pub struct NativeSingleMethod<T, const N: usize = 1>(pub T);
 
 impl<
-        T: Fn(&mut Thread, &Mutex<StackFrame>, [u32; N], bool) -> Result<u32, String>
+        T: Fn(&mut Thread, &Mutex<StackFrame>, [u32; N], bool) -> NativeReturn<u32>
             + Send
             + Sync
             + 'static,
@@ -167,9 +169,10 @@ impl<
         else {
             panic!("Function does not have enough local variables for its signature");
         };
-        let single = self.0(thread, stackframe, values, is_verbose)?;
-        stackframe.lock().unwrap().operand_stack.push(single);
-        thread.return_one(is_verbose);
+        if let Some(single) = self.0(thread, stackframe, values, is_verbose)? {
+            stackframe.lock().unwrap().operand_stack.push(single);
+            thread.return_one(is_verbose);
+        }
         Ok(())
     }
 }
@@ -178,7 +181,7 @@ impl<
 pub struct NativeDoubleMethod<T, const N: usize = 1>(pub T);
 
 impl<
-        T: Fn(&mut Thread, &Mutex<StackFrame>, [u32; N], bool) -> Result<u64, String>
+        T: Fn(&mut Thread, &Mutex<StackFrame>, [u32; N], bool) -> NativeReturn<u64>
             + Send
             + Sync
             + 'static,
@@ -195,9 +198,10 @@ impl<
         else {
             panic!("Function does not have enough local variables for its signature");
         };
-        let double = self.0(thread, stackframe, values, is_verbose)?;
-        push_long(&mut stackframe.lock().unwrap().operand_stack, double);
-        thread.return_two(is_verbose);
+        if let Some(double) = self.0(thread, stackframe, values, is_verbose)? {
+            push_long(&mut stackframe.lock().unwrap().operand_stack, double);
+            thread.return_two(is_verbose);
+        }
         Ok(())
     }
 }
@@ -206,7 +210,7 @@ impl<
 pub struct NativeStringMethod<T, const N: usize = 1>(pub T);
 
 impl<
-        T: Fn(&mut Thread, &Mutex<StackFrame>, [u32; N], bool) -> Result<Arc<str>, String>
+        T: Fn(&mut Thread, &Mutex<StackFrame>, [u32; N], bool) -> NativeReturn<Arc<str>>
             + Send
             + Sync
             + 'static,
@@ -223,28 +227,29 @@ impl<
         else {
             panic!("Function does not have enough local variables for its signature");
         };
-        let str = self.0(thread, stackframe, values, is_verbose)?;
-        let heap_allocation = thread.heap.lock().unwrap().allocate_str(str);
-        stackframe
-            .lock()
-            .unwrap()
-            .operand_stack
-            .push(heap_allocation);
-        thread.return_one(is_verbose);
+        if let Some(str) = self.0(thread, stackframe, values, is_verbose)? {
+            let heap_allocation = thread.heap.lock().unwrap().allocate_str(str);
+            stackframe
+                .lock()
+                .unwrap()
+                .operand_stack
+                .push(heap_allocation);
+            thread.return_one(is_verbose);
+        }
         Ok(())
     }
 }
 
 #[derive(Clone, Copy)]
-pub struct NativeVoid<T, const N: usize = 1>(pub T);
+pub struct NativeVoid<T, const ARGS: usize = 1>(pub T);
 
 impl<
-        T: Fn(&mut Thread, &Mutex<StackFrame>, [u32; N], bool) -> Result<(), String>
+        T: Fn(&mut Thread, &Mutex<StackFrame>, [u32; ARGS], bool) -> NativeReturn<()>
             + Send
             + Sync
             + 'static,
-        const N: usize,
-    > NativeMethod for NativeVoid<T, N>
+        const ARGS: usize,
+    > NativeMethod for NativeVoid<T, ARGS>
 {
     fn run(
         &self,
@@ -252,12 +257,14 @@ impl<
         stackframe: &Mutex<StackFrame>,
         is_verbose: bool,
     ) -> Result<(), String> {
-        let Ok(values) = <[u32; N]>::try_from(stackframe.lock().unwrap().locals[..N].to_vec())
+        let Ok(values) =
+            <[u32; ARGS]>::try_from(stackframe.lock().unwrap().locals[..ARGS].to_vec())
         else {
             panic!("Function does not have enough local variables for its signature");
         };
-        self.0(thread, stackframe, values, is_verbose)?;
-        thread.return_void();
+        if self.0(thread, stackframe, values, is_verbose)?.is_some() {
+            thread.return_void();
+        }
         Ok(())
     }
 }
