@@ -1,16 +1,15 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::{Arc, Mutex},
-};
+use std::
+    sync::{Arc, Mutex}
+;
 
 use crate::{
     access,
     class::code::{NativeSingleMethod, NativeVoid},
     class_loader::{RawClass, RawCode, RawMethod},
-    data::{BuildNonHasher, WorkingClassArea, WorkingMethodArea, NULL},
+    data::{WorkingClassArea, WorkingMethodArea, NULL},
     method,
     virtual_machine::{
-        object::{AnyObj, HashMapObj, HashSetObj, ObjectFinder},
+        object::{AnyObj, ArrayListObj, HashMapObj, HashSetObj, ObjectFinder},
         StackFrame, Thread,
     },
 };
@@ -27,8 +26,7 @@ pub fn add_native_collections(
         java_lang_object.clone(),
     );
 
-    let hash_map_init =
-        HashMapObj::make_init(|| HashMap::<u32, u32, BuildNonHasher>::with_hasher(BuildNonHasher));
+    let hash_map_init = HashMapObj::default_init();
     let hash_map_put = RawMethod {
         access_flags: access!(public native),
         name: "put".into(),
@@ -116,8 +114,7 @@ pub fn add_native_collections(
         java_lang_object.clone(),
     );
 
-    let hash_set_init =
-        HashSetObj::make_init(|| HashSet::<u32, BuildNonHasher>::with_hasher(BuildNonHasher));
+    let hash_set_init = HashSetObj::default_init();
     let hash_set_insert = RawMethod {
         access_flags: access!(public native),
         name: "insert".into(),
@@ -192,10 +189,53 @@ pub fn add_native_collections(
         )),
         ..Default::default()
     };
+
     hash_set.methods.extend([
         hash_set_init.name(hash_set.this.clone()),
         hash_set_contains.name(hash_set.this.clone()),
         hash_set_insert.name(hash_set.this.clone()),
+    ]);
+
+    let mut array_list = RawClass::new(
+        access!(public native),
+        "java/util/ArrayList".into(),
+        java_lang_object.clone(),
+    );
+    let arrlist_init = ArrayListObj::default_init();
+    let arrlist_append = RawMethod {
+        access_flags: access!(public native),
+        name: "append".into(),
+        descriptor: method!(((Object(java_lang_object.clone()))) -> void),
+        code: RawCode::native(NativeVoid(
+            |thread: &mut Thread, _: &_, [this, ptr]: [u32; 2], _| {
+                ArrayListObj::SELF
+                    .get_mut(&mut thread.heap.lock().unwrap(), this as usize, |arrlist| {
+                        arrlist.push(ptr);
+                    })
+                    .map(Option::Some)
+            },
+        )),
+        ..Default::default()
+    };
+    let arrlist_size = RawMethod {
+        access_flags: access!(public native),
+        name: "size".into(),
+        descriptor: method!(() -> int),
+        code: RawCode::native(NativeSingleMethod(
+            |thread: &mut Thread, _: &_, [this]: [u32; 1], _| {
+                ArrayListObj::SELF
+                    .get(&thread.heap.lock().unwrap(), this as usize, |arrls| {
+                        arrls.len() as u32
+                    })
+                    .map(Option::Some)
+            },
+        )),
+        ..Default::default()
+    };
+    array_list.methods.extend([
+        arrlist_init.name(array_list.this.clone()),
+        arrlist_append.name(array_list.this.clone()),
+        arrlist_size.name(array_list.this.clone()),
     ]);
 
     method_area.extend([
@@ -205,6 +245,9 @@ pub fn add_native_collections(
         (hash_set.this.clone(), hash_set_init),
         (hash_set.this.clone(), hash_set_contains),
         (hash_set.this.clone(), hash_set_insert),
+        (array_list.this.clone(), arrlist_init),
+        (array_list.this.clone(), arrlist_append),
+        (array_list.this.clone(), arrlist_size),
     ]);
-    class_area.extend([hash_map]);
+    class_area.extend([hash_map, hash_set, array_list]);
 }

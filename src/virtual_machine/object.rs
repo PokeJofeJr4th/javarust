@@ -199,6 +199,29 @@ impl<T: Send + Sync + 'static, const I: usize> NativeFieldObj<T, I> {
             ..Default::default()
         }
     }
+
+    #[must_use]
+    /// # Panics
+    pub fn default_init() -> RawMethod
+    where
+        T: Default,
+    {
+        RawMethod {
+            access_flags: access!(public native),
+            name: "<init>".into(),
+            descriptor: method!(()->void),
+            code: RawCode::native(NativeVoid(
+                |thread: &mut Thread, _: &_, [ptr]: [u32; 1], _| {
+                    AnyObj
+                        .get_mut(&mut thread.heap.lock().unwrap(), ptr as usize, |obj| {
+                            obj.native_fields.push(Box::<T>::default());
+                        })
+                        .map(Option::Some)
+                },
+            )),
+            ..Default::default()
+        }
+    }
 }
 
 impl<T, const I: usize> NativeFieldObj<T, I> {
