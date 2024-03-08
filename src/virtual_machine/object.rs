@@ -1,11 +1,19 @@
-use std::{any::Any, collections::HashMap, marker::PhantomData, sync::Arc};
-
-use crate::{
-    class::{Class, Code, FieldType, Method, MethodDescriptor},
-    data::{Heap, NonHasher, SharedClassArea, SharedMethodArea, NULL},
+use std::{
+    any::Any,
+    collections::{HashMap, HashSet},
+    marker::PhantomData,
+    sync::{Arc, Mutex},
 };
 
-use super::native;
+use crate::{
+    access,
+    class::{code::NativeVoid, Class, Code, FieldType, Method, MethodDescriptor},
+    class_loader::{RawCode, RawMethod},
+    data::{BuildNonHasher, Heap, SharedClassArea, SharedMethodArea, NULL},
+    method,
+};
+
+use super::{native, StackFrame, Thread};
 
 #[derive(Debug)]
 pub struct Instance {
@@ -164,6 +172,35 @@ pub trait ObjectFinder {
 
 pub struct NativeFieldObj<T, const I: usize = 0>(PhantomData<T>);
 
+impl<T: Send + Sync + 'static, const I: usize> NativeFieldObj<T, I> {
+    /// Make an initialization method with no parameters for a native field object
+    /// # Panics
+    pub fn make_init(func: impl Send + Sync + 'static + Fn() -> T) -> RawMethod {
+        RawMethod {
+            access_flags: access!(public native),
+            name: "<init>".into(),
+            descriptor: method!(()->void),
+            code: RawCode::native(NativeVoid(
+                move |thread: &mut Thread,
+                      _stackframe: &Mutex<StackFrame>,
+                      [obj_pointer]: [u32; 1],
+                      _verbose| {
+                    AnyObj
+                        .get_mut(
+                            &mut thread.heap.lock().unwrap(),
+                            obj_pointer as usize,
+                            |instance| {
+                                instance.native_fields.push(Box::new(func()));
+                            },
+                        )
+                        .map(Option::Some)
+                },
+            )),
+            ..Default::default()
+        }
+    }
+}
+
 impl<T, const I: usize> NativeFieldObj<T, I> {
     pub const SELF: Self = Self(PhantomData);
 }
@@ -262,10 +299,10 @@ impl ObjectFinder for AnyObj {
 }
 
 pub type StringBuilder = NativeFieldObj<String>;
-
 pub type ArrayType = NativeFieldObj<FieldType>;
-
-pub type HashMapObj = NativeFieldObj<HashMap<u32, u32, NonHasher>>;
+pub type HashMapObj = NativeFieldObj<HashMap<u32, u32, BuildNonHasher>>;
+pub type HashSetObj = NativeFieldObj<HashSet<u32, BuildNonHasher>>;
+pub type ArrayListObj = NativeFieldObj<Vec<u32>>;
 
 pub struct ArrayFields<'a, T> {
     pub arr_type: &'a FieldType,

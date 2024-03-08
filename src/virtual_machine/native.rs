@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::{hash::{DefaultHasher, Hash, Hasher}, sync::{Arc, Mutex}};
 
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
@@ -69,6 +69,18 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         )),
         ..Default::default()
     };
+    let object_hash = RawMethod {
+        access_flags: access!(public native),
+        name: "getHashCode".into(),
+        descriptor: method!(() -> int),
+        code: RawCode::native(NativeSingleMethod(|_: &mut _, _: &_, [ptr]: [u32; 1], _| {
+            let mut hasher = DefaultHasher::new();
+            ptr.hash(&mut hasher);
+            let value = hasher.finish() as u32;
+            Ok(Some(value))
+        })),
+        ..Default::default()
+    };
 
     let mut object = RawClass::new(
         access!(public native),
@@ -77,10 +89,11 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     );
     object
         .methods
-        .push(object_init.name(java_lang_object.clone()));
-    object
-        .methods
-        .push(object_to_string.name(java_lang_object.clone()));
+        .extend([object_init.name(java_lang_object.clone()),
+        object_to_string.name(java_lang_object.clone()),
+        object_hash.name(java_lang_object.clone())
+        ]
+    );
 
     let mut enum_class = RawClass::new(
         access!(public abstract native),
@@ -580,6 +593,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     method_area.extend([
         (object.this.clone(), object_init),
         (object.this.clone(), object_to_string),
+        (object.this.clone(), object_hash),
         (enum_class.this.clone(), enum_init),
         (enum_class.this.clone(), enum_to_string),
         (enum_class.this.clone(), enum_name),
