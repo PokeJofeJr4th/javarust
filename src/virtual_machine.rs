@@ -16,11 +16,15 @@ pub use self::instruction::{hydrate_code, Cmp, Instruction, Op};
 
 #[derive(Debug)]
 pub struct StackFrame {
+    /// local variables, aka registers
     pub locals: Vec<u32>,
+    /// stack used for ephemeral operations
     pub operand_stack: Vec<u32>,
     /// list of pointers that should be collected at the end of execution
     pub garbage: Vec<u32>,
+    /// current method
     pub method: Arc<Method>,
+    /// current class
     pub class: Arc<Class>,
 }
 
@@ -28,7 +32,13 @@ impl StackFrame {
     pub fn from_method(method: Arc<Method>, class: Arc<Class>) -> Self {
         Self {
             locals: (0..=method.max_locals).map(|_| 0).collect(),
-            operand_stack: Vec::new(),
+            operand_stack: Vec::with_capacity(
+                method
+                    .code
+                    .as_bytecode()
+                    .map(|bc| bc.max_stack as usize)
+                    .unwrap_or_default(),
+            ),
             garbage: Vec::new(),
             class,
             method,

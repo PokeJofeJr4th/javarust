@@ -9,7 +9,9 @@ use super::{Attribute, FieldType};
 
 #[derive(Clone, Copy)]
 pub struct LineTableEntry {
+    /// the line of source code
     pub line: u16,
+    /// the first instruction index of the line
     pub pc: u16,
 }
 
@@ -20,11 +22,17 @@ impl Debug for LineTableEntry {
 }
 
 #[derive(Clone, PartialEq, Eq)]
+/// A local variable defined within a range of instruction indices
 pub struct LocalVarTypeEntry {
+    /// the start of the range
     pub pc: u16,
+    /// the end of the range
     pub length: u16,
+    /// the name of the variable
     pub name: Arc<str>,
+    /// the type of the variable, including generics
     pub ty: Arc<str>,
+    /// the index into locals of the variable
     pub index: u16,
 }
 
@@ -43,11 +51,17 @@ impl Debug for LocalVarTypeEntry {
 }
 
 #[derive(Clone, PartialEq, Eq)]
+/// A local variable defined within a range of instruction indices
 pub struct LocalVarEntry {
+    /// the start of the range
     pub pc: u16,
+    /// the end of the range
     pub length: u16,
+    /// the name of the variable
     pub name: Arc<str>,
+    /// the type of the variable, excluding generics
     pub ty: FieldType,
+    /// the index into locals of the variable
     pub index: u16,
 }
 
@@ -66,9 +80,13 @@ impl Debug for LocalVarEntry {
 }
 
 #[derive(Clone)]
+/// Code contained in a method implementation
 pub enum Code {
+    /// JVM Bytecode
     Code(ByteCode),
+    /// Native (rust) code
     Native(Arc<Box<dyn NativeMethod>>),
+    /// No code -- method is defined as abstract
     Abstract,
 }
 
@@ -117,9 +135,13 @@ impl Debug for Code {
     }
 }
 
+/// The return type for a native method implementation
 pub type NativeReturn<T> = Result<Option<T>, String>;
 
+/// A rust method that can interface with the JVM
 pub trait NativeMethod: Send + Sync + 'static {
+    /// # Native Method
+    /// Called each tick while the native method is in the current stackframe
     /// # Errors
     fn run(
         &self,
@@ -130,6 +152,7 @@ pub trait NativeMethod: Send + Sync + 'static {
 }
 
 #[derive(Clone, Copy)]
+/// A native method that panics with a TODO macro
 pub struct NativeTodo;
 
 impl NativeMethod for NativeTodo {
@@ -149,6 +172,7 @@ impl NativeMethod for NativeTodo {
 }
 
 #[derive(Clone, Copy)]
+/// A native method that returns a 32-bit value
 pub struct NativeSingleMethod<T, const N: usize = 1>(pub T);
 
 impl<
@@ -178,6 +202,7 @@ impl<
 }
 
 #[derive(Clone, Copy)]
+/// A native method that returns a 64-bit value
 pub struct NativeDoubleMethod<T, const N: usize = 1>(pub T);
 
 impl<
@@ -207,6 +232,7 @@ impl<
 }
 
 #[derive(Clone, Copy)]
+/// A native method that returns a string
 pub struct NativeStringMethod<T, const N: usize = 1>(pub T);
 
 impl<
@@ -241,6 +267,7 @@ impl<
 }
 
 #[derive(Clone, Copy)]
+/// A native method that returns void
 pub struct NativeVoid<T, const ARGS: usize = 1>(pub T);
 
 impl<
@@ -269,6 +296,7 @@ impl<
     }
 }
 
+/// A native method that does nothing
 pub struct NativeNoop;
 
 impl NativeMethod for NativeNoop {
@@ -284,10 +312,15 @@ impl NativeMethod for NativeNoop {
 }
 
 #[derive(Clone)]
+/// An entry into a bytecode method's exception-handling table
 pub struct ExceptionTableEntry {
+    /// start of the "try" block
     pub start_pc: u16,
+    /// end of the "try" block
     pub end_pc: u16,
+    /// start of the "catch" block
     pub handler_pc: u16,
+    /// type of the exception
     pub catch_type: Option<Arc<str>>,
 }
 
@@ -309,14 +342,23 @@ impl Debug for ExceptionTableEntry {
 }
 
 #[derive(Clone, Default)]
+/// JVM ByteCode
 pub struct ByteCode {
+    /// highest number of locals on the stack
     pub max_stack: u16,
+    /// List of bytecode instructions
     pub code: Vec<Instruction>,
+    /// List of exception handlers
     pub exception_table: Vec<ExceptionTableEntry>,
+    /// List of line numbers (unused)
     pub line_number_table: Vec<LineTableEntry>,
+    /// List of local variables, including generics (unused)
     pub local_type_table: Vec<LocalVarTypeEntry>,
+    /// List of local variables (unused)
     pub local_var_table: Vec<LocalVarEntry>,
+    /// Stack frame verification information (unused)
     pub stack_map: Vec<StackMapFrame>,
+    /// Miscellaneous attributes (unused)
     pub attributes: Vec<Attribute>,
 }
 

@@ -12,21 +12,34 @@ use self::code::NativeTodo;
 pub mod code;
 
 pub struct Class {
+    /// tracks if the <clinit> function has been run
     pub initialized: Once,
+    /// unused
     pub version: ClassVersion,
+    /// run-time constant pool
     pub constants: Vec<Constant>,
     pub access: AccessFlags,
+    /// current class name
     pub this: Arc<str>,
+    /// super class name
     pub super_class: Arc<str>,
+    /// interface names
     pub interfaces: Vec<Arc<str>>,
+    /// number of u32 in fields
     pub field_size: usize,
+    /// type and index of fields
     pub fields: Vec<(Field, usize)>,
+    /// fields at object initialization
     pub initial_fields: Vec<u32>,
+    /// static fields
     pub static_data: Mutex<Vec<u32>>,
+    /// static field descriptors
     pub statics: Vec<(Field, usize)>,
+    /// names of all methods
     pub methods: Vec<MethodName>,
     pub bootstrap_methods: Vec<BootstrapMethod>,
     pub source_file: Option<Arc<str>>,
+    /// signature including generics
     pub signature: Option<Arc<str>>,
     pub inner_classes: Vec<InnerClass>,
     pub attributes: Vec<Attribute>,
@@ -417,9 +430,11 @@ pub struct Method {
     pub max_locals: u16,
     pub access_flags: AccessFlags,
     pub name: Arc<str>,
+    /// exceptions thrown by the method
     pub exceptions: Vec<Arc<str>>,
     pub descriptor: MethodDescriptor,
     pub code: Code,
+    /// method signature including generics
     pub signature: Option<Arc<str>>,
     pub attributes: Vec<Attribute>,
 }
@@ -471,7 +486,9 @@ impl Debug for Method {
 #[derive(Clone, PartialEq, Eq)]
 pub struct MethodDescriptor {
     pub parameter_size: usize,
+    /// list of parameter types
     pub parameters: Vec<FieldType>,
+    /// method return type; None => void
     pub return_type: Option<FieldType>,
 }
 

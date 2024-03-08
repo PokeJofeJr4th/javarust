@@ -15,16 +15,26 @@ use crate::{
 use super::parse_code_attribute;
 
 pub struct RawClass {
+    /// class version (unused)
     pub version: ClassVersion,
+    /// run-time constant pool
     pub constants: Vec<Constant>,
     pub access: AccessFlags,
+    /// current class name
     pub this: Arc<str>,
+    /// super class name
     pub super_class: Arc<str>,
+    /// implemented interface names
     pub interfaces: Vec<Arc<str>>,
+    /// number of fields
     pub field_size: usize,
+    /// name, type, and index of fields
     pub fields: Vec<(Field, usize)>,
+    /// static variables
     pub static_data: Vec<u32>,
+    /// name, type, and index of statics
     pub statics: Vec<(Field, usize)>,
+    /// list of associated methods
     pub methods: Vec<MethodName>,
     pub bootstrap_methods: Vec<BootstrapMethod>,
     pub source_file: Option<Arc<str>>,
@@ -35,6 +45,7 @@ pub struct RawClass {
 
 impl RawClass {
     #[must_use]
+    /// Convert to a class that's ready to use in the JVM
     /// # Panics
     pub fn to_class(&self, class_area: &WorkingClassArea) -> Class {
         let mut methods = self.methods.clone();
@@ -89,6 +100,7 @@ impl RawClass {
     }
 
     #[must_use]
+    /// make a new barebones raw class
     pub fn new(access: AccessFlags, this: Arc<str>, super_class: Arc<str>) -> Self {
         Self {
             version: ClassVersion {
