@@ -1080,7 +1080,7 @@ impl Thread {
                         arr.contents[index as usize] = value;
                         old
                     })?;
-                if ArrayType.get(
+                if ArrayType::SELF.get(
                     &self.heap.lock().unwrap(),
                     array_ref as usize,
                     FieldType::is_reference,
@@ -1110,7 +1110,7 @@ impl Thread {
                         arr.contents[index as usize]
                     })?;
                 stackframe.lock().unwrap().operand_stack.push(value);
-                if ArrayType.get(
+                if ArrayType::SELF.get(
                     &self.heap.lock().unwrap(),
                     array_ref as usize,
                     FieldType::is_reference,
@@ -1395,7 +1395,7 @@ impl Thread {
                 if verbose {
                     println!("{value}");
                 }
-                StringObj.get(&heap_borrow, value as usize, |str| {
+                StringObj::SELF.get(&heap_borrow, value as usize, |str| {
                     write!(output, "{str}").map_err(|err| format!("{err:?}"))
                 }).unwrap()?;
                 drop(heap_borrow);

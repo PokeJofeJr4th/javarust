@@ -310,7 +310,7 @@ impl Default for WorkingMethodArea {
 }
 
 #[derive(Default, Clone, Copy)]
-struct BuildNonHasher;
+pub struct BuildNonHasher;
 
 impl BuildHasher for BuildNonHasher {
     type Hasher = NonHasher;
@@ -320,7 +320,7 @@ impl BuildHasher for BuildNonHasher {
     }
 }
 
-struct NonHasher(u64);
+pub struct NonHasher(u64);
 
 impl Hasher for NonHasher {
     fn write(&mut self, _bytes: &[u8]) {

@@ -1,8 +1,8 @@
-use std::{any::Any, sync::Arc};
+use std::{any::Any, collections::HashMap, marker::PhantomData, sync::Arc};
 
 use crate::{
     class::{Class, Code, FieldType, Method, MethodDescriptor},
-    data::{Heap, SharedClassArea, SharedMethodArea, NULL},
+    data::{Heap, NonHasher, SharedClassArea, SharedMethodArea, NULL},
 };
 
 use super::native;
@@ -162,7 +162,47 @@ pub trait ObjectFinder {
     ) -> Result<T, String>;
 }
 
-pub struct StringObj;
+pub struct NativeFieldObj<T, const I: usize = 0>(PhantomData<T>);
+
+impl<T, const I: usize> NativeFieldObj<T, I> {
+    pub const SELF: Self = Self(PhantomData);
+}
+
+impl<E: 'static, const I: usize> ObjectFinder for NativeFieldObj<E, I> {
+    type Target<'b> = &'b E;
+
+    type TargetMut<'b> = &'b mut E;
+
+    fn extract<T>(
+        &self,
+        object: &Object,
+        func: impl FnOnce(Self::Target<'_>) -> T,
+    ) -> Result<T, String> {
+        object
+            .native_fields
+            .get(I)
+            .ok_or_else(|| String::from("Native field is missing"))?
+            .downcast_ref::<E>()
+            .ok_or_else(|| String::from("Native field is wrong type"))
+            .map(func)
+    }
+
+    fn extract_mut<T>(
+        &self,
+        object: &mut Object,
+        func: impl FnOnce(Self::TargetMut<'_>) -> T,
+    ) -> Result<T, String> {
+        object
+            .native_fields
+            .get_mut(I)
+            .ok_or_else(|| String::from("Native field is missing"))?
+            .downcast_mut::<E>()
+            .ok_or_else(|| String::from("Native field is wrong type"))
+            .map(func)
+    }
+}
+
+pub type StringObj = NativeFieldObj<Arc<str>>;
 
 impl StringObj {
     #[allow(clippy::new_ret_no_self)]
@@ -174,39 +214,6 @@ impl StringObj {
             fields: Vec::new(),
             native_fields: vec![Box::new(str)],
         }
-    }
-}
-
-impl ObjectFinder for StringObj {
-    type Target<'a> = &'a Arc<str>;
-    type TargetMut<'a> = &'a mut Arc<str>;
-
-    fn extract<T>(
-        &self,
-        object: &Object,
-        func: impl FnOnce(Self::Target<'_>) -> T,
-    ) -> Result<T, String> {
-        object
-            .native_fields
-            .first()
-            .ok_or_else(|| String::from("Native string binding missing"))?
-            .downcast_ref::<Arc<str>>()
-            .ok_or_else(|| String::from("Native string binding is the wrong type"))
-            .map(func)
-    }
-
-    fn extract_mut<T>(
-        &self,
-        object: &mut Object,
-        func: impl FnOnce(Self::TargetMut<'_>) -> T,
-    ) -> Result<T, String> {
-        object
-            .native_fields
-            .get_mut(0)
-            .ok_or_else(|| String::from("Native string binding missing"))?
-            .downcast_mut::<Arc<str>>()
-            .ok_or_else(|| String::from("Native string binding is the wrong type"))
-            .map(func)
     }
 }
 
@@ -254,75 +261,11 @@ impl ObjectFinder for AnyObj {
     }
 }
 
-pub struct StringBuilder;
+pub type StringBuilder = NativeFieldObj<String>;
 
-impl ObjectFinder for StringBuilder {
-    type Target<'a> = &'a String;
-    type TargetMut<'a> = &'a mut String;
+pub type ArrayType = NativeFieldObj<FieldType>;
 
-    fn extract<T>(
-        &self,
-        object: &Object,
-        func: impl FnOnce(Self::Target<'_>) -> T,
-    ) -> Result<T, String> {
-        object
-            .native_fields
-            .first()
-            .ok_or_else(|| String::from("StringBuilder native field missing"))?
-            .downcast_ref::<String>()
-            .ok_or_else(|| String::from("StringBuilder native field is the wrong type"))
-            .map(func)
-    }
-
-    fn extract_mut<T>(
-        &self,
-        object: &mut Object,
-        func: impl FnOnce(Self::TargetMut<'_>) -> T,
-    ) -> Result<T, String> {
-        object
-            .native_fields
-            .get_mut(0)
-            .ok_or_else(|| String::from("StringBuilder native field missing"))?
-            .downcast_mut::<String>()
-            .ok_or_else(|| String::from("StringBuilder native field is the wrong type"))
-            .map(func)
-    }
-}
-
-pub struct ArrayType;
-
-impl ObjectFinder for ArrayType {
-    type Target<'a> = &'a FieldType;
-    type TargetMut<'a> = &'a mut FieldType;
-
-    fn extract<T>(
-        &self,
-        object: &Object,
-        func: impl FnOnce(Self::Target<'_>) -> T,
-    ) -> Result<T, String> {
-        object
-            .native_fields
-            .first()
-            .ok_or_else(|| String::from("Native fields missing"))?
-            .downcast_ref::<FieldType>()
-            .ok_or_else(|| String::from("Native feld is wrong type"))
-            .map(func)
-    }
-
-    fn extract_mut<T>(
-        &self,
-        object: &mut Object,
-        func: impl FnOnce(Self::TargetMut<'_>) -> T,
-    ) -> Result<T, String> {
-        object
-            .native_fields
-            .get_mut(0)
-            .ok_or_else(|| String::from("Native field is missing"))?
-            .downcast_mut::<FieldType>()
-            .ok_or_else(|| String::from("Native field is wrong type"))
-            .map(func)
-    }
-}
+pub type HashMapObj = NativeFieldObj<HashMap<u32, u32, NonHasher>>;
 
 pub struct ArrayFields<'a, T> {
     pub arr_type: &'a FieldType,

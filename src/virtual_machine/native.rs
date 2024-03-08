@@ -30,6 +30,7 @@ use super::{
 };
 
 pub mod arrays;
+pub mod collections;
 pub mod primitives;
 pub mod string;
 pub mod string_builder;
@@ -485,7 +486,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
              [src_idx, start, dest_idx, start_dest, count]: [u32; 5],
              _verbose| {
                 let arr_size =
-                    ArrayType.get(&thread.heap.lock().unwrap(), src_idx as usize, |ty| {
+                    ArrayType::SELF.get(&thread.heap.lock().unwrap(), src_idx as usize, |ty| {
                         ty.get_size()
                     })?;
                 if arr_size == 1 {
@@ -574,6 +575,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         method_area,
         class_area,
     );
+    collections::add_native_collections(class_area, method_area, &java_lang_object);
 
     method_area.extend([
         (object.this.clone(), object_init),

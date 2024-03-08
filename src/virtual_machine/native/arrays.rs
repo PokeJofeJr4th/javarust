@@ -18,7 +18,7 @@ pub fn deep_to_string(
 ) -> NativeReturn<Arc<str>> {
     let heap = thread.heap.lock().unwrap();
     let index = index as usize;
-    let arr_type = ArrayType.get(&heap, index, Clone::clone)?;
+    let arr_type = ArrayType::SELF.get(&heap, index, Clone::clone)?;
     match arr_type {
         FieldType::Array(_) => {
             let indices_vec = Array1.get(&heap, index, |arr| arr.contents.to_vec())?;
@@ -85,7 +85,7 @@ pub fn to_string(
     _verbose: bool,
 ) -> NativeReturn<Arc<str>> {
     let arr_ref = arr_ref as usize;
-    let field_type = ArrayType.get(&thread.heap.lock().unwrap(), arr_ref, Clone::clone)?;
+    let field_type = ArrayType::SELF.get(&thread.heap.lock().unwrap(), arr_ref, Clone::clone)?;
     if field_type.get_size() == 2 {
         Array2
             .get(

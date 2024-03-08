@@ -342,7 +342,7 @@ impl Debug for ExceptionTableEntry {
 }
 
 #[derive(Clone, Default)]
-/// JVM ByteCode
+/// JVM bytecode
 pub struct ByteCode {
     /// highest number of locals on the stack
     pub max_stack: u16,

@@ -95,7 +95,7 @@ pub fn native_println_object(
         Ok(None)
     } else {
         let ret = stackframe.lock().unwrap().operand_stack.pop().unwrap();
-        let str = StringObj.get(&thread.heap.lock().unwrap(), ret as usize, Clone::clone)?;
+        let str = StringObj::SELF.get(&thread.heap.lock().unwrap(), ret as usize, Clone::clone)?;
         println!("{str}");
         Ok(Some(()))
     }
@@ -108,7 +108,7 @@ pub fn native_string_len(
     [string_ref]: [u32; 1],
     _verbose: bool,
 ) -> NativeReturn<u32> {
-    StringObj
+    StringObj::SELF
         .get(&thread.heap.lock().unwrap(), string_ref as usize, |str| {
             str.len() as u32
         })
@@ -122,7 +122,7 @@ pub fn native_string_char_at(
     _verbose: bool,
 ) -> NativeReturn<u32> {
     let index = index as usize;
-    StringObj
+    StringObj::SELF
         .get(&thread.heap.lock().unwrap(), string_ref as usize, |str| {
             str.chars().nth(index).unwrap() as u32
         })

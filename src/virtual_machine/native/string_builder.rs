@@ -16,7 +16,7 @@ pub fn init(
 ) -> NativeReturn<()> {
     let mut heap_borrow = thread.heap.lock().unwrap();
 
-    let init_string = StringObj.get(&heap_borrow, str_ref as usize, |init_string| {
+    let init_string = StringObj::SELF.get(&heap_borrow, str_ref as usize, |init_string| {
         init_string.to_string()
     })?;
     AnyObj
@@ -39,7 +39,7 @@ pub fn set_char_at(
     if verbose {
         println!("setting char at {index} to {character:?}");
     }
-    StringBuilder
+    StringBuilder::SELF
         .get_mut(&mut heap_borrow, builder_ref, |string_ref| {
             if verbose {
                 println!("StringBuilder = {string_ref:?}");
@@ -63,7 +63,7 @@ pub fn to_string(
     [builder_ref]: [u32; 1],
     _verbose: bool,
 ) -> NativeReturn<Arc<str>> {
-    let string = Arc::from(&*StringBuilder.get(
+    let string = Arc::from(&*StringBuilder::SELF.get(
         &thread.heap.lock().unwrap(),
         builder_ref as usize,
         Clone::clone,
