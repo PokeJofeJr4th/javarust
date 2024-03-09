@@ -101,20 +101,6 @@ pub fn native_println_object(
     }
 }
 
-#[allow(clippy::unnecessary_wraps)]
-pub fn native_string_len(
-    thread: &mut Thread,
-    _stackframe: &Mutex<StackFrame>,
-    [string_ref]: [u32; 1],
-    _verbose: bool,
-) -> NativeReturn<u32> {
-    StringObj::SELF
-        .get(&thread.heap.lock().unwrap(), string_ref as usize, |str| {
-            str.len() as u32
-        })
-        .map(Option::Some)
-}
-
 pub fn native_string_char_at(
     thread: &mut Thread,
     _stackframe: &Mutex<StackFrame>,

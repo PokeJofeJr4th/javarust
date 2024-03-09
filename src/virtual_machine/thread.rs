@@ -1181,7 +1181,8 @@ impl Thread {
         Ok(())
     }
 
-    fn rember_temp(&self, stackframe: &Mutex<StackFrame>, value: u32, verbose: bool) {
+    /// # Panics
+    pub fn rember_temp(&self, stackframe: &Mutex<StackFrame>, value: u32, verbose: bool) {
         self.heap.lock().unwrap().inc_ref(value);
         stackframe.lock().unwrap().garbage.push(value);
         if verbose {
@@ -1189,14 +1190,16 @@ impl Thread {
         }
     }
 
-    fn rember(&self, value: u32, verbose: bool) {
+    /// # Panics
+    pub fn rember(&self, value: u32, verbose: bool) {
         self.heap.lock().unwrap().inc_ref(value);
         if verbose {
             println!("Rember {value}");
         }
     }
 
-    fn forgor(&self, value: u32, verbose: bool) {
+    /// # Panics
+    pub fn forgor(&self, value: u32, verbose: bool) {
         self.heap.lock().unwrap().dec_ref(value);
         if verbose {
             println!("forgor {value}");

@@ -6,8 +6,7 @@ use crate::{
     access,
     class::{
         code::{
-            NativeDoubleMethod, NativeNoop, NativeSingleMethod, NativeStringMethod, NativeTodo,
-            NativeVoid,
+            native_property, NativeDoubleMethod, NativeNoop, NativeSingleMethod, NativeStringMethod, NativeTodo, NativeVoid
         },
         Class, Field, FieldType, MethodDescriptor,
     },
@@ -20,12 +19,12 @@ use self::{
     arrays::deep_to_string,
     primitives::make_primitives,
     string::{
-        native_println_object, native_string_char_at, native_string_len, native_string_value_of,
+        native_println_object, native_string_char_at, native_string_value_of,
     },
 };
 
 use super::{
-    object::{AnyObj, Array1, Array2, ArrayType, Object, ObjectFinder},
+    object::{AnyObj, Array1, Array2, ArrayType, Object, ObjectFinder, StringObj},
     StackFrame, Thread,
 };
 
@@ -62,9 +61,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: method!(() -> Object(java_lang_string.clone())),
         code: RawCode::native(NativeStringMethod(
             |_: &mut _, _: &_, [obj_ref]: [u32; 1], _| {
-                // basically random bits
-                let fake_addr = 3_141_592u32.wrapping_add(obj_ref);
-                Ok(Some(Arc::from(format!("{fake_addr:0>8X}"))))
+                Ok(Some(Arc::from(format!("{obj_ref:0>8X}"))))
             },
         )),
         ..Default::default()
@@ -146,16 +143,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         name: "toString".into(),
         descriptor: method!(() -> Object(java_lang_object.clone())),
         code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, _: &_, [enum_ref]: [u32; 1], _verbose| {
-                let Some(enum_class) = thread.class_area.search("java/lang/Enum") else {
-                    return Err(String::from("Couldn't find class java/lang/Enum"));
-                };
-                enum_class.get(
-                    &thread.heap.lock().unwrap(),
-                    enum_ref as usize,
-                    |instance| instance.fields[0],
-                ).map(Option::Some)
-            },
+            native_property(AnyObj, |obj| obj.fields[0])
         )),
         ..Default::default()
     };
@@ -219,7 +207,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public native),
         name: "length".into(),
         descriptor: method!(() -> int),
-        code: RawCode::native(NativeSingleMethod(native_string_len)),
+        code: RawCode::native(NativeSingleMethod(native_property(StringObj::SELF, |s| s.len() as u32))),
         ..Default::default()
     };
     let char_at = RawMethod {
@@ -456,13 +444,13 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public static native),
         descriptor: method!(() -> void),
         code: RawCode::native(NativeVoid(
-            |thread: &mut Thread, _: &_, []: [u32; 0], _verbose| {
+            |thread: &mut Thread, _: &_, []: [u32; 0], verbose| {
                 let system_class = thread.class_area.search("java/lang/System").unwrap();
                 let out_ref = thread.heap.lock().unwrap().allocate(Object::from_class(
                     &thread.class_area.search("java/io/PrintStream").unwrap(),
                 ));
                 system_class.static_data.lock().unwrap()[0] = out_ref;
-                thread.heap.lock().unwrap().inc_ref(out_ref);
+                thread.rember(out_ref, verbose);
                 Ok(Some(()))
             },
         )),
