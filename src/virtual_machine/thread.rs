@@ -1206,7 +1206,12 @@ impl Thread {
         }
     }
 
-    fn maybe_initialize_class(&mut self, class: &Class, stackframe: &Mutex<StackFrame>) -> bool {
+    /// # Panics
+    pub fn maybe_initialize_class(
+        &mut self,
+        class: &Class,
+        stackframe: &Mutex<StackFrame>,
+    ) -> bool {
         if class.initialized.is_completed() {
             return false;
         }

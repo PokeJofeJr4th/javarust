@@ -326,6 +326,7 @@ pub type ArrayType = NativeFieldObj<FieldType>;
 pub type HashMapObj = NativeFieldObj<HashMap<u32, u32, BuildNonHasher>>;
 pub type HashSetObj = NativeFieldObj<HashSet<u32, BuildNonHasher>>;
 pub type ArrayListObj = NativeFieldObj<Vec<u32>>;
+pub type ClassObj = NativeFieldObj<Arc<Class>>;
 
 pub struct ArrayFields<'a, T> {
     pub arr_type: &'a FieldType,

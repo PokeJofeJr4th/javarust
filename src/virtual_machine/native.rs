@@ -1,4 +1,8 @@
-use std::{hash::{DefaultHasher, Hash, Hasher}, sync::{Arc, Mutex}};
+use std::{
+    collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
+    sync::{Arc, Mutex, OnceLock},
+};
 
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
@@ -6,21 +10,20 @@ use crate::{
     access,
     class::{
         code::{
-            native_property, NativeDoubleMethod, NativeNoop, NativeSingleMethod, NativeStringMethod, NativeTodo, NativeVoid
+            native_property, NativeDoubleMethod, NativeNoop, NativeSingleMethod,
+            NativeStringMethod, NativeTodo, NativeVoid,
         },
         Class, Field, FieldType, MethodDescriptor,
     },
     class_loader::{RawClass, RawCode, RawMethod},
-    data::{WorkingClassArea, WorkingMethodArea, NULL},
+    data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
     method,
 };
 
 use self::{
     arrays::deep_to_string,
     primitives::make_primitives,
-    string::{
-        native_println_object, native_string_char_at, native_string_value_of,
-    },
+    string::{native_println_object, native_string_char_at, native_string_value_of},
 };
 
 use super::{
@@ -31,6 +34,7 @@ use super::{
 pub mod arrays;
 pub mod collections;
 pub mod primitives;
+pub mod reflect;
 pub mod string;
 pub mod string_builder;
 pub mod throwable;
@@ -40,6 +44,27 @@ pub static mut STRING_CLASS: Option<Arc<Class>> = None;
 pub static mut STRING_BUILDER_CLASS: Option<Arc<Class>> = None;
 pub static mut ARRAY_CLASS: Option<Arc<Class>> = None;
 pub static mut RANDOM_CLASS: Option<Arc<Class>> = None;
+
+/// return a Class object of the given name
+pub fn get_class(
+    heap: &mut Heap,
+    class_area: &SharedClassArea,
+    obj_class: Arc<str>,
+) -> Option<u32> {
+    static CLASS_CACHE: Mutex<OnceLock<HashMap<Arc<str>, u32>>> = Mutex::new(OnceLock::new());
+    let mut binding = CLASS_CACHE.lock().unwrap();
+    let class_cache = binding.get_or_init(HashMap::new);
+    if let Some(&ptr) = class_cache.get(&obj_class) {
+        return Some(ptr);
+    }
+    let class_class = class_area.search("java/lang/Class")?;
+    let mut class_obj = Object::from_class(&class_class);
+    class_obj.native_fields.push(Box::new(class_class));
+    let ptr = heap.allocate(class_obj);
+    binding.get_mut().unwrap().insert(obj_class, ptr);
+    drop(binding);
+    Some(ptr)
+}
 
 #[allow(clippy::too_many_lines)]
 /// # Panics
@@ -53,6 +78,27 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         signature: None,
         attributes: Vec::new(),
         code: RawCode::native(NativeNoop),
+        ..Default::default()
+    };
+    let object_get_class = RawMethod {
+        access_flags: access!(public native),
+        name: "getClass".into(),
+        descriptor: method!(() -> Object("java/lang/Class".into())),
+        code: RawCode::native(NativeSingleMethod(
+            |thread: &mut Thread, _: &_, [obj]: [u32; 1], _| {
+                let obj_class = AnyObj.get(&thread.heap.lock().unwrap(), obj as usize, |obj| {
+                    obj.class.clone()
+                })?;
+                Ok(Some(
+                    get_class(
+                        &mut thread.heap.lock().unwrap(),
+                        &thread.class_area,
+                        obj_class,
+                    )
+                    .unwrap_or(NULL),
+                ))
+            },
+        )),
         ..Default::default()
     };
     let object_to_string = RawMethod {
@@ -70,12 +116,14 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public native),
         name: "getHashCode".into(),
         descriptor: method!(() -> int),
-        code: RawCode::native(NativeSingleMethod(|_: &mut _, _: &_, [ptr]: [u32; 1], _| {
-            let mut hasher = DefaultHasher::new();
-            ptr.hash(&mut hasher);
-            let value = hasher.finish() as u32;
-            Ok(Some(value))
-        })),
+        code: RawCode::native(NativeSingleMethod(
+            |_: &mut _, _: &_, [ptr]: [u32; 1], _| {
+                let mut hasher = DefaultHasher::new();
+                ptr.hash(&mut hasher);
+                let value = hasher.finish() as u32;
+                Ok(Some(value))
+            },
+        )),
         ..Default::default()
     };
 
@@ -84,13 +132,12 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         java_lang_object.clone(),
         java_lang_object.clone(),
     );
-    object
-        .methods
-        .extend([object_init.name(java_lang_object.clone()),
+    object.methods.extend([
+        object_init.name(java_lang_object.clone()),
         object_to_string.name(java_lang_object.clone()),
-        object_hash.name(java_lang_object.clone())
-        ]
-    );
+        object_hash.name(java_lang_object.clone()),
+        object_get_class.name(java_lang_object.clone()),
+    ]);
 
     let mut enum_class = RawClass::new(
         access!(public abstract native),
@@ -127,13 +174,15 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 let Some(enum_class) = thread.class_area.search("java/lang/Enum") else {
                     return Err(String::from("Couldn't find class java/lang/Enum"));
                 };
-                enum_class.get_mut(
-                    &mut thread.heap.lock().unwrap(),
-                    obj_ref as usize,
-                    |instance| {
-                        instance.fields = vec![string, id];
-                    },
-                ).map(Option::Some)
+                enum_class
+                    .get_mut(
+                        &mut thread.heap.lock().unwrap(),
+                        obj_ref as usize,
+                        |instance| {
+                            instance.fields = vec![string, id];
+                        },
+                    )
+                    .map(Option::Some)
             },
         )),
         ..Default::default()
@@ -142,9 +191,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public native),
         name: "toString".into(),
         descriptor: method!(() -> Object(java_lang_object.clone())),
-        code: RawCode::native(NativeSingleMethod(
-            native_property(AnyObj, |obj| obj.fields[0])
-        )),
+        code: RawCode::native(NativeSingleMethod(native_property(AnyObj, |obj| {
+            obj.fields[0]
+        }))),
         ..Default::default()
     };
     let enum_name = RawMethod {
@@ -207,7 +256,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public native),
         name: "length".into(),
         descriptor: method!(() -> int),
-        code: RawCode::native(NativeSingleMethod(native_property(StringObj::SELF, |s| s.len() as u32))),
+        code: RawCode::native(NativeSingleMethod(native_property(StringObj::SELF, |s| {
+            s.len() as u32
+        }))),
         ..Default::default()
     };
     let char_at = RawMethod {
@@ -283,15 +334,13 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: method!(() -> void),
         code: RawCode::native(NativeVoid(
             |thread: &mut Thread, _: &_, [obj]: [u32; 1], _verbose: bool| {
-                AnyObj.get_mut(
-                    &mut thread.heap.lock().unwrap(),
-                    obj as usize,
-                    |instance| {
+                AnyObj
+                    .get_mut(&mut thread.heap.lock().unwrap(), obj as usize, |instance| {
                         instance
                             .native_fields
                             .push(Box::new(StdRng::from_entropy()));
-                    },
-                ).map(Option::Some)
+                    })
+                    .map(Option::Some)
             },
         )),
         ..Default::default()
@@ -311,16 +360,18 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 if verbose {
                     println!("java/util/Random.nextInt(int): right_bound={right_bound}");
                 }
-                AnyObj.get_mut(
-                    &mut thread.heap.lock().unwrap(),
-                    obj_ref as usize,
-                    |random_obj| {
-                        random_obj.native_fields[0]
-                            .downcast_mut::<StdRng>()
-                            .unwrap()
-                            .gen_range(0..right_bound)
-                    },
-                ).map(Option::Some)
+                AnyObj
+                    .get_mut(
+                        &mut thread.heap.lock().unwrap(),
+                        obj_ref as usize,
+                        |random_obj| {
+                            random_obj.native_fields[0]
+                                .downcast_mut::<StdRng>()
+                                .unwrap()
+                                .gen_range(0..right_bound)
+                        },
+                    )
+                    .map(Option::Some)
             },
         )),
         ..Default::default()
@@ -475,10 +526,10 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public native),
         name: "arraycopy".into(),
         descriptor: method!((
-            (Object(java_lang_object.clone())), 
-            int, 
-            (Object(java_lang_object.clone())), 
-            int, 
+            (Object(java_lang_object.clone())),
+            int,
+            (Object(java_lang_object.clone())),
+            int,
             int
         ) -> void),
         code: RawCode::native(NativeVoid(
@@ -495,29 +546,33 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                         Array1.get(&thread.heap.lock().unwrap(), src_idx as usize, |fields| {
                             fields.contents[(start as usize)..(start + count) as usize].to_vec()
                         })?;
-                    Array1.get_mut(
-                        &mut thread.heap.lock().unwrap(),
-                        dest_idx as usize,
-                        |fields| {
-                            for (i, value) in copied.into_iter().enumerate() {
-                                fields.contents[start_dest as usize + i] = value;
-                            }
-                        },
-                    ).map(Option::Some)
+                    Array1
+                        .get_mut(
+                            &mut thread.heap.lock().unwrap(),
+                            dest_idx as usize,
+                            |fields| {
+                                for (i, value) in copied.into_iter().enumerate() {
+                                    fields.contents[start_dest as usize + i] = value;
+                                }
+                            },
+                        )
+                        .map(Option::Some)
                 } else {
                     let copied =
                         Array2.get(&thread.heap.lock().unwrap(), src_idx as usize, |fields| {
                             fields.contents[(start as usize)..(start + count) as usize].to_vec()
                         })?;
-                    Array2.get_mut(
-                        &mut thread.heap.lock().unwrap(),
-                        dest_idx as usize,
-                        |fields| {
-                            for (i, value) in copied.into_iter().enumerate() {
-                                fields.contents[start_dest as usize + i] = value;
-                            }
-                        },
-                    ).map(Option::Some)
+                    Array2
+                        .get_mut(
+                            &mut thread.heap.lock().unwrap(),
+                            dest_idx as usize,
+                            |fields| {
+                                for (i, value) in copied.into_iter().enumerate() {
+                                    fields.contents[start_dest as usize + i] = value;
+                                }
+                            },
+                        )
+                        .map(Option::Some)
                 }
             },
         )),
@@ -558,7 +613,11 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: method!((double) -> double),
         code: RawCode::native(NativeDoubleMethod(
             |_: &mut _, _: &_, [left, right]: [u32; 2], _| {
-                Ok(Some(f64::from_bits((left as u64) << 32 | (right as u64)).sqrt().to_bits()))
+                Ok(Some(
+                    f64::from_bits((left as u64) << 32 | (right as u64))
+                        .sqrt()
+                        .to_bits(),
+                ))
             },
         )),
         ..Default::default()
@@ -577,11 +636,18 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         class_area,
     );
     collections::add_native_collections(class_area, method_area, &java_lang_object);
+    reflect::add_native_methods(
+        method_area,
+        class_area,
+        &java_lang_object,
+        &java_lang_string,
+    );
 
     method_area.extend([
         (object.this.clone(), object_init),
         (object.this.clone(), object_to_string),
         (object.this.clone(), object_hash),
+        (object.this.clone(), object_get_class),
         (enum_class.this.clone(), enum_init),
         (enum_class.this.clone(), enum_to_string),
         (enum_class.this.clone(), enum_name),
