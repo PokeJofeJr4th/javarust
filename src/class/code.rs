@@ -3,7 +3,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::virtual_machine::{thread::push_long, Instruction, StackFrame, Thread};
+use crate::virtual_machine::{
+    object::ObjectFinder, thread::push_long, Instruction, StackFrame, Thread,
+};
 
 use super::{Attribute, FieldType};
 
@@ -308,6 +310,22 @@ impl NativeMethod for NativeNoop {
     ) -> Result<(), String> {
         thread.return_void();
         Ok(())
+    }
+}
+
+/// # Panics
+pub fn native_property<F: ObjectFinder, O>(
+    finder: F,
+    func: impl Fn(F::Target<'_>) -> O,
+) -> impl Fn(&mut Thread, &Mutex<StackFrame>, [u32; 1], bool) -> Result<Option<O>, String> {
+    move |thread: &mut Thread, _: &_, [ptr]: [u32; 1], _| {
+        finder
+            .get(
+                &thread.heap.lock().unwrap(),
+                ptr as usize,
+                |obj: F::Target<'_>| func(obj),
+            )
+            .map(Option::Some)
     }
 }
 

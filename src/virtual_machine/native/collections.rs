@@ -1,10 +1,8 @@
-use std::
-    sync::{Arc, Mutex}
-;
+use std::sync::{Arc, Mutex};
 
 use crate::{
     access,
-    class::code::{NativeSingleMethod, NativeVoid},
+    class::code::{native_property, NativeSingleMethod, NativeVoid},
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea, NULL},
     method,
@@ -27,6 +25,16 @@ pub fn add_native_collections(
     );
 
     let hash_map_init = HashMapObj::default_init();
+    let hash_map_size = RawMethod {
+        access_flags: access!(public native),
+        name: "size".into(),
+        descriptor: method!(() -> int),
+        code: RawCode::native(NativeSingleMethod(native_property(
+            HashMapObj::SELF,
+            |map| map.len() as u32,
+        ))),
+        ..Default::default()
+    };
     let hash_map_put = RawMethod {
         access_flags: access!(public native),
         name: "put".into(),
@@ -106,6 +114,7 @@ pub fn add_native_collections(
         hash_map_init.name(hash_map.this.clone()),
         hash_map_put.name(hash_map.this.clone()),
         hash_map_get.name(hash_map.this.clone()),
+        hash_map_size.name(hash_map.this.clone()),
     ]);
 
     let mut hash_set = RawClass::new(
@@ -115,6 +124,16 @@ pub fn add_native_collections(
     );
 
     let hash_set_init = HashSetObj::default_init();
+    let hash_set_size = RawMethod {
+        access_flags: access!(public native),
+        name: "size".into(),
+        descriptor: method!(() -> int),
+        code: RawCode::native(NativeSingleMethod(native_property(
+            HashSetObj::SELF,
+            |set| set.len() as u32,
+        ))),
+        ..Default::default()
+    };
     let hash_set_insert = RawMethod {
         access_flags: access!(public native),
         name: "insert".into(),
@@ -194,6 +213,7 @@ pub fn add_native_collections(
         hash_set_init.name(hash_set.this.clone()),
         hash_set_contains.name(hash_set.this.clone()),
         hash_set_insert.name(hash_set.this.clone()),
+        hash_set_size.name(hash_set.this.clone()),
     ]);
 
     let mut array_list = RawClass::new(
@@ -221,15 +241,10 @@ pub fn add_native_collections(
         access_flags: access!(public native),
         name: "size".into(),
         descriptor: method!(() -> int),
-        code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, _: &_, [this]: [u32; 1], _| {
-                ArrayListObj::SELF
-                    .get(&thread.heap.lock().unwrap(), this as usize, |arrls| {
-                        arrls.len() as u32
-                    })
-                    .map(Option::Some)
-            },
-        )),
+        code: RawCode::native(NativeSingleMethod(native_property(
+            ArrayListObj::SELF,
+            |arrls| arrls.len() as u32,
+        ))),
         ..Default::default()
     };
     array_list.methods.extend([
@@ -242,9 +257,11 @@ pub fn add_native_collections(
         (hash_map.this.clone(), hash_map_init),
         (hash_map.this.clone(), hash_map_put),
         (hash_map.this.clone(), hash_map_get),
+        (hash_map.this.clone(), hash_map_size),
         (hash_set.this.clone(), hash_set_init),
         (hash_set.this.clone(), hash_set_contains),
         (hash_set.this.clone(), hash_set_insert),
+        (hash_set.this.clone(), hash_set_size),
         (array_list.this.clone(), arrlist_init),
         (array_list.this.clone(), arrlist_append),
         (array_list.this.clone(), arrlist_size),
