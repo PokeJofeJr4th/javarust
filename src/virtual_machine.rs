@@ -10,6 +10,7 @@ use crate::data::{SharedClassArea, SharedHeap, SharedMethodArea};
 
 pub use self::native::add_native_methods;
 
+use self::object::Array1;
 pub use self::thread::Thread;
 
 pub use self::instruction::{hydrate_code, Cmp, Instruction, Op};
@@ -52,6 +53,7 @@ pub fn start_vm(
     method_area: SharedMethodArea,
     class_area: SharedClassArea,
     heap: SharedHeap,
+    argv: Vec<String>,
     verbose: bool,
 ) {
     // set the static classes
@@ -62,6 +64,17 @@ pub fn start_vm(
         native::STRING_BUILDER_CLASS = class_area.search("java/lang/StringBuilder");
         native::STRING_CLASS = class_area.search("java/lang/String");
     }
+
+    let mut heap_borrow = heap.lock().unwrap();
+    let arg_ptrs: Vec<u32> = argv
+        .into_iter()
+        .map(|arg| heap_borrow.allocate_str(arg.into()))
+        .collect();
+    let argv_ptr = heap_borrow.allocate(Array1::from_vec(
+        arg_ptrs,
+        FieldType::Object("java/lang/String".into()),
+    ));
+    drop(heap_borrow);
 
     let (class, method) = method_area
         .search(
@@ -84,6 +97,7 @@ pub fn start_vm(
         heap,
     };
     primary_thread.invoke_method(method, class);
+    primary_thread.stack.last().unwrap().lock().unwrap().locals[0] = argv_ptr;
     loop {
         // println!(
         //     "{:?}",

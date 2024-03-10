@@ -18,7 +18,8 @@ pub mod class_loader;
 pub mod data;
 pub mod virtual_machine;
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
+#[allow(clippy::struct_field_names)]
 struct Args {
     /// the filenames of the classes to run. The first filename will be treated as the main class
     filenames: Vec<PathBuf>,
@@ -30,10 +31,14 @@ struct Args {
     /// use this option to read dependencies from a file containing one relative path per line
     #[clap(short, long)]
     project: Option<PathBuf>,
+    /// pass these values as arguments to the java program
+    #[clap(last = true, allow_hyphen_values = true)]
+    program_args: Vec<String>,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
+    println!("{args:?}");
     let mut firstclass = None;
     let (mut method_area, mut class_area) = class_loader::load_environment();
     let mut filenames = args.filenames;
@@ -85,7 +90,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{method_area:#?}");
     }
     if args.run {
-        virtual_machine::start_vm(&class, method_area, class_area, heap, args.verbose);
+        virtual_machine::start_vm(
+            &class,
+            method_area,
+            class_area,
+            heap,
+            args.program_args,
+            args.verbose,
+        );
     }
     Ok(())
 }
