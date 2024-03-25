@@ -62,11 +62,10 @@ pub fn add_native_collections(
                 } else {
                     let hash_code = stackframe.lock().unwrap().operand_stack.pop().unwrap();
                     // add the object to the hash map
-                    HashMapObj::SELF
-                        .get_mut(&mut thread.heap.lock().unwrap(), this as usize, |map| {
-                            map.insert(hash_code, value)
-                        })
-                        .map(|_| Some(()))
+                    HashMapObj::get_mut(&mut thread.heap.lock().unwrap(), this as usize, |map| {
+                        map.insert(hash_code, value)
+                    })
+                    .map(|_| Some(()))
                 }
             },
         )),
@@ -99,12 +98,11 @@ pub fn add_native_collections(
                 } else {
                     let hash_code = stackframe.lock().unwrap().operand_stack.pop().unwrap();
                     // add the object to the hash map
-                    HashMapObj::SELF
-                        .get(&thread.heap.lock().unwrap(), this as usize, |map| {
-                            map.get(&hash_code).copied()
-                        })
-                        .map(|opt| opt.unwrap_or(NULL))
-                        .map(Option::Some)
+                    HashMapObj::get(&thread.heap.lock().unwrap(), this as usize, |map| {
+                        map.get(&hash_code).copied()
+                    })
+                    .map(|opt| opt.unwrap_or(NULL))
+                    .map(Option::Some)
                 }
             },
         )),
@@ -161,11 +159,10 @@ pub fn add_native_collections(
                 } else {
                     let hash_code = stackframe.lock().unwrap().operand_stack.pop().unwrap();
                     // add the object to the hash map
-                    HashSetObj::SELF
-                        .get_mut(&mut thread.heap.lock().unwrap(), this as usize, |set| {
-                            set.insert(hash_code);
-                        })
-                        .map(Option::Some)
+                    HashSetObj::get_mut(&mut thread.heap.lock().unwrap(), this as usize, |set| {
+                        set.insert(hash_code);
+                    })
+                    .map(Option::Some)
                 }
             },
         )),
@@ -198,11 +195,10 @@ pub fn add_native_collections(
                 } else {
                     let hash_code = stackframe.lock().unwrap().operand_stack.pop().unwrap();
                     // check if the set contains the element
-                    HashSetObj::SELF
-                        .get(&thread.heap.lock().unwrap(), this as usize, |map| {
-                            u32::from(map.contains(&hash_code))
-                        })
-                        .map(Option::Some)
+                    HashSetObj::get(&thread.heap.lock().unwrap(), this as usize, |map| {
+                        u32::from(map.contains(&hash_code))
+                    })
+                    .map(Option::Some)
                 }
             },
         )),
@@ -228,11 +224,24 @@ pub fn add_native_collections(
         descriptor: method!(((Object(java_lang_object.clone()))) -> void),
         code: RawCode::native(NativeVoid(
             |thread: &mut Thread, _: &_, [this, ptr]: [u32; 2], _| {
-                ArrayListObj::SELF
-                    .get_mut(&mut thread.heap.lock().unwrap(), this as usize, |arrlist| {
-                        arrlist.push(ptr);
-                    })
-                    .map(Option::Some)
+                ArrayListObj::get_mut(&mut thread.heap.lock().unwrap(), this as usize, |arrlist| {
+                    arrlist.push(ptr);
+                })
+                .map(Option::Some)
+            },
+        )),
+        ..Default::default()
+    };
+    let arrlist_add = RawMethod {
+        access_flags: access!(public native),
+        name: "add".into(),
+        descriptor: method!(((Object(java_lang_object.clone()))) -> boolean),
+        code: RawCode::native(NativeSingleMethod(
+            |thread: &mut Thread, _: &_, [this, ptr]: [u32; 2], _| {
+                ArrayListObj::get_mut(&mut thread.heap.lock().unwrap(), this as usize, |arrlist| {
+                    arrlist.push(ptr);
+                })
+                .map(|()| Some(1))
             },
         )),
         ..Default::default()
@@ -251,6 +260,7 @@ pub fn add_native_collections(
         arrlist_init.name(array_list.this.clone()),
         arrlist_append.name(array_list.this.clone()),
         arrlist_size.name(array_list.this.clone()),
+        arrlist_add.name(array_list.this.clone()),
     ]);
 
     method_area.extend([
@@ -264,6 +274,7 @@ pub fn add_native_collections(
         (hash_set.this.clone(), hash_set_size),
         (array_list.this.clone(), arrlist_init),
         (array_list.this.clone(), arrlist_append),
+        (array_list.this.clone(), arrlist_add),
         (array_list.this.clone(), arrlist_size),
     ]);
     class_area.extend([hash_map, hash_set, array_list]);

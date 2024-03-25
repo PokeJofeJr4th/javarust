@@ -27,7 +27,7 @@ use self::{
 };
 
 use super::{
-    object::{AnyObj, Array1, Array2, ArrayType, Object, ObjectFinder, StringObj},
+    object::{AnyObj, Array1, Array2, ArrayType, Object, ObjectFinder, Random, StringObj},
     StackFrame, Thread,
 };
 
@@ -328,23 +328,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         to_string.name(string_builder.this.clone()),
     ]);
 
-    let random_init = RawMethod {
-        access_flags: access!(public native),
-        name: "<init>".into(),
-        descriptor: method!(() -> void),
-        code: RawCode::native(NativeVoid(
-            |thread: &mut Thread, _: &_, [obj]: [u32; 1], _verbose: bool| {
-                AnyObj
-                    .get_mut(&mut thread.heap.lock().unwrap(), obj as usize, |instance| {
-                        instance
-                            .native_fields
-                            .push(Box::new(StdRng::from_entropy()));
-                    })
-                    .map(Option::Some)
-            },
-        )),
-        ..Default::default()
-    };
+    let random_init = Random::make_init(StdRng::from_entropy);
     let next_int = RawMethod {
         access_flags: access!(public native),
         name: "nextInt".into(),
@@ -356,22 +340,14 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
              verbose: bool| {
                 if verbose {
                     println!("java/util/Random.nextInt(int): obj_ref={obj_ref}");
-                }
-                if verbose {
                     println!("java/util/Random.nextInt(int): right_bound={right_bound}");
                 }
-                AnyObj
-                    .get_mut(
-                        &mut thread.heap.lock().unwrap(),
-                        obj_ref as usize,
-                        |random_obj| {
-                            random_obj.native_fields[0]
-                                .downcast_mut::<StdRng>()
-                                .unwrap()
-                                .gen_range(0..right_bound)
-                        },
-                    )
-                    .map(Option::Some)
+                Random::get_mut(
+                    &mut thread.heap.lock().unwrap(),
+                    obj_ref as usize,
+                    |random_obj| random_obj.gen_range(0..right_bound),
+                )
+                .map(Option::Some)
             },
         )),
         ..Default::default()
@@ -538,7 +514,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
              [src_idx, start, dest_idx, start_dest, count]: [u32; 5],
              _verbose| {
                 let arr_size =
-                    ArrayType::SELF.get(&thread.heap.lock().unwrap(), src_idx as usize, |ty| {
+                    ArrayType::get(&thread.heap.lock().unwrap(), src_idx as usize, |ty| {
                         ty.get_size()
                     })?;
                 if arr_size == 1 {

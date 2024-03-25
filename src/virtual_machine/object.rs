@@ -5,6 +5,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use rand::rngs::StdRng;
+
 use crate::{
     access,
     class::{code::NativeVoid, Class, Code, FieldType, Method, MethodDescriptor},
@@ -228,6 +230,26 @@ impl<T, const I: usize> NativeFieldObj<T, I> {
     pub const SELF: Self = Self(PhantomData);
 }
 
+impl<E: 'static, const I: usize> NativeFieldObj<E, I> {
+    /// # Errors
+    pub fn get<O>(
+        heap: &Heap,
+        index: usize,
+        func: impl FnOnce(<Self as ObjectFinder>::Target<'_>) -> O,
+    ) -> Result<O, String> {
+        Self::SELF.get(heap, index, func)
+    }
+
+    /// # Errors
+    pub fn get_mut<O>(
+        heap: &mut Heap,
+        index: usize,
+        func: impl FnOnce(<Self as ObjectFinder>::TargetMut<'_>) -> O,
+    ) -> Result<O, String> {
+        Self::SELF.get_mut(heap, index, func)
+    }
+}
+
 impl<E: 'static, const I: usize> ObjectFinder for NativeFieldObj<E, I> {
     type Target<'b> = &'b E;
 
@@ -327,6 +349,7 @@ pub type HashMapObj = NativeFieldObj<HashMap<u32, u32, BuildNonHasher>>;
 pub type HashSetObj = NativeFieldObj<HashSet<u32, BuildNonHasher>>;
 pub type ArrayListObj = NativeFieldObj<Vec<u32>>;
 pub type ClassObj = NativeFieldObj<Arc<Class>>;
+pub type Random = NativeFieldObj<StdRng>;
 
 pub struct ArrayFields<'a, T> {
     pub arr_type: &'a FieldType,

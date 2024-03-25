@@ -843,27 +843,33 @@ impl Thread {
                 };
                 let object_index = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
-                AnyObj.get_mut(
+                let forgor_rember = AnyObj.get_mut(
                     &mut self.heap.lock().unwrap(),
                     object_index as usize,
-                    |object_borrow| -> Result<(), String> {
+                    |object_borrow| -> Result<Option<(u32, u32)>, String> {
                         if verbose {
                             println!("Object class: {}", object_borrow.this_class());
                         }
 
+                        // handle memory stuff outside of the closure so we don't deadlock
+                        let forgor_rember = if field_type.is_reference() {
+                            Some((object_borrow.fields[idx], value as u32))
+                        } else {
+                            None
+                        };
                         if field_type.get_size() == 1 {
-                            if field_type.is_reference() {
-                                self.forgor(object_borrow.fields[idx], verbose);
-                                self.rember(value as u32, verbose);
-                            }
                             object_borrow.fields[idx] = value as u32;
                         } else {
                             object_borrow.fields[idx] = (value >> 32) as u32;
                             object_borrow.fields[idx + 1] = value as u32;
                         }
-                        Ok(())
+                        Ok(forgor_rember)
                     },
                 )??;
+                if let Some((forgor, rember)) = forgor_rember {
+                    self.forgor(forgor, verbose);
+                    self.rember(rember, verbose);
+                }
             }
             Instruction::InvokeVirtual(_class, name, method_type)
             | Instruction::InvokeInterface(_class, name, method_type) => {
@@ -1419,6 +1425,15 @@ impl Thread {
                     println!("makeConcatWithConstants: {heap_pointer}");
                 }
             }
+            // (
+            //     "metafactory",
+            //     BootstrapMethod { method, args },
+            //     MethodDescriptor {
+            //         parameter_size,
+            //         parameters,
+            //         return_type,
+            //     },
+            // ) => {}
             (n, h, d) => return Err(format!("Error during InvokeDynamic: {n}: {d:?}; {h:?}")),
         }
         Ok(())
