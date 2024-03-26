@@ -151,6 +151,8 @@ pub trait NativeMethod: Send + Sync + 'static {
         stackframe: &Mutex<StackFrame>,
         is_verbose: bool,
     ) -> Result<(), String>;
+
+    fn args(&self) -> u16;
 }
 
 #[derive(Clone, Copy)]
@@ -170,6 +172,10 @@ impl NativeMethod for NativeTodo {
             "Unimplemented Native Method {:?} {}.{}",
             method.descriptor, class.this, method.name
         ))
+    }
+
+    fn args(&self) -> u16 {
+        0
     }
 }
 
@@ -201,6 +207,10 @@ impl<
         }
         Ok(())
     }
+
+    fn args(&self) -> u16 {
+        N as u16
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -230,6 +240,10 @@ impl<
             thread.return_two(is_verbose);
         }
         Ok(())
+    }
+
+    fn args(&self) -> u16 {
+        N as u16
     }
 }
 
@@ -266,6 +280,10 @@ impl<
         }
         Ok(())
     }
+
+    fn args(&self) -> u16 {
+        N as u16
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -296,6 +314,10 @@ impl<
         }
         Ok(())
     }
+
+    fn args(&self) -> u16 {
+        ARGS as u16
+    }
 }
 
 /// A native method that does nothing
@@ -310,6 +332,9 @@ impl NativeMethod for NativeNoop {
     ) -> Result<(), String> {
         thread.return_void();
         Ok(())
+    }
+    fn args(&self) -> u16 {
+        1
     }
 }
 

@@ -177,13 +177,14 @@ impl Debug for MethodName {
 pub enum RawCode {
     ByteCode(ByteCode, u16),
     Code(Vec<u8>),
-    Native(Arc<Box<dyn NativeMethod>>),
+    Native(Arc<Box<dyn NativeMethod>>, u16),
     Abstract,
 }
 
 impl RawCode {
     pub fn native(func: impl NativeMethod + 'static) -> Self {
-        Self::Native(Arc::new(Box::new(func)))
+        let args = func.args();
+        Self::Native(Arc::new(Box::new(func)), args)
     }
 }
 
@@ -217,10 +218,7 @@ impl RawMethod {
     ) -> Result<Method, String> {
         let (code, max_locals) = match &self.code {
             RawCode::Abstract => (Code::Abstract, self.descriptor.parameter_size as u16),
-            RawCode::Native(native_method) => (
-                Code::Native(native_method.clone()),
-                self.descriptor.parameter_size as u16,
-            ),
+            RawCode::Native(native_method, args) => (Code::Native(native_method.clone()), *args),
             RawCode::Code(code) => {
                 if verbose {
                     println!("Cooking method {:?} {}", self.descriptor, self.name);

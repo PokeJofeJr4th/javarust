@@ -12,6 +12,8 @@ mod raw_class;
 
 pub use raw_class::{MethodName, RawClass, RawCode, RawMethod};
 
+// TODO: Attributes: EnclosingMethod, NestHost
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MethodHandleKind {
     GetField,

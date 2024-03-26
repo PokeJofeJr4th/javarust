@@ -256,11 +256,132 @@ pub fn add_native_collections(
         ))),
         ..Default::default()
     };
+    let arrlist_sort = RawMethod {
+        access_flags: access!(public native),
+        name: "sort".into(),
+        descriptor: method!(((Object("java/util/Comparator".into()))) -> void),
+        code: RawCode::native(NativeVoid(
+            |thread: &mut Thread,
+             stackframe: &Mutex<StackFrame>,
+             [this, cmp, partition, length, target_ptr, index]: [u32; 6],
+             verbose: bool| {
+                let pc = thread.pc_register;
+                thread.pc_register += 1;
+                match pc {
+                    0 => {
+                        stackframe.lock().unwrap().locals[2] = 1;
+                        let length =
+                            ArrayListObj::get(&thread.heap.lock().unwrap(), this as usize, |vec| {
+                                vec.len()
+                            })? as u32;
+                        stackframe.lock().unwrap().locals[3] = length;
+                        Ok(None)
+                    }
+                    1 => {
+                        let target_ptr = ArrayListObj::get(
+                            &thread.heap.lock().unwrap(),
+                            this as usize,
+                            |vec| vec.get(partition as usize).copied().unwrap(),
+                        )?;
+                        stackframe.lock().unwrap().locals[4] = target_ptr;
+                        stackframe.lock().unwrap().locals[5] = partition;
+                        Ok(None)
+                    }
+                    2 => {
+                        let next_ptr = ArrayListObj::get(
+                            &thread.heap.lock().unwrap(),
+                            this as usize,
+                            |vec| vec.get(index as usize - 1).copied().unwrap(),
+                        )?;
+                        let (resolved_class, resolved_method) =
+                            AnyObj.get(&thread.heap.lock().unwrap(), cmp as usize, |obj| {
+                                obj.resolve_method(
+                                    &thread.method_area,
+                                    &thread.class_area,
+                                    "compare",
+                                    &method!(((Object("java/lang/Object".into())), (Object("java/lang/Object".into()))) -> int),
+                                    verbose,
+                                )
+                            })?;
+                        thread.invoke_method(resolved_method, resolved_class);
+                        let mut new_stackframe = thread.stack.last().unwrap().lock().unwrap();
+                        new_stackframe.locals[0] = cmp;
+                        new_stackframe.locals[1] = target_ptr;
+                        new_stackframe.locals[2] = next_ptr;
+                        drop(new_stackframe);
+                        stackframe.lock().unwrap().operand_stack.push(3);
+                        Ok(None)
+                    }
+                    3 => {
+                        let cmp = stackframe.lock().unwrap().operand_stack.pop().unwrap() as i32;
+                        if cmp >= 0 {
+                            thread.pc_register = 4;
+                        } else {
+                            // shift the value
+                            ArrayListObj::get_mut(
+                                &mut thread.heap.lock().unwrap(),
+                                this as usize,
+                                |vec| vec[index as usize] = vec[index as usize - 1],
+                            )?;
+                            // start the next loop if it's not over
+                            if partition > 0 {
+                                // exit the inner loop
+                                thread.pc_register = 4;
+                            } else {
+                                // start the next loop
+                                stackframe.lock().unwrap().locals[2] -= 1;
+                            }
+                        }
+                        Ok(None)
+                    }
+                    4 => {
+                        // exit the loop and simulate the end
+                        ArrayListObj::get_mut(
+                            &mut thread.heap.lock().unwrap(),
+                            this as usize,
+                            |vec| {
+                                vec[index as usize] = target_ptr;
+                            },
+                        )?;
+                        // start the next outer loop or exit the function
+                        if partition + 1 >= length {
+                            // exit the function
+                            Ok(Some(()))
+                        } else {
+                            // start the next outer loop
+                            thread.pc_register = 1;
+                            // increment partition
+                            stackframe.lock().unwrap().locals[2] += 1;
+                            Ok(None)
+                        }
+                    }
+                    _ => Err("Impossible pc reached".to_string()),
+                }
+                /*
+                def insertion_sort_wo_swap(a_list):
+                    # 0
+                    for partition in range(1, len(a_list)):
+                        # 1
+                        target = a_list[partition]
+                        for index in range(partition, -1, -1):
+                            # 2
+                            if target >= a_list[index - 1]:
+                            # 3
+                                break
+                            a_list[index] = a_list[index - 1]
+                        # 4
+                        a_list[index] = target
+                */
+            },
+        )),
+        ..Default::default()
+    };
     array_list.methods.extend([
         arrlist_init.name(array_list.this.clone()),
         arrlist_append.name(array_list.this.clone()),
         arrlist_size.name(array_list.this.clone()),
         arrlist_add.name(array_list.this.clone()),
+        arrlist_sort.name(array_list.this.clone()),
     ]);
 
     method_area.extend([
@@ -276,6 +397,7 @@ pub fn add_native_collections(
         (array_list.this.clone(), arrlist_append),
         (array_list.this.clone(), arrlist_add),
         (array_list.this.clone(), arrlist_size),
+        (array_list.this.clone(), arrlist_sort),
     ]);
     class_area.extend([hash_map, hash_set, array_list]);
 }

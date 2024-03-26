@@ -808,29 +808,33 @@ impl Thread {
                 // get a field from an object
                 let object_index = stackframe.lock().unwrap().operand_stack.pop().unwrap();
 
-                AnyObj
-                    .get_mut(
-                        &mut self.heap.lock().unwrap(),
-                        object_index as usize,
-                        |object_borrow| {
-                            if field_type.get_size() == 1 {
-                                let value = object_borrow.fields[idx];
-                                if field_type.is_reference() {
-                                    self.rember_temp(&stackframe, value, verbose);
-                                }
-                                stackframe.lock().unwrap().operand_stack.push(value);
+                let rember = AnyObj.get_mut(
+                    &mut self.heap.lock().unwrap(),
+                    object_index as usize,
+                    |object_borrow| {
+                        if field_type.get_size() == 1 {
+                            let value = object_borrow.fields[idx];
+                            stackframe.lock().unwrap().operand_stack.push(value);
+                            if field_type.is_reference() {
+                                Some(value)
                             } else {
-                                let upper = object_borrow.fields[idx];
-                                let lower = object_borrow.fields[idx + 1];
-                                stackframe
-                                    .lock()
-                                    .unwrap()
-                                    .operand_stack
-                                    .extend([upper, lower]);
+                                None
                             }
-                        },
-                    )
-                    .unwrap();
+                        } else {
+                            let upper = object_borrow.fields[idx];
+                            let lower = object_borrow.fields[idx + 1];
+                            stackframe
+                                .lock()
+                                .unwrap()
+                                .operand_stack
+                                .extend([upper, lower]);
+                            None
+                        }
+                    },
+                )?;
+                if let Some(value) = rember {
+                    self.rember_temp(&stackframe, value, verbose);
+                }
             }
             Instruction::PutField(Some(idx), _class, _name, field_type) => {
                 // putfield
@@ -1425,6 +1429,7 @@ impl Thread {
                     println!("makeConcatWithConstants: {heap_pointer}");
                 }
             }
+            // TODO: AAAAAAAAA
             // (
             //     "metafactory",
             //     BootstrapMethod { method, args },
