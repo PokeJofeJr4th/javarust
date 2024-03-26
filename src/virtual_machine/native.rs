@@ -284,6 +284,25 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         })),
         ..Default::default()
     };
+    let string_compare_to = RawMethod {
+        access_flags: access!(public native),
+        name: "compareTo".into(),
+        descriptor: method!(((Object(java_lang_string.clone()))) -> int),
+        code: RawCode::native(NativeSingleMethod(
+            |thread: &mut Thread, _: &_, [this, other]: [u32; 2], _| {
+                let this_str =
+                    StringObj::get(&thread.heap.lock().unwrap(), this as usize, Clone::clone)?;
+                let other_str =
+                    StringObj::get(&thread.heap.lock().unwrap(), other as usize, Clone::clone)?;
+                Ok(Some(match this_str.cmp(&other_str) {
+                    std::cmp::Ordering::Less => u32::MAX,
+                    std::cmp::Ordering::Equal => 0,
+                    std::cmp::Ordering::Greater => 1,
+                }))
+            },
+        )),
+        ..Default::default()
+    };
     let mut string = RawClass::new(
         access!(public native),
         java_lang_string.clone(),
@@ -294,6 +313,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         char_at.name(string.this.clone()),
         string_value_of.name(string.this.clone()),
         string_to_string.name(string.this.clone()),
+        string_compare_to.name(string.this.clone()),
     ]);
 
     let builder_init = RawMethod {
@@ -634,6 +654,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         (string.this.clone(), char_at),
         (string.this.clone(), string_value_of),
         (string.this.clone(), string_to_string),
+        (string.this.clone(), string_compare_to),
         (string_builder.this.clone(), builder_init),
         (string_builder.this.clone(), to_string),
         (string_builder.this.clone(), set_char_at),
