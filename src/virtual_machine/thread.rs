@@ -1,10 +1,11 @@
 use std::{
     cmp::Ordering,
     fmt::Write,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Once},
 };
 
 use crate::{
+    access,
     class::{BootstrapMethod, Class, Constant, FieldType, Method, MethodDescriptor, MethodHandle},
     data::{Heap, SharedClassArea, SharedHeap, SharedMethodArea, NULL},
 };
@@ -1036,6 +1037,7 @@ impl Thread {
                     bootstrap_method,
                     method_type,
                     &stackframe,
+                    bootstrap_index,
                     verbose,
                 )?;
             }
@@ -1329,6 +1331,7 @@ impl Thread {
         method_handle: BootstrapMethod,
         method_descriptor: MethodDescriptor,
         stackframe: &Mutex<StackFrame>,
+        callsite_number: u16,
         verbose: bool,
     ) -> Result<(), String> {
         match (method_name, method_handle, method_descriptor) {
@@ -1430,15 +1433,45 @@ impl Thread {
                 }
             }
             // TODO: AAAAAAAAA
-            // (
-            //     "metafactory",
-            //     BootstrapMethod { method, args },
-            //     MethodDescriptor {
-            //         parameter_size,
-            //         parameters,
-            //         return_type,
-            //     },
-            // ) => {}
+            (
+                method_name,
+                BootstrapMethod {
+                    method:
+                        MethodHandle::InvokeStatic {
+                            class,
+                            name,
+                            method_type: _,
+                        },
+                    args,
+                },
+                MethodDescriptor {
+                    parameter_size,
+                    parameters,
+                    return_type,
+                },
+            ) if &*name == "metafactory" && &*class == "java/lang/invoke/LambdaMetafactory" => {
+                println!("LambdaMetafactory:\nMethod name: {method_name}\nBootstrap Arguments: {args:#?}\nMethod Descriptor: {return_type:?} {parameters:?}");
+                let lambda_class = format!(
+                    "{}$Lambda#{callsite_number}",
+                    stackframe.lock().unwrap().class.this
+                )
+                .into();
+                let [Constant::MethodType(MethodDescriptor {
+                    parameter_size: inner_param_size,
+                    parameters: inner_params,
+                    return_type: inner_return,
+                }), Constant::MethodHandle(method_handle), Constant::MethodType(_enforced_type)] =
+                    &args[..]
+                else {
+                    return Err("Wrong parameters for LambdaMetaFactory".to_string());
+                };
+                let mut lambda_object = Object {
+                    fields: vec![0; parameter_size],
+                    native_fields: Vec::new(),
+                    class: lambda_class,
+                };
+                return Err("LambdaMetafactory".to_string());
+            }
             (n, h, d) => return Err(format!("Error during InvokeDynamic: {n}: {d:?}; {h:?}")),
         }
         Ok(())

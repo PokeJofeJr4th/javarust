@@ -631,7 +631,12 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         method_area,
         class_area,
     );
-    collections::add_native_collections(class_area, method_area, &java_lang_object);
+    collections::add_native_collections(
+        class_area,
+        method_area,
+        &java_lang_object,
+        &java_lang_string,
+    );
     reflect::add_native_methods(
         method_area,
         class_area,

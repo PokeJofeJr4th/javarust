@@ -2,12 +2,14 @@ use std::sync::{Arc, Mutex};
 
 use crate::{
     access,
-    class::code::{native_property, NativeSingleMethod, NativeVoid},
+    class::code::{native_property, NativeSingleMethod, NativeStringMethod, NativeVoid},
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea, NULL},
     method,
     virtual_machine::{
-        object::{AnyObj, ArrayListObj, HashMapObj, HashSetObj, ObjectFinder},
+        object::{
+            AnyObj, ArrayListObj, HashMapObj, HashSetObj, ObjectFinder, StringBuilder, StringObj,
+        },
         StackFrame, Thread,
     },
 };
@@ -17,6 +19,7 @@ pub fn add_native_collections(
     class_area: &mut WorkingClassArea,
     method_area: &mut WorkingMethodArea,
     java_lang_object: &Arc<str>,
+    java_lang_string: &Arc<str>,
 ) {
     let mut hash_map = RawClass::new(
         access!(public native),
@@ -265,6 +268,9 @@ pub fn add_native_collections(
              stackframe: &Mutex<StackFrame>,
              [this, cmp, partition, length, target_ptr, index]: [u32; 6],
              verbose: bool| {
+                if verbose {
+                    println!("Partition: {partition}, Length: {length}, Index: {index}");
+                }
                 let pc = thread.pc_register;
                 thread.pc_register += 1;
                 match pc {
@@ -325,11 +331,9 @@ pub fn add_native_collections(
                             )?;
                             // start the next loop if it's not over
                             if partition > 0 {
-                                // exit the inner loop
-                                thread.pc_register = 4;
-                            } else {
                                 // start the next loop
-                                stackframe.lock().unwrap().locals[2] -= 1;
+                                thread.pc_register = 4;
+                                stackframe.lock().unwrap().locals[5] -= 1;
                             }
                         }
                         Ok(None)
@@ -376,12 +380,106 @@ pub fn add_native_collections(
         )),
         ..Default::default()
     };
+    let java_lang_string = java_lang_string.clone();
+    let arrlist_to_string = RawMethod {
+        access_flags: access!(public native),
+        name: "toString".into(),
+        descriptor: method!(() -> Object(java_lang_string.clone())),
+        code: RawCode::native(NativeStringMethod(
+            move |thread: &mut Thread,
+                  stackframe: &Mutex<StackFrame>,
+                  [this, builder, index, length]: [u32; 4],
+                  verbose: bool| {
+                let pc = thread.pc_register;
+                thread.pc_register += 1;
+                match pc {
+                    0 => {
+                        let builder = StringBuilder::new("[".to_string(), &thread.class_area);
+                        let builder_ref = thread.heap.lock().unwrap().allocate(builder);
+                        thread.rember_temp(stackframe, builder_ref, verbose);
+                        let length = ArrayListObj::get(
+                            &thread.heap.lock().unwrap(),
+                            this as usize,
+                            |vec| vec.len() as u32,
+                        )?;
+                        let mut stackframe = stackframe.lock().unwrap();
+                        stackframe.locals[1] = builder_ref;
+                        stackframe.locals[2] = 0;
+                        stackframe.locals[3] = length;
+                        drop(stackframe);
+                        Ok(None)
+                    }
+                    1 => {
+                        let next_obj = ArrayListObj::get(
+                            &thread.heap.lock().unwrap(),
+                            this as usize,
+                            |vec| vec[index as usize],
+                        )?;
+                        let (resolved_class, resolved_method) =
+                            AnyObj.get(&thread.heap.lock().unwrap(), next_obj as usize, |obj| {
+                                obj.resolve_method(
+                                    &thread.method_area,
+                                    &thread.class_area,
+                                    "toString",
+                                    &method!(() -> Object(java_lang_string.clone())),
+                                    verbose,
+                                )
+                            })?;
+                        thread.invoke_method(resolved_method, resolved_class);
+                        let mut new_stackframe = thread.stack.last().unwrap().lock().unwrap();
+                        new_stackframe.locals[0] = next_obj;
+                        drop(new_stackframe);
+                        stackframe.lock().unwrap().operand_stack.push(2);
+                        Ok(None)
+                    }
+                    2 => {
+                        let str_ptr = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                        let string = StringObj::get(
+                            &thread.heap.lock().unwrap(),
+                            str_ptr as usize,
+                            Clone::clone,
+                        )?;
+                        StringBuilder::get_mut(
+                            &mut thread.heap.lock().unwrap(),
+                            builder as usize,
+                            |str| {
+                                if index == 0 {
+                                    str.push_str(&string);
+                                } else {
+                                    str.push_str(&format!(", {string}"));
+                                }
+                            },
+                        )?;
+                        let mut stackframe = stackframe.lock().unwrap();
+                        stackframe.locals[2] += 1;
+                        if stackframe.locals[2] >= length {
+                            let str = StringBuilder::get_mut(
+                                &mut thread.heap.lock().unwrap(),
+                                builder as usize,
+                                |builder| {
+                                    builder.push(']');
+                                    Arc::<str>::from(&**builder)
+                                },
+                            )?;
+                            Ok(Some(str))
+                        } else {
+                            thread.pc_register = 1;
+                            Ok(None)
+                        }
+                    }
+                    _ => Err("Impossible PC reached".to_string()),
+                }
+            },
+        )),
+        ..Default::default()
+    };
     array_list.methods.extend([
         arrlist_init.name(array_list.this.clone()),
         arrlist_append.name(array_list.this.clone()),
         arrlist_size.name(array_list.this.clone()),
         arrlist_add.name(array_list.this.clone()),
         arrlist_sort.name(array_list.this.clone()),
+        arrlist_to_string.name(array_list.this.clone()),
     ]);
 
     method_area.extend([
@@ -398,6 +496,7 @@ pub fn add_native_collections(
         (array_list.this.clone(), arrlist_add),
         (array_list.this.clone(), arrlist_size),
         (array_list.this.clone(), arrlist_sort),
+        (array_list.this.clone(), arrlist_to_string),
     ]);
     class_area.extend([hash_map, hash_set, array_list]);
 }

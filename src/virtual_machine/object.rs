@@ -41,7 +41,6 @@ pub struct Object {
 }
 
 impl Object {
-    /// # Panics
     pub fn from_class(class: &Class) -> Self {
         Self {
             fields: class.initial_fields.clone(),
@@ -350,6 +349,17 @@ pub type HashSetObj = NativeFieldObj<HashSet<u32, BuildNonHasher>>;
 pub type ArrayListObj = NativeFieldObj<Vec<u32>>;
 pub type ClassObj = NativeFieldObj<Arc<Class>>;
 pub type Random = NativeFieldObj<StdRng>;
+
+impl StringBuilder {
+    /// # Panics
+    #[must_use]
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(str: String, class_area: &SharedClassArea) -> Object {
+        let mut obj = Object::from_class(&class_area.search("java/lang/StringBuilder").unwrap());
+        obj.native_fields.push(Box::new(str));
+        obj
+    }
+}
 
 pub struct ArrayFields<'a, T> {
     pub arr_type: &'a FieldType,

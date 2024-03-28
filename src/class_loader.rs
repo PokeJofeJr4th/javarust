@@ -2,7 +2,12 @@ use std::{iter::Peekable, sync::Arc};
 
 use crate::{
     class::{
-        code::{ByteCode, ExceptionTableEntry, LineTableEntry, LocalVarEntry, LocalVarTypeEntry, StackMapFrame, VerificationTypeInfo}, AccessFlags, Attribute, BootstrapMethod, ClassVersion, Constant, Field, FieldType, InnerClass, MethodDescriptor, MethodHandle
+        code::{
+            ByteCode, ExceptionTableEntry, LineTableEntry, LocalVarEntry, LocalVarTypeEntry,
+            StackMapFrame, VerificationTypeInfo,
+        },
+        AccessFlags, Attribute, BootstrapMethod, ClassVersion, Constant, Field, FieldType,
+        InnerClass, MethodDescriptor, MethodHandle,
     },
     data::{SharedClassArea, WorkingClassArea, WorkingMethodArea},
     virtual_machine::{add_native_methods, hydrate_code},
@@ -12,7 +17,7 @@ mod raw_class;
 
 pub use raw_class::{MethodName, RawClass, RawCode, RawMethod};
 
-// TODO: Attributes: EnclosingMethod, NestHost
+// TODO: Attributes: EnclosingMethod, NestHost, NestMembers
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MethodHandleKind {
@@ -400,7 +405,7 @@ pub fn load_class(
                 let mut args = Vec::new();
                 for _ in 0..num_args {
                     let arg_index = get_u16(&mut bytes)?;
-                    args.push(constants[arg_index as usize].clone());
+                    args.push(constants[arg_index as usize - 1].clone());
                 }
                 bootstrap_methods.push(BootstrapMethod {
                     method: method_handle,
@@ -1076,7 +1081,10 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
                 method_type,
             }
         }
-        &RawConstant::MethodType { index } => Constant::MethodType { index },
+        &RawConstant::MethodType { index } => {
+            let type_descriptor = raw_str_index(constants, index as usize)?;
+            Constant::MethodType(parse_method_descriptor(&type_descriptor)?)
+        }
         // &RawConstant::Module { identity } => Constant::Module { identity },
         RawConstant::NameTypeDescriptor {
             name_desc_addr,

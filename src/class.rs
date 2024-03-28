@@ -3,6 +3,7 @@ use std::hash::Hash;
 use std::ops::{BitAnd, BitOr};
 use std::sync::{Arc, Mutex, Once};
 
+use crate::access;
 use crate::class_loader::MethodName;
 use crate::data::NULL;
 
@@ -43,6 +44,31 @@ pub struct Class {
     pub signature: Option<Arc<str>>,
     pub inner_classes: Vec<InnerClass>,
     pub attributes: Vec<Attribute>,
+}
+
+impl Default for Class {
+    fn default() -> Self {
+        Self {
+            initialized: Once::new(),
+            version: ClassVersion::default(),
+            constants: Vec::new(),
+            access: access!(public),
+            this: "".into(),
+            super_class: "".into(),
+            interfaces: Vec::new(),
+            field_size: 0,
+            fields: Vec::new(),
+            initial_fields: Vec::new(),
+            static_data: Mutex::new(Vec::new()),
+            statics: Vec::new(),
+            methods: Vec::new(),
+            bootstrap_methods: Vec::new(),
+            source_file: None,
+            signature: None,
+            inner_classes: Vec::new(),
+            attributes: Vec::new(),
+        }
+    }
 }
 
 impl Debug for Class {
@@ -162,9 +188,7 @@ pub enum Constant {
         type_descriptor: Arc<str>,
     },
     MethodHandle(MethodHandle),
-    MethodType {
-        index: u16,
-    },
+    MethodType(MethodDescriptor),
     // Dynamic {
     //     constant: u32,
     // },
@@ -228,7 +252,7 @@ impl Debug for Constant {
                 type_descriptor,
             } => write!(f, "NameTypeDescriptor({type_descriptor} {name})"),
             Self::MethodHandle(handle) => write!(f, "MethodHandle({handle:?})"),
-            Self::MethodType { index } => write!(f, "MethodType(#{index})"),
+            Self::MethodType(method) => write!(f, "MethodType({method:?})"),
             Self::InvokeDynamic {
                 bootstrap_index,
                 method_name,
@@ -380,7 +404,7 @@ impl BitAnd for AccessFlags {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ClassVersion {
     pub minor_version: u16,
     pub major_version: u16,
