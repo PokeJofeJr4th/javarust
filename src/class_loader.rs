@@ -115,11 +115,11 @@ pub fn load_class(
     let 0xCAFE_BABE = get_u32(bytes)? else {
         return Err(String::from("Invalid header"));
     };
+    let [minor_version, major_version, mut const_count] = get_u16_array(bytes)?;
     let version = ClassVersion {
-        minor_version: get_u16(bytes)?,
-        major_version: get_u16(bytes)?,
+        minor_version,
+        major_version,
     };
-    let mut const_count = get_u16(bytes)?;
 
     let mut raw_constants = Vec::new();
     while const_count > 1 {
@@ -160,32 +160,28 @@ pub fn load_class(
                 raw_constants.push(RawConstant::StringRef { string_addr });
             }
             Some(9) => {
-                let class_ref_addr = get_u16(bytes)?;
-                let name_type_addr = get_u16(bytes)?;
+                let [class_ref_addr, name_type_addr] = get_u16_array(bytes)?;
                 raw_constants.push(RawConstant::FieldRef {
                     class_ref_addr,
                     name_type_addr,
                 });
             }
             Some(10) => {
-                let class_ref_addr = get_u16(bytes)?;
-                let name_type_addr = get_u16(bytes)?;
+                let [class_ref_addr, name_type_addr] = get_u16_array(bytes)?;
                 raw_constants.push(RawConstant::MethodRef {
                     class_ref_addr,
                     name_type_addr,
                 });
             }
             Some(11) => {
-                let class_ref_addr = get_u16(bytes)?;
-                let name_type_addr = get_u16(bytes)?;
+                let [class_ref_addr, name_type_addr] = get_u16_array(bytes)?;
                 raw_constants.push(RawConstant::InterfaceRef {
                     class_ref_addr,
                     name_type_addr,
                 });
             }
             Some(12) => {
-                let name_desc_addr = get_u16(bytes)?;
-                let type_addr = get_u16(bytes)?;
+                let [name_desc_addr, type_addr] = get_u16_array(bytes)?;
                 raw_constants.push(RawConstant::NameTypeDescriptor {
                     name_desc_addr,
                     type_addr,
@@ -215,8 +211,7 @@ pub fn load_class(
                 raw_constants.push(RawConstant::MethodType { index });
             }
             Some(18) => {
-                let bootstrap_index = get_u16(bytes)?;
-                let name_type_index = get_u16(bytes)?;
+                let [bootstrap_index, name_type_index] = get_u16_array(bytes)?;
                 raw_constants.push(RawConstant::InvokeDynamic {
                     bootstrap_index,
                     name_type_index,
@@ -238,14 +233,11 @@ pub fn load_class(
         println!("{constants:?}");
     }
 
-    let access = AccessFlags(get_u16(bytes)?);
-    let this_class = get_u16(bytes)?;
+    let [access, this_class, super_class, interface_count] = get_u16_array(bytes)?;
+
+    let access = AccessFlags(access);
     let this_class = raw_class_index(&raw_constants, this_class as usize)?;
-
-    let super_class = get_u16(bytes)?;
     let super_class = raw_class_index(&raw_constants, super_class as usize)?;
-
-    let interface_count = get_u16(bytes)?;
     let mut interfaces = Vec::new();
     for _ in 0..interface_count {
         interfaces.push(raw_class_index(&raw_constants, get_u16(bytes)? as usize)?);
@@ -254,13 +246,11 @@ pub fn load_class(
     let field_count = get_u16(bytes)?;
     let mut fields = Vec::new();
     for _ in 0..field_count {
-        let access_flags = AccessFlags(get_u16(bytes)?);
-        let name_idx = get_u16(bytes)?;
+        let [access_flags, name_idx, descriptor_idx, attrs_count] = get_u16_array(bytes)?;
+        let access_flags = AccessFlags(access_flags);
         let name = raw_str_index(&raw_constants, name_idx as usize)?;
-        let descriptor_idx = get_u16(bytes)?;
         let descriptor = raw_str_index(&raw_constants, descriptor_idx as usize)?;
         let descriptor = parse_field_type(&mut descriptor.chars().peekable())?;
-        let attrs_count = get_u16(bytes)?;
         let mut attributes = Vec::new();
         for _ in 0..attrs_count {
             attributes.push(get_attribute(&constants, bytes)?);
@@ -304,13 +294,11 @@ pub fn load_class(
     let mut methods = Vec::new();
     // println!("{method_count} methods");
     for _ in 0..method_count {
-        let access_flags = AccessFlags(get_u16(bytes)?);
-        let name_idx = get_u16(bytes)?;
+        let [access_flags, name_idx, descriptor_idx, attrs_count] = get_u16_array(bytes)?;
+        let access_flags = AccessFlags(access_flags);
         let name = raw_str_index(&raw_constants, name_idx as usize)?;
-        let descriptor_idx = get_u16(bytes)?;
         let descriptor = raw_str_index(&raw_constants, descriptor_idx as usize)?;
         let descriptor = parse_method_descriptor(&descriptor)?;
-        let attrs_count = get_u16(bytes)?;
         let mut attributes = Vec::new();
         for _ in 0..attrs_count {
             attributes.push(get_attribute(&constants, bytes)?);
@@ -424,10 +412,11 @@ pub fn load_class(
         let count = get_u16(&mut bytes)?;
         (0..count)
             .map(|_| {
-                let this_idx = get_u16(&mut bytes)? as usize;
-                let outer_idx = get_u16(&mut bytes)? as usize;
-                let name_idx = get_u16(&mut bytes)? as usize;
-                let flags = AccessFlags(get_u16(&mut bytes)?);
+                let [this_idx, outer_idx, name_idx, flags] = get_u16_array(&mut bytes)?;
+                let this_idx = this_idx as usize;
+                let outer_idx = outer_idx as usize;
+                let name_idx = name_idx as usize;
+                let flags = AccessFlags(flags);
                 Ok(InnerClass {
                     this: if let Constant::ClassRef(class) = constants[this_idx - 1].clone() {
                         class
@@ -566,11 +555,11 @@ fn get_signature(
     let (signature_attrs, attributes) = single_attribute(attributes, "Signature")?;
     let signature = match signature_attrs {
         Some(signature) => {
-            let signature_ref = get_u16(&mut signature.into_iter())?;
-            let Constant::String(signature) = constants[signature_ref as usize - 1].clone() else {
+            let signature_ref = get_u16(&mut signature.into_iter())? as usize;
+            let Constant::String(signature) = constants[signature_ref - 1].clone() else {
                 return Err(format!(
                     "Expected string for signature; got {:?}",
-                    constants[signature_ref as usize - 1]
+                    constants[signature_ref - 1]
                 ));
             };
             Some(signature)
@@ -584,13 +573,13 @@ fn get_attribute(
     constants: &[Constant],
     bytes: &mut impl Iterator<Item = u8>,
 ) -> Result<Attribute, String> {
-    let name_idx = get_u16(bytes)?;
-    let name = str_index(constants, name_idx as usize)
+    let name_idx = get_u16(bytes)? as usize;
+    let name = str_index(constants, name_idx)
         .map_err(|err| format!("While getting attribute name: {err}"))?;
-    let attr_length = get_u32(bytes)?;
+    let attr_length = get_u32(bytes)? as usize;
     Ok(Attribute {
         name,
-        data: bytes.take(attr_length as usize).collect::<Vec<_>>(),
+        data: bytes.take(attr_length).collect::<Vec<_>>(),
     })
 }
 
@@ -602,18 +591,14 @@ fn parse_code_attribute(
     verbose: bool,
 ) -> Result<(ByteCode, u16), String> {
     let mut bytes = bytes.into_iter();
-    let max_stack = get_u16(&mut bytes)?;
-    let max_locals = get_u16(&mut bytes)?;
+    let [max_stack, max_locals] = get_u16_array(&mut bytes)?;
     let code_length = get_u32(&mut bytes)?;
     let code = (&mut bytes).take(code_length as usize).collect::<Vec<_>>();
 
     let exception_table_length = get_u16(&mut bytes)?;
     let mut exception_table = Vec::new();
     for _ in 0..exception_table_length {
-        let start_pc = get_u16(&mut bytes)?;
-        let end_pc = get_u16(&mut bytes)?;
-        let handler_pc = get_u16(&mut bytes)?;
-        let catch_type = get_u16(&mut bytes)?;
+        let [start_pc, end_pc, handler_pc, catch_type] = get_u16_array(&mut bytes)?;
         let catch_type = if catch_type == 0 {
             None
         } else {
@@ -683,8 +668,7 @@ fn parse_code_attribute(
                         }
                     }
                     Some(255) => {
-                        let offset_delta = get_u16(&mut bytes)?;
-                        let locals_count = get_u16(&mut bytes)?;
+                        let [offset_delta, locals_count] = get_u16_array(&mut bytes)?;
                         let mut locals = Vec::new();
                         for _ in 0..locals_count {
                             locals.push(parse_verification_type(constants, &mut bytes)?);
@@ -715,11 +699,11 @@ fn parse_code_attribute(
             let mut bytes = line_table.into_iter();
             let table_count = get_u16(&mut bytes)?;
             (0..table_count)
-                .map(|_| Ok::<(u16, u16), String>((get_u16(&mut bytes)?, get_u16(&mut bytes)?)))
+                .map(|_| {
+                    let [line, pc] = get_u16_array(&mut bytes)?;
+                    Ok::<_, String>(LineTableEntry { line, pc })
+                })
                 .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .map(|(pc, line)| LineTableEntry { line, pc })
-                .collect()
         }
         None => Vec::new(),
     };
@@ -735,12 +719,13 @@ fn parse_code_attribute(
             let table_count = get_u16(&mut bytes)?;
             (0..table_count)
                 .map(|_| {
+                    let [pc, length, name_idx, ty_idx, index] = get_u16_array(&mut bytes)?;
                     Ok::<LocalVarTypeEntry, String>(LocalVarTypeEntry {
-                        pc: get_u16(&mut bytes)?,
-                        length: get_u16(&mut bytes)?,
-                        name: str_index(constants, get_u16(&mut bytes)? as usize)?,
-                        ty: str_index(constants, get_u16(&mut bytes)? as usize)?,
-                        index: get_u16(&mut bytes)?,
+                        pc,
+                        length,
+                        name: str_index(constants, name_idx as usize)?,
+                        ty: str_index(constants, ty_idx as usize)?,
+                        index,
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?
@@ -758,16 +743,15 @@ fn parse_code_attribute(
             let table_count = get_u16(&mut bytes)?;
             (0..table_count)
                 .map(|_| {
+                    let [pc, length, name_idx, ty_idx, index] = get_u16_array(&mut bytes)?;
                     Ok::<LocalVarEntry, String>(LocalVarEntry {
-                        pc: get_u16(&mut bytes)?,
-                        length: get_u16(&mut bytes)?,
-                        name: str_index(constants, get_u16(&mut bytes)? as usize)?,
+                        pc,
+                        length,
+                        name: str_index(constants, name_idx as usize)?,
                         ty: parse_field_type(
-                            &mut str_index(constants, get_u16(&mut bytes)? as usize)?
-                                .chars()
-                                .peekable(),
+                            &mut str_index(constants, ty_idx as usize)?.chars().peekable(),
                         )?,
-                        index: get_u16(&mut bytes)?,
+                        index,
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?
@@ -829,6 +813,11 @@ fn get_bytes<const N: usize>(bytes: &mut impl Iterator<Item = u8>) -> Result<[u8
 fn get_u16(bytes: &mut impl Iterator<Item = u8>) -> Result<u16, String> {
     let bytes = get_bytes::<2>(bytes)?;
     Ok(u16::from_be_bytes(bytes))
+}
+
+fn get_u16_array<const N: usize>(bytes: &mut impl Iterator<Item = u8>) -> Result<[u16; N], String> {
+    let bytes = (get_bytes::<N>(bytes)?, get_bytes::<N>(bytes)?);
+    Ok(unsafe { core::mem::transmute_copy::<([u8; N], [u8; N]), [u16; N]>(&bytes) })
 }
 
 fn get_u32(bytes: &mut impl Iterator<Item = u8>) -> Result<u32, String> {
