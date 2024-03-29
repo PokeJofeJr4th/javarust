@@ -816,8 +816,11 @@ fn get_u16(bytes: &mut impl Iterator<Item = u8>) -> Result<u16, String> {
 }
 
 fn get_u16_array<const N: usize>(bytes: &mut impl Iterator<Item = u8>) -> Result<[u16; N], String> {
-    let bytes = (get_bytes::<N>(bytes)?, get_bytes::<N>(bytes)?);
-    Ok(unsafe { core::mem::transmute_copy::<([u8; N], [u8; N]), [u16; N]>(&bytes) })
+    let mut arr = [0; N];
+    for i in &mut arr {
+        *i = get_u16(bytes)?;
+    }
+    Ok(arr)
 }
 
 fn get_u32(bytes: &mut impl Iterator<Item = u8>) -> Result<u32, String> {
