@@ -1,11 +1,10 @@
 use std::{
     cmp::Ordering,
     fmt::Write,
-    sync::{Arc, Mutex, Once},
+    sync::{Arc, Mutex},
 };
 
 use crate::{
-    access,
     class::{BootstrapMethod, Class, Constant, FieldType, Method, MethodDescriptor, MethodHandle},
     data::{Heap, SharedClassArea, SharedHeap, SharedMethodArea, NULL},
 };

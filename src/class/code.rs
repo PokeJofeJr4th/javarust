@@ -138,9 +138,22 @@ impl Debug for Code {
 }
 
 /// The return type for a native method implementation
+/// Cases:
+///  - Ok(Some(T))  The method should return
+///  - Ok(None)     The method should yield for this tick
+///  - Err("...")   The JVM should exit with the given error message
 pub type NativeReturn<T> = Result<Option<T>, String>;
 
 /// A rust method that can interface with the JVM
+///
+/// This interface should mostly be used indirectly through one of the following types:
+///  - `NativeTodo`
+///  - `NativeSingleMethod`
+///  - `NativeDoubleMethod`
+///  - `NativeStringMethod`
+///  - `NativeVoid`
+///  - `NativeNoop`
+///  - `native_property`
 pub trait NativeMethod: Send + Sync + 'static {
     /// # Native Method
     /// Called each tick while the native method is in the current stackframe

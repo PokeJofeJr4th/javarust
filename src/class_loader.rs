@@ -266,11 +266,11 @@ pub fn load_class(
             attributes.push(get_attribute(&constants, bytes)?);
         }
 
-        let (attributes, constant_value) = split_attributes(attributes, "ConstantValue");
+        let (constant_value, attributes) = single_attribute(attributes, "ConstantValue")?;
         let constant_value = if access_flags.is_static() {
-            match &constant_value[..] {
-                [const_idx] => {
-                    let [b0, b1] = const_idx.data[..] else {
+            match constant_value {
+                Some(const_idx) => {
+                    let [b0, b1] = const_idx[..] else {
                         return Err(String::from(
                             "`ConstantValue` attribute must have exactly two bytes",
                         ));
@@ -282,12 +282,7 @@ pub fn load_class(
                     };
                     Some(constant.clone())
                 }
-                [] => None,
-                _ => {
-                    return Err(String::from(
-                        "static field must have at most one `ConstantValue` attribute",
-                    ))
-                }
+                None => None,
             }
         } else {
             None
@@ -321,32 +316,29 @@ pub fn load_class(
             attributes.push(get_attribute(&constants, bytes)?);
         }
 
-        let (code_attributes, attributes) = split_attributes(attributes, "Code");
+        let (code_attributes, attributes) = single_attribute(attributes, "Code")?;
         // println!("Method {name}: {descriptor}; {attrs_count} attrs");
         // println!("{attributes:?}");
         // println!("{access:?}");
-        let code = match &code_attributes[..] {
-            [] if access_flags.is_abstract() => RawCode::Abstract,
-            _ if access_flags.is_abstract() => {
+        let code = match code_attributes {
+            None if access_flags.is_abstract() => RawCode::Abstract,
+            Some(_) if access_flags.is_abstract() => {
                 return Err(format!(
                     "Abstract method {descriptor:?} {this_class}.{name} must not contain code"
                 ));
             }
-            [code] => {
-                let bytes = code.data.clone();
-                RawCode::Code(bytes)
-            }
-            _ => {
-                return Err(String::from(
-                    "Concrete methods must have exactly one code attribute",
+            Some(bytes) => RawCode::Code(bytes),
+            None => {
+                return Err(format!(
+                    "Non-Abstract method {descriptor:?} {this_class}.{name} must contain code"
                 ))
             }
         };
 
-        let (exceptions, attributes) = split_attributes(attributes, "Exceptions");
-        let exceptions = match &exceptions[..] {
-            [exceptions] => {
-                let mut bytes = exceptions.data.iter().copied().peekable();
+        let (exceptions, attributes) = single_attribute(attributes, "Exceptions")?;
+        let exceptions = match exceptions {
+            Some(exceptions) => {
+                let mut bytes = exceptions.into_iter().peekable();
                 let exc_count = get_u16(&mut bytes)?;
                 (0..exc_count)
                     .map(|_| {
@@ -355,12 +347,7 @@ pub fn load_class(
                     })
                     .collect::<Result<Vec<_>, _>>()?
             }
-            [] => Vec::new(),
-            _ => {
-                return Err(String::from(
-                    "A method may only have one `Exceptions` attribute",
-                ))
-            }
+            None => Vec::new(),
         };
 
         let (signature, attributes) = get_signature(&constants, attributes)?;
@@ -381,11 +368,12 @@ pub fn load_class(
     for _ in 0..attribute_count {
         attributes.push(get_attribute(&constants, bytes)?);
     }
-    let (bootstrap_attrs, attributes) = split_attributes(attributes, "BootstrapMethods");
 
-    let bootstrap_methods = match &bootstrap_attrs[..] {
-        [bootstrap] => {
-            let mut bytes = bootstrap.data.iter().copied().peekable();
+    let (bootstrap_methods, attributes) = single_attribute(attributes, "BootstrapMethods")?;
+
+    let bootstrap_methods = match bootstrap_methods {
+        Some(bootstrap) => {
+            let mut bytes = bootstrap.into_iter().peekable();
             let num_bootstrap_methods = get_u16(&mut bytes)?;
             let mut bootstrap_methods = Vec::new();
             for _ in 0..num_bootstrap_methods {
@@ -414,78 +402,73 @@ pub fn load_class(
             }
             bootstrap_methods
         }
-        [] => Vec::new(),
-        _ => {
-            return Err(String::from(
-                "A class can have at most one BootstrapMethods attribute",
-            ))
-        }
+        None => Vec::new(),
     };
 
     let (signature, attributes) = get_signature(&constants, attributes)?;
 
-    let (source_file, attributes) = split_attributes(attributes, "SourceFile");
+    let (source_file, attributes) = single_attribute(attributes, "SourceFile")?;
 
-    let source_file = match &source_file[..] {
-        [source_file] => {
-            let mut bytes = source_file.data.iter().copied().peekable();
-            Some(str_index(&constants, get_u16(&mut bytes)? as usize)?)
-        }
-        [] => None,
-        _ => {
-            return Err(String::from(
-                "A class should only have one 'SourceFile' attribute",
-            ))
-        }
+    let source_file = match source_file {
+        Some(source_file) => Some(str_index(
+            &constants,
+            get_u16(&mut source_file.into_iter())? as usize,
+        )?),
+        None => None,
     };
 
-    let (inner_classes, attributes) = split_attributes(attributes, "InnerClasses");
+    let (inner_classes, attributes) = single_attribute(attributes, "InnerClasses")?;
 
-    let inner_classes = match &inner_classes[..] {
-        [inner_classes] => {
-            let mut bytes = inner_classes.data.iter().copied().peekable();
-            let count = get_u16(&mut bytes)?;
-            (0..count)
-                .map(|_| {
-                    let this_idx = get_u16(&mut bytes)? as usize;
-                    let outer_idx = get_u16(&mut bytes)? as usize;
-                    let name_idx = get_u16(&mut bytes)? as usize;
-                    let flags = AccessFlags(get_u16(&mut bytes)?);
-                    Ok(InnerClass {
-                        this: if let Constant::ClassRef(class) = constants[this_idx - 1].clone() {
-                            class
-                        } else {
-                            return Err(format!(
+    let inner_classes = if let Some(inner_classes) = inner_classes {
+        let mut bytes = inner_classes.into_iter();
+        let count = get_u16(&mut bytes)?;
+        (0..count)
+            .map(|_| {
+                let this_idx = get_u16(&mut bytes)? as usize;
+                let outer_idx = get_u16(&mut bytes)? as usize;
+                let name_idx = get_u16(&mut bytes)? as usize;
+                let flags = AccessFlags(get_u16(&mut bytes)?);
+                Ok(InnerClass {
+                    this: if let Constant::ClassRef(class) = constants[this_idx - 1].clone() {
+                        class
+                    } else {
+                        return Err(format!(
                             "Expected class ref for InnerClass.inner_class_info_index; got {:?}",
                             constants[this_idx - 1]
-                            ));
-                        },
-                        outer: if outer_idx == 0 {
-                            None
-                        } else if let Constant::ClassRef(class) = constants[outer_idx - 1].clone() {
-                            Some(class)
-                        } else {
-                            return Err(format!(
+                        ));
+                    },
+                    outer: if outer_idx == 0 {
+                        None
+                    } else if let Constant::ClassRef(class) = constants[outer_idx - 1].clone() {
+                        Some(class)
+                    } else {
+                        return Err(format!(
                             "Expected class ref for InnerClass.outer_class_info_index; got {:?}",
                             constants[outer_idx - 1]
-                            ));
-                        },
-                        name: if name_idx == 0 {
-                            None
-                        } else {
-                            Some(str_index(&constants, name_idx)?)
-                        },
-                        flags,
-                    })
+                        ));
+                    },
+                    name: if name_idx == 0 {
+                        None
+                    } else {
+                        Some(str_index(&constants, name_idx)?)
+                    },
+                    flags,
                 })
-                .collect::<Result<Vec<_>, _>>()?
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        Vec::new()
+    };
+
+    let (nest_host, attributes) = single_attribute(attributes, "NestHost")?;
+
+    let nest_host = match nest_host {
+        Some(vec) => {
+            let idx = get_u16(&mut vec.into_iter())?;
+            let class = class_index(&constants, idx as usize)?;
+            Some(class)
         }
-        [] => Vec::new(),
-        _ => {
-            return Err(String::from(
-                "A class should only have one 'InnerClasses' attribute",
-            ))
-        }
+        None => None,
     };
 
     let (statics, fields): (Vec<_>, Vec<_>) = fields
@@ -556,6 +539,20 @@ pub fn load_class(
     Ok(class)
 }
 
+fn single_attribute(
+    attributes: Vec<Attribute>,
+    compare: &str,
+) -> Result<(Option<Vec<u8>>, Vec<Attribute>), String> {
+    let (mut single_attribute, attributes) = split_attributes(attributes, compare);
+    match &mut single_attribute[..] {
+        [] => Ok((None, attributes)),
+        [attr] => Ok((Some(core::mem::take(&mut attr.data)), attributes)),
+        _ => Err(format!(
+            "A class should have at most one {compare} attribute"
+        )),
+    }
+}
+
 fn split_attributes(attributes: Vec<Attribute>, compare: &str) -> (Vec<Attribute>, Vec<Attribute>) {
     attributes
         .into_iter()
@@ -566,10 +563,10 @@ fn get_signature(
     constants: &[Constant],
     attributes: Vec<Attribute>,
 ) -> Result<(Option<Arc<str>>, Vec<Attribute>), String> {
-    let (signature_attrs, attributes) = split_attributes(attributes, "Signature");
-    let signature = match &signature_attrs[..] {
-        [signature] => {
-            let signature_ref = get_u16(&mut signature.data.iter().copied().peekable())?;
+    let (signature_attrs, attributes) = single_attribute(attributes, "Signature")?;
+    let signature = match signature_attrs {
+        Some(signature) => {
+            let signature_ref = get_u16(&mut signature.into_iter())?;
             let Constant::String(signature) = constants[signature_ref as usize - 1].clone() else {
                 return Err(format!(
                     "Expected string for signature; got {:?}",
@@ -578,12 +575,7 @@ fn get_signature(
             };
             Some(signature)
         }
-        [] => None,
-        _ => {
-            return Err(String::from(
-                "A class can have at most one Signature attribute",
-            ))
-        }
+        None => None,
     };
     Ok((signature, attributes))
 }
@@ -646,19 +638,14 @@ fn parse_code_attribute(
         attributes.push(get_attribute(constants, &mut bytes)?);
     }
 
-    let (stack_map_attrs, attributes) = {
-        let split: (Vec<_>, Vec<_>) = attributes
-            .into_iter()
-            .partition(|attr| &*attr.name == "StackMapTable");
-        split
-    };
-    let stack_map = match &stack_map_attrs[..] {
-        [attr] => {
+    let (stack_map_attrs, attributes) = single_attribute(attributes, "StackMapTable")?;
+    let stack_map = match stack_map_attrs {
+        Some(attr) => {
             if verbose {
                 println!("Parsing stack map...");
             }
             let mut stack_map = Vec::new();
-            let mut bytes = attr.data.iter().copied();
+            let mut bytes = attr.into_iter();
             let frame_count = get_u16(&mut bytes)?;
             for _ in 0..frame_count {
                 stack_map.push(match bytes.next() {
@@ -718,15 +705,14 @@ fn parse_code_attribute(
             }
             stack_map
         }
-        [] => Vec::new(),
-        _ => return Err(String::from("Only one `StackMapTable` attribute expected")),
+        None => Vec::new(),
     };
 
-    let (line_table, attributes) = split_attributes(attributes, "LineNumberTable");
+    let (line_table, attributes) = single_attribute(attributes, "LineNumberTable")?;
 
-    let line_number_table = match &line_table[..] {
-        [line_table] => {
-            let mut bytes = line_table.data.iter().copied().peekable();
+    let line_number_table = match line_table {
+        Some(line_table) => {
+            let mut bytes = line_table.into_iter();
             let table_count = get_u16(&mut bytes)?;
             (0..table_count)
                 .map(|_| Ok::<(u16, u16), String>((get_u16(&mut bytes)?, get_u16(&mut bytes)?)))
@@ -735,22 +721,17 @@ fn parse_code_attribute(
                 .map(|(pc, line)| LineTableEntry { line, pc })
                 .collect()
         }
-        [] => Vec::new(),
-        _ => {
-            return Err(String::from(
-                "A Code attribute may only have one 'LineNumberTable' attribute",
-            ))
-        }
+        None => Vec::new(),
     };
 
-    let (local_ty_table, attributes) = split_attributes(attributes, "LocalVariableTypeTable");
+    let (local_ty_table, attributes) = single_attribute(attributes, "LocalVariableTypeTable")?;
 
     if verbose {
         println!("Loading LocalVariableTypeTable...");
     }
-    let local_type_table = match &local_ty_table[..] {
-        [ty_table] => {
-            let mut bytes = ty_table.data.iter().copied().peekable();
+    let local_type_table = match local_ty_table {
+        Some(ty_table) => {
+            let mut bytes = ty_table.into_iter();
             let table_count = get_u16(&mut bytes)?;
             (0..table_count)
                 .map(|_| {
@@ -764,21 +745,16 @@ fn parse_code_attribute(
                 })
                 .collect::<Result<Vec<_>, _>>()?
         }
-        [] => Vec::new(),
-        _ => {
-            return Err(String::from(
-                "A Code attribute may only have one 'LocalVariableTypeTable' attribute",
-            ))
-        }
+        None => Vec::new(),
     };
     if verbose {
         println!("Loading LocalVariableTable...");
     }
-    let (local_var_table, attributes) = split_attributes(attributes, "LocalVariableTable");
+    let (local_var_table, attributes) = single_attribute(attributes, "LocalVariableTable")?;
 
-    let local_var_table = match &local_var_table[..] {
-        [var_table] => {
-            let mut bytes = var_table.data.iter().copied().peekable();
+    let local_var_table = match local_var_table {
+        Some(var_table) => {
+            let mut bytes = var_table.into_iter();
             let table_count = get_u16(&mut bytes)?;
             (0..table_count)
                 .map(|_| {
@@ -796,12 +772,7 @@ fn parse_code_attribute(
                 })
                 .collect::<Result<Vec<_>, _>>()?
         }
-        [] => Vec::new(),
-        _ => {
-            return Err(String::from(
-                "A Code attribute may only have one 'LocalVariableTypeTable' attribute",
-            ))
-        }
+        None => Vec::new(),
     };
 
     if verbose {

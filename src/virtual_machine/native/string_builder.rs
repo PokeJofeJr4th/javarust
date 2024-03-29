@@ -8,6 +8,7 @@ use crate::{
     },
 };
 
+#[allow(clippy::significant_drop_tightening)]
 pub fn init(
     thread: &mut Thread,
     _stackframe: &Mutex<StackFrame>,
