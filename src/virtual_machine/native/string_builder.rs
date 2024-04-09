@@ -1,20 +1,15 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::{
     class::code::NativeReturn,
     virtual_machine::{
         object::{AnyObj, ObjectFinder, StringBuilder, StringObj},
-        StackFrame, Thread,
+        Thread,
     },
 };
 
 #[allow(clippy::significant_drop_tightening)]
-pub fn init(
-    thread: &mut Thread,
-    _stackframe: &Mutex<StackFrame>,
-    [obj_ref, str_ref]: [u32; 2],
-    _verbose: bool,
-) -> NativeReturn<()> {
+pub fn init(thread: &mut Thread, [obj_ref, str_ref]: [u32; 2], _verbose: bool) -> NativeReturn<()> {
     let mut heap_borrow = thread.heap.lock().unwrap();
 
     let init_string = StringObj::SELF.get(&heap_borrow, str_ref as usize, |init_string| {
@@ -29,7 +24,6 @@ pub fn init(
 
 pub fn set_char_at(
     thread: &mut Thread,
-    _stackframe: &Mutex<StackFrame>,
     [builder_ref, index, character]: [u32; 3],
     verbose: bool,
 ) -> NativeReturn<()> {
@@ -60,7 +54,6 @@ pub fn set_char_at(
 
 pub fn to_string(
     thread: &mut Thread,
-    _stackframe: &Mutex<StackFrame>,
     [builder_ref]: [u32; 1],
     _verbose: bool,
 ) -> NativeReturn<Arc<str>> {

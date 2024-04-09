@@ -109,7 +109,7 @@ pub fn add_native_methods(
         access_flags: access!(public native),
         name: "toString".into(),
         descriptor: method!(() -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeStringMethod(|_: &mut _, _: &_, _: [_; 0], _| {
+        code: RawCode::native(NativeStringMethod(|_: &mut _, _: [_; 0], _| {
             Ok(Some("java.lang.IllegalArgumentException".into()))
         })),
         ..Default::default()

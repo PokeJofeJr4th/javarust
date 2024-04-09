@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::{
     access,
@@ -10,7 +10,7 @@ use crate::{
         object::{
             AnyObj, ArrayListObj, HashMapObj, HashSetObj, ObjectFinder, StringBuilder, StringObj,
         },
-        StackFrame, Thread,
+        Thread,
     },
 };
 
@@ -43,10 +43,7 @@ pub fn add_native_collections(
         name: "put".into(),
         descriptor: method!(((Object(java_lang_object.clone())), (Object(java_lang_object.clone())))->void),
         code: RawCode::native(NativeVoid(
-            |thread: &mut Thread,
-             stackframe: &Mutex<StackFrame>,
-             [this, key, value]: [u32; 3],
-             verbose: bool| {
+            |thread: &mut Thread, [this, key, value]: [u32; 3], verbose: bool| {
                 if thread.pc_register == 0 {
                     // get the hash code for the object
                     let (class, method) =
@@ -60,10 +57,10 @@ pub fn add_native_collections(
                             )
                         })?;
                     thread.invoke_method(method, class);
-                    thread.stack.last().unwrap().lock().unwrap().locals[0] = key;
+                    thread.stackframe.locals[0] = key;
                     Ok(None)
                 } else {
-                    let hash_code = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                    let hash_code = thread.stackframe.operand_stack.pop().unwrap();
                     // add the object to the hash map
                     HashMapObj::get_mut(&mut thread.heap.lock().unwrap(), this as usize, |map| {
                         map.insert(hash_code, value)
@@ -79,10 +76,7 @@ pub fn add_native_collections(
         name: "get".into(),
         descriptor: method!(((Object(java_lang_object.clone()))) -> Object(java_lang_object.clone())),
         code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread,
-             stackframe: &Mutex<StackFrame>,
-             [this, key]: [u32; 2],
-             verbose| {
+            |thread: &mut Thread, [this, key]: [u32; 2], verbose| {
                 if thread.pc_register == 0 {
                     // get the hash code for the object
                     let (class, method) =
@@ -96,10 +90,10 @@ pub fn add_native_collections(
                             )
                         })?;
                     thread.invoke_method(method, class);
-                    thread.stack.last().unwrap().lock().unwrap().locals[0] = key;
+                    thread.stackframe.locals[0] = key;
                     Ok(None)
                 } else {
-                    let hash_code = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                    let hash_code = thread.stackframe.operand_stack.pop().unwrap();
                     // add the object to the hash map
                     HashMapObj::get(&thread.heap.lock().unwrap(), this as usize, |map| {
                         map.get(&hash_code).copied()
@@ -140,10 +134,7 @@ pub fn add_native_collections(
         name: "insert".into(),
         descriptor: method!(((Object(java_lang_object.clone())))->void),
         code: RawCode::native(NativeVoid(
-            |thread: &mut Thread,
-             stackframe: &Mutex<StackFrame>,
-             [this, key]: [u32; 2],
-             verbose: bool| {
+            |thread: &mut Thread, [this, key]: [u32; 2], verbose: bool| {
                 if thread.pc_register == 0 {
                     // get the hash code for the object
                     let (class, method) =
@@ -157,10 +148,10 @@ pub fn add_native_collections(
                             )
                         })?;
                     thread.invoke_method(method, class);
-                    thread.stack.last().unwrap().lock().unwrap().locals[0] = key;
+                    thread.stackframe.locals[0] = key;
                     Ok(None)
                 } else {
-                    let hash_code = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                    let hash_code = thread.stackframe.operand_stack.pop().unwrap();
                     // add the object to the hash map
                     HashSetObj::get_mut(&mut thread.heap.lock().unwrap(), this as usize, |set| {
                         set.insert(hash_code);
@@ -176,10 +167,7 @@ pub fn add_native_collections(
         name: "contains".into(),
         descriptor: method!(((Object(java_lang_object.clone()))) -> boolean),
         code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread,
-             stackframe: &Mutex<StackFrame>,
-             [this, key]: [u32; 2],
-             verbose| {
+            |thread: &mut Thread, [this, key]: [u32; 2], verbose| {
                 if thread.pc_register == 0 {
                     // get the hash code for the object
                     let (class, method) =
@@ -193,10 +181,10 @@ pub fn add_native_collections(
                             )
                         })?;
                     thread.invoke_method(method, class);
-                    thread.stack.last().unwrap().lock().unwrap().locals[0] = key;
+                    thread.stackframe.locals[0] = key;
                     Ok(None)
                 } else {
-                    let hash_code = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                    let hash_code = thread.stackframe.operand_stack.pop().unwrap();
                     // check if the set contains the element
                     HashSetObj::get(&thread.heap.lock().unwrap(), this as usize, |map| {
                         u32::from(map.contains(&hash_code))
@@ -226,7 +214,7 @@ pub fn add_native_collections(
         name: "append".into(),
         descriptor: method!(((Object(java_lang_object.clone()))) -> void),
         code: RawCode::native(NativeVoid(
-            |thread: &mut Thread, _: &_, [this, ptr]: [u32; 2], _| {
+            |thread: &mut Thread, [this, ptr]: [u32; 2], _| {
                 ArrayListObj::get_mut(&mut thread.heap.lock().unwrap(), this as usize, |arrlist| {
                     arrlist.push(ptr);
                 })
@@ -240,7 +228,7 @@ pub fn add_native_collections(
         name: "add".into(),
         descriptor: method!(((Object(java_lang_object.clone()))) -> boolean),
         code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, _: &_, [this, ptr]: [u32; 2], _| {
+            |thread: &mut Thread, [this, ptr]: [u32; 2], _| {
                 ArrayListObj::get_mut(&mut thread.heap.lock().unwrap(), this as usize, |arrlist| {
                     arrlist.push(ptr);
                 })
@@ -265,7 +253,6 @@ pub fn add_native_collections(
         descriptor: method!(((Object("java/util/Comparator".into()))) -> void),
         code: RawCode::native(NativeVoid(
             |thread: &mut Thread,
-             stackframe: &Mutex<StackFrame>,
              [this, cmp, partition, length, target_ptr, index]: [u32; 6],
              verbose: bool| {
                 if verbose {
@@ -275,12 +262,12 @@ pub fn add_native_collections(
                 thread.pc_register += 1;
                 match pc {
                     0 => {
-                        stackframe.lock().unwrap().locals[2] = 1;
+                        thread.stackframe.locals[2] = 1;
                         let length =
                             ArrayListObj::get(&thread.heap.lock().unwrap(), this as usize, |vec| {
                                 vec.len()
                             })? as u32;
-                        stackframe.lock().unwrap().locals[3] = length;
+                        thread.stackframe.locals[3] = length;
                         Ok(None)
                     }
                     1 => {
@@ -289,8 +276,8 @@ pub fn add_native_collections(
                             this as usize,
                             |vec| vec.get(partition as usize).copied().unwrap(),
                         )?;
-                        stackframe.lock().unwrap().locals[4] = target_ptr;
-                        stackframe.lock().unwrap().locals[5] = partition;
+                        thread.stackframe.locals[4] = target_ptr;
+                        thread.stackframe.locals[5] = partition;
                         Ok(None)
                     }
                     2 => {
@@ -309,17 +296,15 @@ pub fn add_native_collections(
                                     verbose,
                                 )
                             })?;
+                        thread.stackframe.operand_stack.push(3);
                         thread.invoke_method(resolved_method, resolved_class);
-                        let mut new_stackframe = thread.stack.last().unwrap().lock().unwrap();
-                        new_stackframe.locals[0] = cmp;
-                        new_stackframe.locals[1] = target_ptr;
-                        new_stackframe.locals[2] = next_ptr;
-                        drop(new_stackframe);
-                        stackframe.lock().unwrap().operand_stack.push(3);
+                        thread.stackframe.locals[0] = cmp;
+                        thread.stackframe.locals[1] = target_ptr;
+                        thread.stackframe.locals[2] = next_ptr;
                         Ok(None)
                     }
                     3 => {
-                        let cmp = stackframe.lock().unwrap().operand_stack.pop().unwrap() as i32;
+                        let cmp = thread.stackframe.operand_stack.pop().unwrap() as i32;
                         if cmp >= 0 {
                             thread.pc_register = 4;
                         } else {
@@ -333,7 +318,7 @@ pub fn add_native_collections(
                             if partition > 0 {
                                 // start the next loop
                                 thread.pc_register = 4;
-                                stackframe.lock().unwrap().locals[5] -= 1;
+                                thread.stackframe.locals[5] -= 1;
                             }
                         }
                         Ok(None)
@@ -355,7 +340,7 @@ pub fn add_native_collections(
                             // start the next outer loop
                             thread.pc_register = 1;
                             // increment partition
-                            stackframe.lock().unwrap().locals[2] += 1;
+                            thread.stackframe.locals[2] += 1;
                             Ok(None)
                         }
                     }
@@ -386,27 +371,22 @@ pub fn add_native_collections(
         name: "toString".into(),
         descriptor: method!(() -> Object(java_lang_string.clone())),
         code: RawCode::native(NativeStringMethod(
-            move |thread: &mut Thread,
-                  stackframe: &Mutex<StackFrame>,
-                  [this, builder, index, length]: [u32; 4],
-                  verbose: bool| {
+            move |thread: &mut Thread, [this, builder, index, length]: [u32; 4], verbose: bool| {
                 let pc = thread.pc_register;
                 thread.pc_register += 1;
                 match pc {
                     0 => {
                         let builder = StringBuilder::new("[".to_string(), &thread.class_area);
                         let builder_ref = thread.heap.lock().unwrap().allocate(builder);
-                        thread.rember_temp(stackframe, builder_ref, verbose);
+                        thread.rember_temp(builder_ref, verbose);
                         let length = ArrayListObj::get(
                             &thread.heap.lock().unwrap(),
                             this as usize,
                             |vec| vec.len() as u32,
                         )?;
-                        let mut stackframe = stackframe.lock().unwrap();
-                        stackframe.locals[1] = builder_ref;
-                        stackframe.locals[2] = 0;
-                        stackframe.locals[3] = length;
-                        drop(stackframe);
+                        thread.stackframe.locals[1] = builder_ref;
+                        thread.stackframe.locals[2] = 0;
+                        thread.stackframe.locals[3] = length;
                         Ok(None)
                     }
                     1 => {
@@ -425,15 +405,13 @@ pub fn add_native_collections(
                                     verbose,
                                 )
                             })?;
+                        thread.stackframe.operand_stack.push(2);
                         thread.invoke_method(resolved_method, resolved_class);
-                        let mut new_stackframe = thread.stack.last().unwrap().lock().unwrap();
-                        new_stackframe.locals[0] = next_obj;
-                        drop(new_stackframe);
-                        stackframe.lock().unwrap().operand_stack.push(2);
+                        thread.stackframe.locals[0] = next_obj;
                         Ok(None)
                     }
                     2 => {
-                        let str_ptr = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+                        let str_ptr = thread.stackframe.operand_stack.pop().unwrap();
                         let string = StringObj::get(
                             &thread.heap.lock().unwrap(),
                             str_ptr as usize,
@@ -450,9 +428,8 @@ pub fn add_native_collections(
                                 }
                             },
                         )?;
-                        let mut stackframe = stackframe.lock().unwrap();
-                        stackframe.locals[2] += 1;
-                        if stackframe.locals[2] >= length {
+                        thread.stackframe.locals[2] += 1;
+                        if thread.stackframe.locals[2] >= length {
                             let str = StringBuilder::get_mut(
                                 &mut thread.heap.lock().unwrap(),
                                 builder as usize,

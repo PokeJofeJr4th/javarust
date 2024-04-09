@@ -28,7 +28,7 @@ use self::{
 
 use super::{
     object::{AnyObj, Array1, Array2, ArrayType, Object, ObjectFinder, Random, StringObj},
-    StackFrame, Thread,
+    Thread,
 };
 
 pub mod arrays;
@@ -85,7 +85,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         name: "getClass".into(),
         descriptor: method!(() -> Object("java/lang/Class".into())),
         code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, _: &_, [obj]: [u32; 1], _| {
+            |thread: &mut Thread, [obj]: [u32; 1], _| {
                 let obj_class = AnyObj.get(&thread.heap.lock().unwrap(), obj as usize, |obj| {
                     obj.class.clone()
                 })?;
@@ -105,25 +105,21 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public native),
         name: "toString".into(),
         descriptor: method!(() -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeStringMethod(
-            |_: &mut _, _: &_, [obj_ref]: [u32; 1], _| {
-                Ok(Some(Arc::from(format!("{obj_ref:0>8X}"))))
-            },
-        )),
+        code: RawCode::native(NativeStringMethod(|_: &mut _, [obj_ref]: [u32; 1], _| {
+            Ok(Some(Arc::from(format!("{obj_ref:0>8X}"))))
+        })),
         ..Default::default()
     };
     let object_hash = RawMethod {
         access_flags: access!(public native),
         name: "getHashCode".into(),
         descriptor: method!(() -> int),
-        code: RawCode::native(NativeSingleMethod(
-            |_: &mut _, _: &_, [ptr]: [u32; 1], _| {
-                let mut hasher = DefaultHasher::new();
-                ptr.hash(&mut hasher);
-                let value = hasher.finish() as u32;
-                Ok(Some(value))
-            },
-        )),
+        code: RawCode::native(NativeSingleMethod(|_: &mut _, [ptr]: [u32; 1], _| {
+            let mut hasher = DefaultHasher::new();
+            ptr.hash(&mut hasher);
+            let value = hasher.finish() as u32;
+            Ok(Some(value))
+        })),
         ..Default::default()
     };
 
@@ -170,7 +166,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         name: "<init>".into(),
         descriptor: method!(((Object(java_lang_string.clone())), int) -> void),
         code: RawCode::native(NativeVoid(
-            |thread: &mut Thread, _: &_, [obj_ref, string, id]: [u32; 3], _verbose| {
+            |thread: &mut Thread, [obj_ref, string, id]: [u32; 3], _verbose| {
                 let Some(enum_class) = thread.class_area.search("java/lang/Enum") else {
                     return Err(String::from("Couldn't find class java/lang/Enum"));
                 };
@@ -279,7 +275,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public native),
         name: "toString".into(),
         descriptor: method!(() -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeSingleMethod(|_: &mut _, _: &_, [l]: [u32; 1], _| {
+        code: RawCode::native(NativeSingleMethod(|_: &mut _, [l]: [u32; 1], _| {
             Ok(Some(l))
         })),
         ..Default::default()
@@ -289,7 +285,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         name: "compareTo".into(),
         descriptor: method!(((Object(java_lang_string.clone()))) -> int),
         code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, _: &_, [this, other]: [u32; 2], _| {
+            |thread: &mut Thread, [this, other]: [u32; 2], _| {
                 let this_str =
                     StringObj::get(&thread.heap.lock().unwrap(), this as usize, Clone::clone)?;
                 let other_str =
@@ -354,10 +350,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         name: "nextInt".into(),
         descriptor: method!((int) -> int),
         code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread,
-             _stackframe: &Mutex<StackFrame>,
-             [obj_ref, right_bound]: [u32; 2],
-             verbose: bool| {
+            |thread: &mut Thread, [obj_ref, right_bound]: [u32; 2], verbose: bool| {
                 if verbose {
                     println!("java/util/Random.nextInt(int): obj_ref={obj_ref}");
                     println!("java/util/Random.nextInt(int): right_bound={right_bound}");
@@ -400,7 +393,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public native),
         name: "println".into(),
         descriptor: method!((char) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, _: &_, [_, c]: [u32; 2], _| {
+        code: RawCode::native(NativeVoid(|_: &mut _, [_, c]: [u32; 2], _| {
             let char = char::from_u32(c).ok_or_else(|| String::from("Invalid Character code"))?;
             println!("{char}");
             Ok(Some(()))
@@ -411,7 +404,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public native),
         name: "println".into(),
         descriptor: method!((boolean) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, _: &_, [b]: [u32; 1], _| {
+        code: RawCode::native(NativeVoid(|_: &mut _, [b]: [u32; 1], _| {
             let bool = b != 0;
             println!("{bool}");
             Ok(Some(()))
@@ -422,7 +415,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public native),
         name: "println".into(),
         descriptor: method!((int) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, _: &_, [i]: [u32; 1], _| {
+        code: RawCode::native(NativeVoid(|_: &mut _, [i]: [u32; 1], _| {
             let int = i as i32;
             println!("{int}");
             Ok(Some(()))
@@ -433,20 +426,18 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public native),
         name: "println".into(),
         descriptor: method!((long) -> void),
-        code: RawCode::native(NativeVoid(
-            |_: &mut _, _: &_, [_, left, right]: [u32; 3], _| {
-                let long = ((left as u64) << 32 | (right as u64)) as i64;
-                println!("{long}");
-                Ok(Some(()))
-            },
-        )),
+        code: RawCode::native(NativeVoid(|_: &mut _, [_, left, right]: [u32; 3], _| {
+            let long = ((left as u64) << 32 | (right as u64)) as i64;
+            println!("{long}");
+            Ok(Some(()))
+        })),
         ..Default::default()
     };
     let println_float = RawMethod {
         access_flags: access!(public native),
         name: "println".into(),
         descriptor: method!((float) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, _: &_, [_, f]: [u32; 2], _| {
+        code: RawCode::native(NativeVoid(|_: &mut _, [_, f]: [u32; 2], _| {
             let float = f32::from_bits(f);
             println!("{float}");
             Ok(Some(()))
@@ -457,7 +448,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public native),
         name: "println".into(),
         descriptor: method!(() -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, _: &_, []: [u32; 0], _| {
+        code: RawCode::native(NativeVoid(|_: &mut _, []: [u32; 0], _| {
             println!();
             Ok(Some(()))
         })),
@@ -490,17 +481,15 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         name: "<clinit>".into(),
         access_flags: access!(public static native),
         descriptor: method!(() -> void),
-        code: RawCode::native(NativeVoid(
-            |thread: &mut Thread, _: &_, []: [u32; 0], verbose| {
-                let system_class = thread.class_area.search("java/lang/System").unwrap();
-                let out_ref = thread.heap.lock().unwrap().allocate(Object::from_class(
-                    &thread.class_area.search("java/io/PrintStream").unwrap(),
-                ));
-                system_class.static_data.lock().unwrap()[0] = out_ref;
-                thread.rember(out_ref, verbose);
-                Ok(Some(()))
-            },
-        )),
+        code: RawCode::native(NativeVoid(|thread: &mut Thread, []: [u32; 0], verbose| {
+            let system_class = thread.class_area.search("java/lang/System").unwrap();
+            let out_ref = thread.heap.lock().unwrap().allocate(Object::from_class(
+                &thread.class_area.search("java/io/PrintStream").unwrap(),
+            ));
+            system_class.static_data.lock().unwrap()[0] = out_ref;
+            thread.rember(out_ref, verbose);
+            Ok(Some(()))
+        })),
         ..Default::default()
     };
     system.methods.push(system_clinit.name(system.this.clone()));
@@ -530,7 +519,6 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         ) -> void),
         code: RawCode::native(NativeVoid(
             |thread: &mut Thread,
-             _: &_,
              [src_idx, start, dest_idx, start_dest, count]: [u32; 5],
              _verbose| {
                 let arr_size =
@@ -608,7 +596,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         name: "sqrt".into(),
         descriptor: method!((double) -> double),
         code: RawCode::native(NativeDoubleMethod(
-            |_: &mut _, _: &_, [left, right]: [u32; 2], _| {
+            |_: &mut _, [left, right]: [u32; 2], _| {
                 Ok(Some(
                     f64::from_bits((left as u64) << 32 | (right as u64))
                         .sqrt()

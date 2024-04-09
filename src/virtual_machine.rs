@@ -92,21 +92,21 @@ pub fn start_vm(
     let mut primary_thread = Thread {
         pc_register: 0,
         stack: Vec::new(),
+        stackframe: StackFrame::from_method(method, class),
         method_area,
         class_area,
         heap,
     };
-    primary_thread.invoke_method(method, class);
-    primary_thread.stack.last().unwrap().lock().unwrap().locals[0] = argv_ptr;
+    primary_thread.stackframe.locals[0] = argv_ptr;
     loop {
         // println!(
         //     "{:?}",
         //     primary_thread.stack.last().unwrap().lock().unwrap().operand_stack
         // );
         // println!("{}", primary_thread.pc_register);
-        if primary_thread.stack.is_empty() {
-            return;
-        }
+        // if primary_thread.stack.is_empty() {
+        //     return;
+        // }
         primary_thread.tick(verbose).unwrap();
     }
 }

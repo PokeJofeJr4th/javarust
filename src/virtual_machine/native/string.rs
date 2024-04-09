@@ -1,17 +1,14 @@
-use std::sync::Mutex;
-
 use crate::{
     class::{code::NativeReturn, FieldType, MethodDescriptor},
     data::NULL,
     virtual_machine::{
         object::{AnyObj, ObjectFinder, StringObj},
-        StackFrame, Thread,
+        Thread,
     },
 };
 
 pub fn native_string_value_of(
     thread: &mut Thread,
-    _stackframe: &Mutex<StackFrame>,
     [obj_ref]: [u32; 1],
     verbose: bool,
 ) -> NativeReturn<u32> {
@@ -34,35 +31,17 @@ pub fn native_string_value_of(
                 )
             })?;
         // push a fake return address
-        thread
-            .stack
-            .last_mut()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .operand_stack
-            .push(1);
+        thread.stackframe.operand_stack.push(1);
         thread.invoke_method(to_string_method, to_string_class);
-        thread.stack.last_mut().unwrap().lock().unwrap().locals[0] = obj_ref;
+        thread.stackframe.locals[0] = obj_ref;
         Ok(None)
     } else {
-        Ok(Some(
-            thread
-                .stack
-                .last_mut()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .operand_stack
-                .pop()
-                .unwrap(),
-        ))
+        Ok(Some(thread.stackframe.operand_stack.pop().unwrap()))
     }
 }
 
 pub fn native_println_object(
     thread: &mut Thread,
-    stackframe: &Mutex<StackFrame>,
     [_, arg]: [u32; 2],
     verbose: bool,
 ) -> NativeReturn<()> {
@@ -89,12 +68,12 @@ pub fn native_println_object(
             );
         }
         // push a fake return address
-        stackframe.lock().unwrap().operand_stack.push(1);
+        thread.stackframe.operand_stack.push(1);
         thread.invoke_method(to_string_method, to_string_class);
-        thread.stack.last_mut().unwrap().lock().unwrap().locals[0] = arg;
+        thread.stackframe.locals[0] = arg;
         Ok(None)
     } else {
-        let ret = stackframe.lock().unwrap().operand_stack.pop().unwrap();
+        let ret = thread.stackframe.operand_stack.pop().unwrap();
         let str = StringObj::SELF.get(&thread.heap.lock().unwrap(), ret as usize, Clone::clone)?;
         println!("{str}");
         Ok(Some(()))
@@ -103,7 +82,6 @@ pub fn native_println_object(
 
 pub fn native_string_char_at(
     thread: &mut Thread,
-    _stackframe: &Mutex<StackFrame>,
     [string_ref, index]: [u32; 2],
     _verbose: bool,
 ) -> NativeReturn<u32> {

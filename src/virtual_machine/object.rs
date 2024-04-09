@@ -2,7 +2,7 @@ use std::{
     any::Any,
     collections::{HashMap, HashSet},
     marker::PhantomData,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use rand::rngs::StdRng;
@@ -15,7 +15,7 @@ use crate::{
     method,
 };
 
-use super::{native, StackFrame, Thread};
+use super::{native, Thread};
 
 #[derive(Debug)]
 pub struct Instance {
@@ -182,10 +182,7 @@ impl<T: Send + Sync + 'static, const I: usize> NativeFieldObj<T, I> {
             name: "<init>".into(),
             descriptor: method!(()->void),
             code: RawCode::native(NativeVoid(
-                move |thread: &mut Thread,
-                      _stackframe: &Mutex<StackFrame>,
-                      [obj_pointer]: [u32; 1],
-                      _verbose| {
+                move |thread: &mut Thread, [obj_pointer]: [u32; 1], _verbose| {
                     AnyObj
                         .get_mut(
                             &mut thread.heap.lock().unwrap(),
@@ -211,15 +208,13 @@ impl<T: Send + Sync + 'static, const I: usize> NativeFieldObj<T, I> {
             access_flags: access!(public native),
             name: "<init>".into(),
             descriptor: method!(()->void),
-            code: RawCode::native(NativeVoid(
-                |thread: &mut Thread, _: &_, [ptr]: [u32; 1], _| {
-                    AnyObj
-                        .get_mut(&mut thread.heap.lock().unwrap(), ptr as usize, |obj| {
-                            obj.native_fields.push(Box::<T>::default());
-                        })
-                        .map(Option::Some)
-                },
-            )),
+            code: RawCode::native(NativeVoid(|thread: &mut Thread, [ptr]: [u32; 1], _| {
+                AnyObj
+                    .get_mut(&mut thread.heap.lock().unwrap(), ptr as usize, |obj| {
+                        obj.native_fields.push(Box::<T>::default());
+                    })
+                    .map(Option::Some)
+            })),
             ..Default::default()
         }
     }

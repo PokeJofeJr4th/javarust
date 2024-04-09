@@ -1,18 +1,17 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::{
     class::{code::NativeReturn, FieldType},
     data::NULL,
     virtual_machine::{
         object::{Array1, Array2, ArrayFields, ArrayType, ObjectFinder},
-        StackFrame, Thread,
+        Thread,
     },
 };
 
 #[allow(clippy::only_used_in_recursion)]
 pub fn deep_to_string(
     thread: &mut Thread,
-    stackframe: &Mutex<StackFrame>,
     [index]: [u32; 1],
     verbose: bool,
 ) -> NativeReturn<Arc<str>> {
@@ -28,7 +27,7 @@ pub fn deep_to_string(
                     "[{}]",
                     indices_vec
                         .into_iter()
-                        .map(|idx| { deep_to_string(thread, stackframe, [idx], verbose) })
+                        .map(|idx| { deep_to_string(thread, [idx], verbose) })
                         .collect::<Result<Vec<_>, _>>()?
                         .into_iter()
                         .flatten()
@@ -80,7 +79,6 @@ pub fn deep_to_string(
 
 pub fn to_string(
     thread: &mut Thread,
-    _stackframe: &Mutex<StackFrame>,
     [arr_ref]: [u32; 1],
     _verbose: bool,
 ) -> NativeReturn<Arc<str>> {
