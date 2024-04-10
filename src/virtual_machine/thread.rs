@@ -388,8 +388,8 @@ impl Thread {
             Instruction::LOp(Op::Or) => {
                 // lor
                 // long boolean or
-                let rhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
-                let lhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
+                let rhs = self.stackframe.operand_stack.popd::<u64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<u64>().unwrap();
                 let result = lhs | rhs;
                 self.stackframe.operand_stack.pushd(result);
             }
@@ -404,8 +404,8 @@ impl Thread {
             Instruction::LOp(Op::Xor) => {
                 // lxor
                 // long boolean xor
-                let rhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
-                let lhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
+                let rhs = self.stackframe.operand_stack.popd::<u64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<u64>().unwrap();
                 let result = lhs ^ rhs;
                 self.stackframe.operand_stack.pushd(result);
             }
@@ -441,7 +441,7 @@ impl Thread {
                 // l2i
                 // long to int
                 let long = self.stackframe.operand_stack.popd::<i64>().unwrap();
-                let int = long as u32;
+                let int = long as i32;
                 self.stackframe.operand_stack.pushd(int);
             }
             Instruction::Convert(Type::Long, Type::Float) => {
@@ -469,7 +469,7 @@ impl Thread {
                 // f2l
                 // float to long
                 let float = self.stackframe.operand_stack.popd::<f32>().unwrap();
-                let long = float as u64;
+                let long = float as i64;
                 self.stackframe.operand_stack.pushd(long);
             }
             Instruction::Convert(Type::Float, Type::Double) => {

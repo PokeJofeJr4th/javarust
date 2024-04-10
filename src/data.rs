@@ -27,10 +27,7 @@ pub struct Heap {
 impl Heap {
     #[must_use]
     pub fn get(&self, idx: usize) -> Option<Arc<Mutex<Object>>> {
-        self.contents
-            .get(idx - HEAP_START as usize)?
-            .as_ref()
-            .map(Clone::clone)
+        self.contents.get(idx - HEAP_START as usize)?.clone()
     }
 
     #[must_use]
@@ -189,8 +186,9 @@ impl Default for WorkingClassArea {
 
 pub type SharedMethodArea = Arc<MethodArea>;
 
+#[allow(clippy::type_complexity)]
 pub struct MethodArea {
-    methods: HashMap<MethodHash, (Arc<Class>, Arc<Method>), BuildNonHasher>,
+    methods: HashMap<MethodHash, Vec<(Arc<Class>, Arc<Method>)>, BuildNonHasher>,
 }
 
 impl MethodArea {
@@ -202,10 +200,10 @@ impl MethodArea {
     }
 
     pub fn push(&mut self, class: Arc<Class>, method: Arc<Method>) {
-        self.methods.insert(
-            hash_method(&class.this, &method.name, &method.descriptor),
-            (class, method),
-        );
+        self.methods
+            .entry(hash_method(&class.this, &method.name, &method.descriptor))
+            .or_default()
+            .push((class, method));
     }
 
     #[must_use]
@@ -228,13 +226,20 @@ impl MethodArea {
     ) -> Option<(Arc<Class>, Arc<Method>)> {
         self.methods
             .get(&hash_method(class, method, method_type))
+            .and_then(|vec| {
+                vec.iter().find(|(c_class, c_method)| {
+                    &*c_class.this == class
+                        && &*c_method.name == method
+                        && &c_method.descriptor == method_type
+                })
+            })
             .cloned()
     }
 }
 
 impl Debug for MethodArea {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (class, method) in self.methods.values() {
+        for (class, method) in self.methods.values().flatten() {
             write!(f, "\n{} ", class.this)?;
             method.fmt(f)?;
         }
@@ -249,7 +254,7 @@ impl Default for MethodArea {
 }
 
 pub struct WorkingMethodArea {
-    methods: HashMap<MethodHash, (Arc<str>, RawMethod), BuildNonHasher>,
+    methods: HashMap<MethodHash, Vec<(Arc<str>, RawMethod)>, BuildNonHasher>,
 }
 
 impl WorkingMethodArea {
@@ -261,19 +266,16 @@ impl WorkingMethodArea {
     }
 
     pub fn push(&mut self, class: Arc<str>, method: RawMethod) {
-        self.methods.insert(
-            hash_method(&class, &method.name, &method.descriptor),
-            (class, method),
-        );
+        self.methods
+            .entry(hash_method(&class, &method.name, &method.descriptor))
+            .or_default()
+            .push((class, method));
     }
 
     pub fn extend(&mut self, iter: impl IntoIterator<Item = (Arc<str>, RawMethod)>) {
-        self.methods.extend(iter.into_iter().map(|(class, method)| {
-            (
-                hash_method(&class, &method.name, &method.descriptor),
-                (class, method),
-            )
-        }));
+        for (class, method) in iter {
+            self.push(class, method);
+        }
     }
 
     /// # Panics
@@ -287,12 +289,18 @@ impl WorkingMethodArea {
             methods: self
                 .methods
                 .into_iter()
-                .map(|(h, (class, method))| {
-                    let class = class_area
-                        .search(&class)
-                        .ok_or_else(|| format!("Couldn't find class {class}"))?;
-                    let cooked = method.cook(class_area, &class.constants, verbose)?;
-                    Ok((h, (class, Arc::new(cooked))))
+                .map(|(h, vec)| {
+                    let vec = vec
+                        .into_iter()
+                        .map(|(class, method)| {
+                            let class = class_area
+                                .search(&class)
+                                .ok_or_else(|| format!("Couldn't find class {class}"))?;
+                            let cooked = method.cook(class_area, &class.constants, verbose)?;
+                            Ok((class, Arc::new(cooked)))
+                        })
+                        .collect::<Result<Vec<_>, String>>()?;
+                    Ok((h, vec))
                 })
                 .collect::<Result<_, String>>()?,
         }
