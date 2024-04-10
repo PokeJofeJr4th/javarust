@@ -2,6 +2,7 @@ use std::{iter::Peekable, sync::Arc};
 
 use crate::{
     class::{
+        bootstrap::make_runner,
         code::{
             ByteCode, ExceptionTableEntry, LineTableEntry, LocalVarEntry, LocalVarTypeEntry,
             StackMapFrame, VerificationTypeInfo,
@@ -382,6 +383,10 @@ pub fn load_class(
                 for _ in 0..num_args {
                     let arg_index = get_u16(&mut bytes)?;
                     args.push(constants[arg_index as usize - 1].clone());
+                }
+                if verbose {
+                    let runner = make_runner(&method_handle, &args);
+                    println!("{runner:?}");
                 }
                 bootstrap_methods.push(BootstrapMethod {
                     method: method_handle,

@@ -1291,7 +1291,7 @@ impl Thread {
                     native_fields: Vec::new(),
                     class: lambda_class,
                 };
-                return Err("LambdaMetafactory".to_string());
+                return Err(format!("LambdaMetafactory: {name}"));
             }
             (n, h, d) => return Err(format!("Error during InvokeDynamic: {n}: {d:?}; {h:?}")),
         }

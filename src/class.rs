@@ -11,6 +11,7 @@ pub use self::code::Code;
 use self::code::NativeTodo;
 
 pub mod code;
+pub mod bootstrap;
 
 pub struct Class {
     /// tracks if the <clinit> function has been run
