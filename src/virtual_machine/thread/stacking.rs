@@ -40,7 +40,7 @@ impl Stackable<u32> for i32 {
     }
 
     fn push(stack: &mut impl Stack<u32>, value: Self) {
-        stack.pushd(value as u32);
+        stack.push_one(value as u32);
     }
 }
 
