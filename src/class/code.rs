@@ -1,6 +1,8 @@
 use std::{fmt::Debug, sync::Arc};
 
-use crate::virtual_machine::{error, object::ObjectFinder, thread::push_long, Instruction, Thread};
+use crate::virtual_machine::{
+    error, object::ObjectFinder, thread::stacking::Stack, Instruction, Thread,
+};
 
 use super::{Attribute, FieldType};
 
@@ -217,7 +219,7 @@ impl<
             panic!("Function does not have enough local variables for its signature");
         };
         if let Some(double) = self.0(thread, values, is_verbose)? {
-            push_long(&mut thread.stackframe.operand_stack, double);
+            thread.stackframe.operand_stack.pushd(double);
             thread.return_two(is_verbose);
         }
         Ok(())

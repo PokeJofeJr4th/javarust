@@ -12,6 +12,10 @@ use super::{
     Cmp, Instruction, Op, StackFrame,
 };
 
+pub mod stacking;
+
+use stacking::Stack;
+
 pub struct Thread {
     pub pc_register: usize,
     pub stack: Vec<StackFrame>,
@@ -19,6 +23,15 @@ pub struct Thread {
     pub method_area: SharedMethodArea,
     pub class_area: SharedClassArea,
     pub heap: SharedHeap,
+}
+
+macro_rules! stack {
+    ($stack: expr => [$($before:ident),*] => [$($after:ident),*]) => {
+        $(
+            let $before = $stack.pop().unwrap();
+        )*
+        $stack.extend([$($after),*]);
+    };
 }
 
 impl Thread {
@@ -86,275 +99,251 @@ impl Thread {
                 self.stackframe.operand_stack.pop();
             }
             Instruction::Dup => {
-                // dup
-                let value = *self.stackframe.operand_stack.last().unwrap();
-                self.stackframe.operand_stack.push(value);
+                stack!(self.stackframe.operand_stack => [a] => [a,a]);
             }
             Instruction::Dupx1 => {
-                // xy => yxy
-                let y = self.stackframe.operand_stack.pop().unwrap();
-                let x = self.stackframe.operand_stack.pop().unwrap();
-                self.stackframe.operand_stack.extend([y, x, y]);
+                stack!(self.stackframe.operand_stack => [x, y] => [y, x, y]);
             }
             Instruction::Dupx2 => {
-                // xyz => zxyz
-                let z = self.stackframe.operand_stack.pop().unwrap();
-                let y = self.stackframe.operand_stack.pop().unwrap();
-                let x = self.stackframe.operand_stack.pop().unwrap();
-                self.stackframe.operand_stack.extend([z, x, y, z]);
+                stack!(self.stackframe.operand_stack => [x, y, z] => [z, x, y, z]);
             }
             Instruction::Dup2 => {
-                // xy => xyxy
-                let y = *self.stackframe.operand_stack.last().unwrap();
-                let x = *self.stackframe.operand_stack.last().unwrap();
-                self.stackframe.operand_stack.extend([x, y]);
+                stack!(self.stackframe.operand_stack => [x, y] => [x, y, x, y]);
             }
             Instruction::Dup2x1 => {
-                // xyz => yzxyz
-                let z = self.stackframe.operand_stack.pop().unwrap();
-                let y = self.stackframe.operand_stack.pop().unwrap();
-                let x = self.stackframe.operand_stack.pop().unwrap();
-                self.stackframe.operand_stack.extend([y, z, x, y, z]);
+                stack!(self.stackframe.operand_stack => [x, y, z] => [y, z, x, y, z]);
             }
             Instruction::Dup2x2 => {
-                // wxyz => yzwxyz
-                let z = self.stackframe.operand_stack.pop().unwrap();
-                let y = self.stackframe.operand_stack.pop().unwrap();
-                let x = self.stackframe.operand_stack.pop().unwrap();
-                let w = self.stackframe.operand_stack.pop().unwrap();
-                self.stackframe.operand_stack.extend([y, z, w, x, y, z]);
+                stack!(self.stackframe.operand_stack => [w, x, y, z] => [y, z, w, x, y, z]);
             }
             Instruction::Swap => {
-                let x = self.stackframe.operand_stack.pop().unwrap();
-                let y = self.stackframe.operand_stack.pop().unwrap();
-                self.stackframe.operand_stack.push(x);
-                self.stackframe.operand_stack.push(y);
+                stack!(self.stackframe.operand_stack => [x, y] => [y, x]);
             }
             Instruction::IOp(Op::Add) => {
                 // iadd
                 // int add
-                let rhs = (self.stackframe.operand_stack.pop().unwrap()) as i32;
-                let lhs = (self.stackframe.operand_stack.pop().unwrap()) as i32;
+                let rhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 let result = lhs.wrapping_add(rhs);
-                self.stackframe.operand_stack.push(result as u32);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::LOp(Op::Add) => {
                 // ladd
                 // long add
-                let rhs = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
-                let lhs = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
+                let rhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 let result = lhs.wrapping_add(rhs);
-                push_long(&mut self.stackframe.operand_stack, result as u64);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::FOp(Op::Add) => {
                 // fadd
                 // float add
-                let rhs = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
-                let lhs = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
+                let rhs = self.stackframe.operand_stack.popd::<f32>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<f32>().unwrap();
                 let result = lhs + rhs;
-                self.stackframe.operand_stack.push(result.to_bits());
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::DOp(Op::Add) => {
                 // dadd
                 // double add
-                let rhs = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
-                let lhs = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
+                let rhs = self.stackframe.operand_stack.popd::<f64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<f64>().unwrap();
                 let sum = rhs + lhs;
-                push_long(&mut self.stackframe.operand_stack, sum.to_bits());
+                self.stackframe.operand_stack.pushd(sum);
             }
             Instruction::IOp(Op::Sub) => {
                 // isub
                 // int subtract
-                let rhs = (self.stackframe.operand_stack.pop().unwrap()) as i32;
-                let lhs = (self.stackframe.operand_stack.pop().unwrap()) as i32;
+                let rhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 let result = lhs.wrapping_sub(rhs);
-                self.stackframe.operand_stack.push(result as u32);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::LOp(Op::Sub) => {
                 // lsub
                 // long subtract
-                let rhs = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
-                let lhs = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
+                let rhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 let result = lhs.wrapping_sub(rhs);
-                push_long(&mut self.stackframe.operand_stack, result as u64);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::FOp(Op::Sub) => {
                 // fsub
                 // float sub
-                let rhs = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
-                let lhs = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
+                let rhs = self.stackframe.operand_stack.popd::<f32>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<f32>().unwrap();
                 let result = lhs - rhs;
-                self.stackframe.operand_stack.push(result.to_bits());
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::DOp(Op::Sub) => {
                 // dsub
                 // double subtraction
-                let rhs = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
-                let lhs = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
+                let rhs = self.stackframe.operand_stack.popd::<f64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<f64>().unwrap();
                 let result = lhs - rhs;
-                push_long(&mut self.stackframe.operand_stack, result.to_bits());
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::IOp(Op::Mul) => {
                 // imul
                 // int multiply
-                let rhs = (self.stackframe.operand_stack.pop().unwrap()) as i32;
-                let lhs = (self.stackframe.operand_stack.pop().unwrap()) as i32;
+                let rhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 let result = lhs.wrapping_mul(rhs);
-                self.stackframe.operand_stack.push(result as u32);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::LOp(Op::Mul) => {
                 // lmul
                 // long multiply
-                let rhs = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
-                let lhs = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
+                let rhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 let result = lhs.wrapping_mul(rhs);
-                push_long(&mut self.stackframe.operand_stack, result as u64);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::FOp(Op::Mul) => {
                 // fmul
                 // float mul
-                let rhs = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
-                let lhs = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
+                let rhs = self.stackframe.operand_stack.popd::<f32>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<f32>().unwrap();
                 let result = lhs * rhs;
-                self.stackframe.operand_stack.push(result.to_bits());
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::DOp(Op::Mul) => {
                 // dmul
                 // double multiplication
-                let rhs = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
-                let lhs = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
+                let rhs = self.stackframe.operand_stack.popd::<f64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<f64>().unwrap();
                 let result = lhs * rhs;
-                push_long(&mut self.stackframe.operand_stack, result.to_bits());
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::IOp(Op::Div) => {
                 // idiv
                 // int divide
-                let rhs = (self.stackframe.operand_stack.pop().unwrap()) as i32;
-                let lhs = (self.stackframe.operand_stack.pop().unwrap()) as i32;
+                let rhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 // TODO: Check for zero division
                 let result = lhs / rhs;
-                self.stackframe.operand_stack.push(result as u32);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::LOp(Op::Div) => {
                 // ldiv
                 // long division
 
-                let rhs = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
-                let lhs = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
+                let rhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 // TODO: Check for zero division
                 let result = lhs / rhs;
-                push_long(&mut self.stackframe.operand_stack, result as u64);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::FOp(Op::Div) => {
                 // fdiv
                 // float div
-                let rhs = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
-                let lhs = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
+                let rhs = self.stackframe.operand_stack.popd::<f32>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<f32>().unwrap();
                 let result = lhs / rhs;
-                self.stackframe.operand_stack.push(result.to_bits());
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::DOp(Op::Div) => {
                 // ddiv
                 // double division
-                let rhs = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
-                let lhs = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
+                let rhs = self.stackframe.operand_stack.popd::<f64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<f64>().unwrap();
                 let result = lhs / rhs;
-                push_long(&mut self.stackframe.operand_stack, result.to_bits());
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::IOp(Op::Mod) => {
                 // irem
                 // int remainder
-                let rhs = (self.stackframe.operand_stack.pop().unwrap()) as i32;
-                let lhs = (self.stackframe.operand_stack.pop().unwrap()) as i32;
+                let rhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 // TODO: Check for zero division
                 let result = lhs % rhs;
-                self.stackframe.operand_stack.push(result as u32);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::LOp(Op::Mod) => {
                 // lrem
                 // long modulo
 
-                let rhs = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
-                let lhs = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
+                let rhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 // TODO: Check for zero division
                 let result = lhs % rhs;
-                push_long(&mut self.stackframe.operand_stack, result as u64);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::FOp(Op::Mod) => {
                 // frem
                 // float rem
-                let rhs = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
-                let lhs = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
+                let rhs = self.stackframe.operand_stack.popd::<f32>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<f32>().unwrap();
                 let result = lhs % rhs;
-                self.stackframe.operand_stack.push(result.to_bits());
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::DOp(Op::Mod) => {
                 // drem
                 // double remainder
-                let rhs = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
-                let lhs = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
+                let rhs = self.stackframe.operand_stack.popd::<f64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<f64>().unwrap();
                 let result = lhs % rhs;
-                push_long(&mut self.stackframe.operand_stack, result.to_bits());
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::IOp(Op::Neg) => {
                 // ineg
                 // negate int
-                let f = self.stackframe.operand_stack.pop().unwrap() as i32;
+                let f = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 let result = -f;
-                self.stackframe.operand_stack.push(result as u32);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::LOp(Op::Neg) => {
                 // lneg
                 // negate long
-                let l = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
+                let l = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 let result = -l;
-                push_long(&mut self.stackframe.operand_stack, result as u64);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::FOp(Op::Neg) => {
                 // fneg
                 // negate float
-                let f = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
+                let f = self.stackframe.operand_stack.popd::<f32>().unwrap();
                 let result = -f;
-                self.stackframe.operand_stack.push(result.to_bits());
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::DOp(Op::Neg) => {
                 // dneg
                 // negate double
-                let d = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
+                let d = self.stackframe.operand_stack.popd::<f64>().unwrap();
                 let result = -d;
-                push_long(&mut self.stackframe.operand_stack, result.to_bits());
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::IOp(Op::Shl) => {
                 // ishl
                 // int shift left
-                let rhs = (self.stackframe.operand_stack.pop().unwrap()) & 0x1F;
-                let lhs = (self.stackframe.operand_stack.pop().unwrap()) as i32;
+                let rhs = self.stackframe.operand_stack.pop().unwrap() & 0x1F;
+                let lhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 let result = lhs << rhs;
-                self.stackframe.operand_stack.push(result as u32);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::LOp(Op::Shl) => {
                 // lshl
                 // long shift left
                 let rhs = self.stackframe.operand_stack.pop().unwrap() & 0x3F;
-                let lhs = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
+                let lhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 let result = lhs << rhs;
-                push_long(&mut self.stackframe.operand_stack, result as u64);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::IOp(Op::Shr) => {
                 // ishr
                 // int shift right
-                let rhs = (self.stackframe.operand_stack.pop().unwrap()) & 0x1F;
-                let lhs = (self.stackframe.operand_stack.pop().unwrap()) as i32;
+                let rhs = self.stackframe.operand_stack.pop().unwrap() & 0x1F;
+                let lhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 let result = lhs >> rhs;
-                self.stackframe.operand_stack.push(result as u32);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::LOp(Op::Shr) => {
                 // lshr
                 // long shift right
                 let rhs = self.stackframe.operand_stack.pop().unwrap() & 0x3F;
-                let lhs = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
+                let lhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 let result = lhs >> rhs;
-                push_long(&mut self.stackframe.operand_stack, result as u64);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::IOp(Op::Ushr) => {
                 // iushr
@@ -362,15 +351,15 @@ impl Thread {
                 let rhs = (self.stackframe.operand_stack.pop().unwrap()) & 0x1F;
                 let lhs = self.stackframe.operand_stack.pop().unwrap();
                 let result = lhs >> rhs;
-                self.stackframe.operand_stack.push(result);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::LOp(Op::Ushr) => {
                 // lushr
                 // long logical shift right
                 let rhs = self.stackframe.operand_stack.pop().unwrap() & 0x3F;
-                let lhs = pop_long(&mut self.stackframe.operand_stack).unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<u64>().unwrap();
                 let result = lhs >> rhs;
-                push_long(&mut self.stackframe.operand_stack, result);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::IOp(Op::And) => {
                 // iand
@@ -378,15 +367,15 @@ impl Thread {
                 let rhs = self.stackframe.operand_stack.pop().unwrap();
                 let lhs = self.stackframe.operand_stack.pop().unwrap();
                 let result = lhs & rhs;
-                self.stackframe.operand_stack.push(result);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::LOp(Op::And) => {
                 // land
                 // long boolean and
-                let rhs = pop_long(&mut self.stackframe.operand_stack).unwrap();
-                let lhs = pop_long(&mut self.stackframe.operand_stack).unwrap();
+                let rhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 let result = lhs & rhs;
-                push_long(&mut self.stackframe.operand_stack, result);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::IOp(Op::Or) => {
                 // ior
@@ -394,15 +383,15 @@ impl Thread {
                 let rhs = self.stackframe.operand_stack.pop().unwrap();
                 let lhs = self.stackframe.operand_stack.pop().unwrap();
                 let result = lhs | rhs;
-                self.stackframe.operand_stack.push(result);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::LOp(Op::Or) => {
                 // lor
                 // long boolean or
-                let rhs = pop_long(&mut self.stackframe.operand_stack).unwrap();
-                let lhs = pop_long(&mut self.stackframe.operand_stack).unwrap();
+                let rhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 let result = lhs | rhs;
-                push_long(&mut self.stackframe.operand_stack, result);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::IOp(Op::Xor) => {
                 // ixor
@@ -410,18 +399,19 @@ impl Thread {
                 let rhs = self.stackframe.operand_stack.pop().unwrap();
                 let lhs = self.stackframe.operand_stack.pop().unwrap();
                 let result = lhs ^ rhs;
-                self.stackframe.operand_stack.push(result);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::LOp(Op::Xor) => {
                 // lxor
                 // long boolean xor
-                let rhs = pop_long(&mut self.stackframe.operand_stack).unwrap();
-                let lhs = pop_long(&mut self.stackframe.operand_stack).unwrap();
+                let rhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 let result = lhs ^ rhs;
-                push_long(&mut self.stackframe.operand_stack, result);
+                self.stackframe.operand_stack.pushd(result);
             }
             Instruction::IInc(index, inc) => {
                 // iinc
+                // TODO: is this correct??
                 // int increment
                 let start = self.stackframe.locals[index] as i32;
                 self.stackframe.locals[index] = start.wrapping_add(inc) as u32;
@@ -429,125 +419,125 @@ impl Thread {
             Instruction::Convert(Type::Int, Type::Long) => {
                 // i2l
                 // int to long
-                let int = self.stackframe.operand_stack.pop().unwrap() as i32;
+                let int = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 let long = int as i64;
-                push_long(&mut self.stackframe.operand_stack, long as u64);
+                self.stackframe.operand_stack.pushd(long);
             }
             Instruction::Convert(Type::Int, Type::Float) => {
                 // i2f
                 // int to float
-                let int = self.stackframe.operand_stack.pop().unwrap() as i32;
+                let int = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 let float = int as f32;
-                self.stackframe.operand_stack.push(float.to_bits());
+                self.stackframe.operand_stack.pushd(float);
             }
             Instruction::Convert(Type::Int, Type::Double) => {
                 // i2d
                 // int to double
-                let int = self.stackframe.operand_stack.pop().unwrap() as i32;
+                let int = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 let double = int as f64;
-                push_long(&mut self.stackframe.operand_stack, double.to_bits());
+                self.stackframe.operand_stack.pushd(double);
             }
             Instruction::Convert(Type::Long, Type::Int) => {
                 // l2i
                 // long to int
-                let long = pop_long(&mut self.stackframe.operand_stack).unwrap();
+                let long = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 let int = long as u32;
-                self.stackframe.operand_stack.push(int);
+                self.stackframe.operand_stack.pushd(int);
             }
             Instruction::Convert(Type::Long, Type::Float) => {
                 // l2f
                 // long to float
-                let long = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
+                let long = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 let float = long as f32;
-                self.stackframe.operand_stack.push(float.to_bits());
+                self.stackframe.operand_stack.pushd(float);
             }
             Instruction::Convert(Type::Long, Type::Double) => {
                 // l2d
                 // long to double
-                let long = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
+                let long = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 let double = long as f64;
-                push_long(&mut self.stackframe.operand_stack, double.to_bits());
+                self.stackframe.operand_stack.pushd(double);
             }
             Instruction::Convert(Type::Float, Type::Int) => {
                 // f2i
                 // float to integer
-                let float = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
+                let float = self.stackframe.operand_stack.popd::<f32>().unwrap();
                 let int = float as i32;
-                self.stackframe.operand_stack.push(int as u32);
+                self.stackframe.operand_stack.pushd(int);
             }
             Instruction::Convert(Type::Float, Type::Long) => {
                 // f2l
                 // float to long
-                let float = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
+                let float = self.stackframe.operand_stack.popd::<f32>().unwrap();
                 let long = float as u64;
-                push_long(&mut self.stackframe.operand_stack, long);
+                self.stackframe.operand_stack.pushd(long);
             }
             Instruction::Convert(Type::Float, Type::Double) => {
                 // f2d
                 // float to double
-                let float = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
+                let float = self.stackframe.operand_stack.popd::<f32>().unwrap();
                 let double = float as f64;
-                push_long(&mut self.stackframe.operand_stack, double.to_bits());
+                self.stackframe.operand_stack.pushd(double);
             }
             Instruction::Convert(Type::Double, Type::Int) => {
                 // d2i
                 // double to integer
-                let double = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
-                let int = double as u32;
-                self.stackframe.operand_stack.push(int);
+                let double = self.stackframe.operand_stack.popd::<f64>().unwrap();
+                let int = double as i32;
+                self.stackframe.operand_stack.pushd(int);
             }
             Instruction::Convert(Type::Double, Type::Long) => {
                 // d2l
                 // double to long
-                let double = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
-                let int = double as u64;
-                push_long(&mut self.stackframe.operand_stack, int);
+                let double = self.stackframe.operand_stack.popd::<f64>().unwrap();
+                let int = double as i64;
+                self.stackframe.operand_stack.pushd(int);
             }
             Instruction::Convert(Type::Double, Type::Float) => {
                 // d2f
                 // double to float
-                let double = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
-                let float = (double as f32).to_bits();
-                self.stackframe.operand_stack.push(float);
+                let double = self.stackframe.operand_stack.popd::<f64>().unwrap();
+                let float = double as f32;
+                self.stackframe.operand_stack.pushd(float);
             }
             Instruction::Convert(Type::Int, Type::Byte) => {
                 // i2b
                 // int to byte
-                let int = self.stackframe.operand_stack.pop().unwrap() as i32;
+                let int = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 let byte = int as i8 as i32;
-                self.stackframe.operand_stack.push(byte as u32);
+                self.stackframe.operand_stack.pushd(byte);
             }
             Instruction::Convert(Type::Int, Type::Char) => {
                 // i2c
                 // int to char
-                let int = self.stackframe.operand_stack.pop().unwrap() as i32;
-                let char = int as u8;
-                self.stackframe.operand_stack.push(char as u32);
+                let int = self.stackframe.operand_stack.popd::<u32>().unwrap();
+                let char = int as u8 as u32;
+                self.stackframe.operand_stack.pushd(char);
             }
             Instruction::Convert(Type::Int, Type::Short) => {
                 // i2s
                 // int to short
-                let int = self.stackframe.operand_stack.pop().unwrap() as i32;
+                let int = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 let short = int as i16 as i32;
-                self.stackframe.operand_stack.push(short as u32);
+                self.stackframe.operand_stack.pushd(short);
             }
             Instruction::LCmp => {
                 // lcmp
                 // long comparison
-                let rhs = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
-                let lhs = pop_long(&mut self.stackframe.operand_stack).unwrap() as i64;
+                let rhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 let value = match lhs.cmp(&rhs) {
                     Ordering::Equal => 0,
                     Ordering::Greater => 1,
                     Ordering::Less => -1,
                 };
-                self.stackframe.operand_stack.push(value as u32);
+                self.stackframe.operand_stack.pushd(value);
             }
             Instruction::FCmp(is_rev) => {
                 // fcmp<op>
                 // float comparison
-                let rhs = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
-                let lhs = f32::from_bits(self.stackframe.operand_stack.pop().unwrap());
+                let rhs = self.stackframe.operand_stack.popd::<f32>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<f32>().unwrap();
                 let value = if lhs > rhs {
                     1
                 } else if (lhs - rhs).abs() < f32::EPSILON {
@@ -556,14 +546,14 @@ impl Thread {
                     -1
                 } else {
                     1
-                } as u32;
-                self.stackframe.operand_stack.push(value);
+                };
+                self.stackframe.operand_stack.pushd(value);
             }
             Instruction::DCmp(is_rev) => {
                 // dcmp<op>
                 // double comparison
-                let rhs = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
-                let lhs = f64::from_bits(pop_long(&mut self.stackframe.operand_stack).unwrap());
+                let rhs = self.stackframe.operand_stack.popd::<f64>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<f64>().unwrap();
                 let value = if lhs > rhs {
                     1
                 } else if (lhs - rhs).abs() < f64::EPSILON {
@@ -572,13 +562,13 @@ impl Thread {
                     -1
                 } else {
                     1
-                } as u32;
-                self.stackframe.operand_stack.push(value);
+                };
+                self.stackframe.operand_stack.pushd(value);
             }
             Instruction::IfCmpZ(cmp, branch) => {
                 // if<cond>
                 // integer comparison to zero
-                let lhs = self.stackframe.operand_stack.pop().unwrap() as i32;
+                let lhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 let cond = match cmp {
                     Cmp::Eq => lhs == 0,
                     Cmp::Ne => lhs != 0,
@@ -594,8 +584,8 @@ impl Thread {
             Instruction::ICmp(cnd, branch) => {
                 // if_icmp<cond>
                 // comparison between integers
-                let rhs = self.stackframe.operand_stack.pop().unwrap() as i32;
-                let lhs = self.stackframe.operand_stack.pop().unwrap() as i32;
+                let rhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
+                let lhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 if match cnd {
                     Cmp::Eq => lhs == rhs,
                     Cmp::Ne => lhs != rhs,
@@ -623,7 +613,7 @@ impl Thread {
                 // putstatic
                 // put a static field to a class
                 let Some(class) = self.class_area.search(&class) else {
-                    return Err(format!("Couldn't resolve class {class}").into());
+                    return Err(error::Error::class_resolution(&class));
                 };
 
                 if self.maybe_initialize_class(&class) {
@@ -661,7 +651,7 @@ impl Thread {
                 // getstatic
                 // get a static field from a class
                 let Some(class) = self.class_area.search(&class) else {
-                    return Err(format!("Couldn't resolve class {class}").into());
+                    return Err(error::Error::class_resolution(&class));
                 };
 
                 if self.maybe_initialize_class(&class) {
@@ -730,7 +720,7 @@ impl Thread {
                 let value = if field_type.get_size() == 1 {
                     self.stackframe.operand_stack.pop().unwrap() as u64
                 } else {
-                    pop_long(&mut self.stackframe.operand_stack).unwrap()
+                    self.stackframe.operand_stack.popd::<u64>().unwrap()
                 };
                 let object_index = self.stackframe.operand_stack.pop().unwrap();
 
@@ -949,17 +939,13 @@ impl Thread {
                 let index = self.stackframe.operand_stack.pop().unwrap();
                 let array_ref = self.stackframe.operand_stack.pop().unwrap();
 
-                let old =
+                let (old, is_reference) =
                     Array1.get_mut(&mut self.heap.lock().unwrap(), array_ref as usize, |arr| {
                         let old = arr.contents[index as usize];
                         arr.contents[index as usize] = value;
-                        old
+                        (old, arr.arr_type.is_reference())
                     })?;
-                if ArrayType::SELF.get(
-                    &self.heap.lock().unwrap(),
-                    array_ref as usize,
-                    FieldType::is_reference,
-                )? {
+                if is_reference {
                     // if it's a reference type, increment the ref count
                     self.rember(value, verbose);
                     self.forgor(old, verbose);
@@ -967,7 +953,7 @@ impl Thread {
             }
             Instruction::ArrayStore2 => {
                 // store 2 values into an array
-                let value = pop_long(&mut self.stackframe.operand_stack).unwrap();
+                let value = self.stackframe.operand_stack.popd::<u64>().unwrap();
                 let index = self.stackframe.operand_stack.pop().unwrap();
                 let array_ref = self.stackframe.operand_stack.pop().unwrap();
 
@@ -1002,7 +988,7 @@ impl Thread {
                     Array2.get_mut(&mut self.heap.lock().unwrap(), array_ref as usize, |arr| {
                         arr.contents[index as usize]
                     })?;
-                push_long(&mut self.stackframe.operand_stack, value);
+                self.stackframe.operand_stack.pushd(value);
             }
             Instruction::NewMultiArray(dimensions, arr_type) => {
                 let dimension_sizes = (0..dimensions)
@@ -1217,7 +1203,7 @@ impl Thread {
                         return Err(format!("Not enough parameters for java/lang/invoke/StringConcatFactory.makeConcatWithConstants: {str:?} {parameters:?}"));
                     };
                     if field_type.get_size() == 2 {
-                        let value = pop_long(&mut args_iter).unwrap();
+                        let value = args_iter.popd::<u64>().unwrap();
                         // since the stack is reversed, this stuff is goofy
                         let value = value >> 32 | value << 32;
                         match field_type {
@@ -1367,7 +1353,7 @@ impl Thread {
     /// # Panics
     pub fn return_two(&mut self, verbose: bool) {
         let outer_stackframe = self.stack.pop().unwrap();
-        let ret_value = pop_long(&mut self.stackframe.operand_stack).unwrap();
+        let ret_value = self.stackframe.operand_stack.popd::<u64>().unwrap();
         if verbose {
             println!("{ret_value}");
         }
@@ -1375,7 +1361,7 @@ impl Thread {
         self.stackframe = outer_stackframe;
         let ret_address = self.stackframe.operand_stack.pop().unwrap();
         self.pc_register = ret_address as usize;
-        push_long(&mut self.stackframe.operand_stack, ret_value);
+        self.stackframe.operand_stack.pushd(ret_value);
     }
 }
 
@@ -1405,19 +1391,6 @@ fn allocate_multi_array(
         }
         [] => Err(String::from("Can't create 0-dimensional array")),
     }
-}
-
-pub fn pop_long(stack: &mut Vec<u32>) -> Option<u64> {
-    let lower = stack.pop()?;
-    let upper = stack.pop()?;
-    Some((upper as u64) << 32 | lower as u64)
-}
-
-pub fn push_long(stack: &mut Vec<u32>, l: u64) {
-    let lower = (l & 0xFFFF_FFFF) as u32;
-    let upper = (l >> 32) as u32;
-    stack.push(upper);
-    stack.push(lower);
 }
 
 fn value_store(stackframe: &mut StackFrame, index: usize) {

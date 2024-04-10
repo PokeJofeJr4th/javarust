@@ -46,9 +46,6 @@ impl Heap {
             return idx;
         }
         let idx = self.allocate(StringObj::new(string.clone()));
-        // leak the string ref if it's retrieved from the cache in this way
-        // println!("Leaking string {idx}");
-        // self.inc_ref(idx);
         self.string_cache.insert(string.clone(), idx);
         self.string_cache_mirror.insert(idx, string);
         idx
