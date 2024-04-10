@@ -15,7 +15,7 @@ use crate::{
     method,
 };
 
-use super::{native, Thread};
+use super::{error, native, Thread};
 
 #[derive(Debug)]
 pub struct Instance {
@@ -138,9 +138,9 @@ pub trait ObjectFinder {
         heap: &Heap,
         index: usize,
         func: impl FnOnce(Self::Target<'_>) -> T,
-    ) -> Result<T, String> {
+    ) -> error::Result<T> {
         heap.get(index)
-            .ok_or_else(|| String::from("Null pointer exception"))
+            .ok_or_else(|| String::from("Null pointer exception").into())
             .and_then(|obj| self.extract(obj, func))
     }
 
@@ -150,9 +150,9 @@ pub trait ObjectFinder {
         heap: &mut Heap,
         index: usize,
         func: impl FnOnce(Self::TargetMut<'_>) -> T,
-    ) -> Result<T, String> {
+    ) -> error::Result<T> {
         heap.get_mut(index)
-            .ok_or_else(|| String::from("Null pointer exception"))
+            .ok_or_else(|| String::from("Null pointer exception").into())
             .and_then(|obj| self.extract_mut(obj, func))
     }
 
@@ -161,14 +161,14 @@ pub trait ObjectFinder {
         &self,
         object: &Object,
         func: impl FnOnce(Self::Target<'_>) -> T,
-    ) -> Result<T, String>;
+    ) -> error::Result<T>;
 
     /// # Errors
     fn extract_mut<T>(
         &self,
         object: &mut Object,
         func: impl FnOnce(Self::TargetMut<'_>) -> T,
-    ) -> Result<T, String>;
+    ) -> error::Result<T>;
 }
 
 pub struct NativeFieldObj<T, const I: usize = 0>(PhantomData<T>);
@@ -230,7 +230,7 @@ impl<E: 'static, const I: usize> NativeFieldObj<E, I> {
         heap: &Heap,
         index: usize,
         func: impl FnOnce(<Self as ObjectFinder>::Target<'_>) -> O,
-    ) -> Result<O, String> {
+    ) -> error::Result<O> {
         Self::SELF.get(heap, index, func)
     }
 
@@ -239,7 +239,7 @@ impl<E: 'static, const I: usize> NativeFieldObj<E, I> {
         heap: &mut Heap,
         index: usize,
         func: impl FnOnce(<Self as ObjectFinder>::TargetMut<'_>) -> O,
-    ) -> Result<O, String> {
+    ) -> error::Result<O> {
         Self::SELF.get_mut(heap, index, func)
     }
 }
@@ -253,13 +253,13 @@ impl<E: 'static, const I: usize> ObjectFinder for NativeFieldObj<E, I> {
         &self,
         object: &Object,
         func: impl FnOnce(Self::Target<'_>) -> T,
-    ) -> Result<T, String> {
+    ) -> error::Result<T> {
         object
             .native_fields
             .get(I)
             .ok_or_else(|| String::from("Native field is missing"))?
             .downcast_ref::<E>()
-            .ok_or_else(|| String::from("Native field is wrong type"))
+            .ok_or_else(|| String::from("Native field is wrong type").into())
             .map(func)
     }
 
@@ -267,13 +267,13 @@ impl<E: 'static, const I: usize> ObjectFinder for NativeFieldObj<E, I> {
         &self,
         object: &mut Object,
         func: impl FnOnce(Self::TargetMut<'_>) -> T,
-    ) -> Result<T, String> {
+    ) -> error::Result<T> {
         object
             .native_fields
             .get_mut(I)
             .ok_or_else(|| String::from("Native field is missing"))?
             .downcast_mut::<E>()
-            .ok_or_else(|| String::from("Native field is wrong type"))
+            .ok_or_else(|| String::from("Native field is wrong type").into())
             .map(func)
     }
 }
@@ -293,27 +293,6 @@ impl StringObj {
     }
 }
 
-impl ObjectFinder for Class {
-    type Target<'a> = &'a Object;
-    type TargetMut<'a> = &'a mut Object;
-
-    fn extract<T>(
-        &self,
-        object: &Object,
-        func: impl FnOnce(Self::Target<'_>) -> T,
-    ) -> Result<T, String> {
-        Ok(func(object))
-    }
-
-    fn extract_mut<T>(
-        &self,
-        object: &mut Object,
-        func: impl FnOnce(Self::TargetMut<'_>) -> T,
-    ) -> Result<T, String> {
-        Ok(func(object))
-    }
-}
-
 pub struct AnyObj;
 
 impl ObjectFinder for AnyObj {
@@ -324,7 +303,7 @@ impl ObjectFinder for AnyObj {
         &self,
         object: &Object,
         func: impl FnOnce(Self::Target<'_>) -> T,
-    ) -> Result<T, String> {
+    ) -> error::Result<T> {
         Ok(func(object))
     }
 
@@ -332,7 +311,7 @@ impl ObjectFinder for AnyObj {
         &self,
         object: &mut Object,
         func: impl FnOnce(Self::TargetMut<'_>) -> T,
-    ) -> Result<T, String> {
+    ) -> error::Result<T> {
         Ok(func(object))
     }
 }
@@ -399,17 +378,15 @@ impl ObjectFinder for Array1 {
         &self,
         object: &Object,
         func: impl FnOnce(Self::Target<'_>) -> T,
-    ) -> Result<T, String> {
+    ) -> error::Result<T> {
         let [arr_type, contents] = &object.native_fields[..] else {
-            return Err(String::from(
-                "Array class has wrong number of native fields",
-            ));
+            return Err(String::from("Array class has wrong number of native fields").into());
         };
         let Some(arr_type) = arr_type.downcast_ref::<FieldType>() else {
-            return Err(String::from("Native field has the wrong type"));
+            return Err(String::from("Native field has the wrong type").into());
         };
         let Some(contents) = contents.downcast_ref::<Vec<u32>>() else {
-            return Err(String::from("Native field has the wrong type"));
+            return Err(String::from("Native field has the wrong type").into());
         };
         Ok(func(ArrayFields { arr_type, contents }))
     }
@@ -418,17 +395,15 @@ impl ObjectFinder for Array1 {
         &self,
         object: &mut Object,
         func: impl FnOnce(Self::TargetMut<'_>) -> T,
-    ) -> Result<T, String> {
+    ) -> error::Result<T> {
         let [arr_type, contents] = &mut object.native_fields[..] else {
-            return Err(String::from(
-                "Array class has wrong number of native fields",
-            ));
+            return Err(String::from("Array class has wrong number of native fields").into());
         };
         let Some(arr_type) = arr_type.downcast_mut::<FieldType>() else {
-            return Err(String::from("Native field has the wrong type"));
+            return Err(String::from("Native field has the wrong type").into());
         };
         let Some(contents) = contents.downcast_mut::<Vec<u32>>() else {
-            return Err(String::from("Native field has the wrong type"));
+            return Err(String::from("Native field has the wrong type").into());
         };
         Ok(func(ArrayFieldsMut { arr_type, contents }))
     }
@@ -462,15 +437,15 @@ impl ObjectFinder for Array2 {
         &self,
         object: &Object,
         func: impl FnOnce(Self::Target<'_>) -> T,
-    ) -> Result<T, String> {
+    ) -> error::Result<T> {
         let [arr_type, contents] = &object.native_fields[..] else {
-            return Err(String::from("Array class has wrong number of fields"));
+            return Err(String::from("Array class has wrong number of fields").into());
         };
         let Some(arr_type) = arr_type.downcast_ref::<FieldType>() else {
-            return Err(String::from("Native field has wrong type"));
+            return Err(String::from("Native field has wrong type").into());
         };
         let Some(contents) = contents.downcast_ref::<Vec<u64>>() else {
-            return Err(String::from("Native field has wrong type"));
+            return Err(String::from("Native field has wrong type").into());
         };
         Ok(func(ArrayFields { arr_type, contents }))
     }
@@ -479,17 +454,15 @@ impl ObjectFinder for Array2 {
         &self,
         object: &mut Object,
         func: impl FnOnce(Self::TargetMut<'_>) -> T,
-    ) -> Result<T, String> {
+    ) -> error::Result<T> {
         let [arr_type, contents] = &mut object.native_fields[..] else {
-            return Err(String::from(
-                "Array object has the wrong number of native fields",
-            ));
+            return Err(String::from("Array object has the wrong number of native fields").into());
         };
         let Some(arr_type) = arr_type.downcast_mut::<FieldType>() else {
-            return Err(String::from("Native field is the wrong type"));
+            return Err(String::from("Native field is the wrong type").into());
         };
         let Some(contents) = contents.downcast_mut::<Vec<u64>>() else {
-            return Err(String::from("Native field is the wrong type"));
+            return Err(String::from("Native field is the wrong type").into());
         };
         Ok(func(ArrayFieldsMut { arr_type, contents }))
     }

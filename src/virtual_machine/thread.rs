@@ -10,6 +10,7 @@ use crate::{
 };
 
 use super::{
+    error,
     instruction::Type,
     object::{AnyObj, Array1, Array2, ArrayType, Object, ObjectFinder, StringObj},
     Cmp, Instruction, Op, StackFrame,
@@ -28,7 +29,7 @@ impl Thread {
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     /// # Panics
     /// # Errors
-    pub fn tick(&mut self, verbose: bool) -> Result<(), String> {
+    pub fn tick(&mut self, verbose: bool) -> super::error::Result<()> {
         // this way we can mutate the stack frame without angering the borrow checker
         let method = self.stackframe.method.clone();
         if let Some(native_method) = method.code.as_native() {
@@ -616,7 +617,7 @@ impl Thread {
             }
             Instruction::Return0 => {
                 // return void
-                self.return_void();
+                self.return_void()?;
             }
             Instruction::Return1 => {
                 // return one thing
@@ -626,7 +627,7 @@ impl Thread {
                 // putstatic
                 // put a static field to a class
                 let Some(class) = self.class_area.search(&class) else {
-                    return Err(format!("Couldn't resolve class {class}"));
+                    return Err(format!("Couldn't resolve class {class}").into());
                 };
 
                 if self.maybe_initialize_class(&class) {
@@ -664,7 +665,7 @@ impl Thread {
                 // getstatic
                 // get a static field from a class
                 let Some(class) = self.class_area.search(&class) else {
-                    return Err(format!("Couldn't resolve class {class}"));
+                    return Err(format!("Couldn't resolve class {class}").into());
                 };
 
                 if self.maybe_initialize_class(&class) {
@@ -824,7 +825,7 @@ impl Thread {
                 } else {
                     self.class_area
                         .search(&class)
-                        .ok_or_else(|| format!("Can't find class {class}"))?
+                        .ok_or_else(|| error::Error::class_resolution(&class))?
                         .super_class
                         .clone()
                 };
@@ -910,7 +911,7 @@ impl Thread {
             Instruction::New(class) => {
                 // make a new object instance
                 let Some(class) = self.class_area.search(&class) else {
-                    return Err(format!("Couldn't find class {class}"));
+                    return Err(error::Error::class_resolution(&class));
                 };
                 if self.maybe_initialize_class(&class) {
                     return Ok(());
@@ -1044,7 +1045,8 @@ impl Thread {
                             })?;
                         return Err(format!(
                             "CheckedCast failed; expected a(n) {ty} but got a(n) {obj_type}"
-                        ));
+                        )
+                        .into());
                     }
                 }
             }
@@ -1052,7 +1054,7 @@ impl Thread {
                 let objref = self.stackframe.operand_stack.pop().unwrap();
                 self.throw(objref, verbose)?;
             }
-            other => return Err(format!("Invalid Opcode: {other:?}")),
+            other => return Err(format!("Invalid Opcode: {other:?}").into()),
         }
         Ok(())
     }
@@ -1323,14 +1325,16 @@ impl Thread {
     }
 
     /// # Panics
-    pub fn return_void(&mut self) {
+    /// # Errors
+    pub fn return_void(&mut self) -> error::Result<()> {
         self.collect_garbage();
         let Some(next_method) = self.stack.pop() else {
-            return;
+            return Err(error::Error::ThreadKill);
         };
         self.stackframe = next_method;
         let return_address = self.stackframe.operand_stack.pop().unwrap();
         self.pc_register = return_address as usize;
+        Ok(())
     }
 
     /// # Panics
@@ -1366,7 +1370,7 @@ impl Thread {
 
     /// # Panics
     pub fn return_two(&mut self, verbose: bool) {
-        let mut outer_stackframe = self.stack.pop().unwrap();
+        let outer_stackframe = self.stack.pop().unwrap();
         let ret_value = pop_long(&mut self.stackframe.operand_stack).unwrap();
         if verbose {
             println!("{ret_value}");

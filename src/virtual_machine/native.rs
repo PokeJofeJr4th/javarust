@@ -167,10 +167,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: method!(((Object(java_lang_string.clone())), int) -> void),
         code: RawCode::native(NativeVoid(
             |thread: &mut Thread, [obj_ref, string, id]: [u32; 3], _verbose| {
-                let Some(enum_class) = thread.class_area.search("java/lang/Enum") else {
-                    return Err(String::from("Couldn't find class java/lang/Enum"));
-                };
-                enum_class
+                AnyObj
                     .get_mut(
                         &mut thread.heap.lock().unwrap(),
                         obj_ref as usize,

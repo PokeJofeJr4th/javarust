@@ -1,3 +1,4 @@
+pub mod error;
 pub mod instruction;
 mod native;
 pub mod object;
@@ -107,6 +108,13 @@ pub fn start_vm(
         // if primary_thread.stack.is_empty() {
         //     return;
         // }
-        primary_thread.tick(verbose).unwrap();
+        match primary_thread.tick(verbose) {
+            Ok(()) => {}
+            Err(error::Error::ThreadKill) => break,
+            Err(other) => {
+                println!("Error in main thread: {other:?}");
+                break;
+            }
+        }
     }
 }

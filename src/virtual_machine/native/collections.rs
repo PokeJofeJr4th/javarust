@@ -344,7 +344,7 @@ pub fn add_native_collections(
                             Ok(None)
                         }
                     }
-                    _ => Err("Impossible pc reached".to_string()),
+                    _ => Err("Impossible pc reached".to_string().into()),
                 }
                 /*
                 def insertion_sort_wo_swap(a_list):
@@ -444,7 +444,7 @@ pub fn add_native_collections(
                             Ok(None)
                         }
                     }
-                    _ => Err("Impossible PC reached".to_string()),
+                    _ => Err("Impossible PC reached".to_string().into()),
                 }
             },
         )),
