@@ -141,7 +141,7 @@ pub trait ObjectFinder {
     ) -> error::Result<T> {
         heap.get(index)
             .ok_or_else(|| String::from("Null pointer exception").into())
-            .and_then(|obj| self.extract(obj, func))
+            .and_then(|obj| self.extract(&obj.lock().unwrap(), func))
     }
 
     /// # Errors
@@ -151,9 +151,9 @@ pub trait ObjectFinder {
         index: usize,
         func: impl FnOnce(Self::TargetMut<'_>) -> T,
     ) -> error::Result<T> {
-        heap.get_mut(index)
+        heap.get(index)
             .ok_or_else(|| String::from("Null pointer exception").into())
-            .and_then(|obj| self.extract_mut(obj, func))
+            .and_then(|obj| self.extract_mut(&mut obj.lock().unwrap(), func))
     }
 
     /// # Errors

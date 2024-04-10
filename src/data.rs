@@ -17,7 +17,7 @@ pub const HEAP_START: u32 = 0x8000;
 pub type SharedHeap = Arc<Mutex<Heap>>;
 
 pub struct Heap {
-    contents: Vec<Option<Object>>,
+    contents: Vec<Option<Arc<Mutex<Object>>>>,
     refcounts: Vec<u32>,
     string_cache: HashMap<Arc<str>, u32>,
     string_cache_mirror: HashMap<u32, Arc<str>>,
@@ -26,18 +26,16 @@ pub struct Heap {
 
 impl Heap {
     #[must_use]
-    pub fn get(&self, idx: usize) -> Option<&Object> {
-        self.contents.get(idx - HEAP_START as usize)?.as_ref()
-    }
-
-    #[must_use]
-    pub fn get_mut(&mut self, idx: usize) -> Option<&mut Object> {
-        self.contents.get_mut(idx - HEAP_START as usize)?.as_mut()
+    pub fn get(&self, idx: usize) -> Option<Arc<Mutex<Object>>> {
+        self.contents
+            .get(idx - HEAP_START as usize)?
+            .as_ref()
+            .map(Clone::clone)
     }
 
     #[must_use]
     pub fn allocate(&mut self, obj: Object) -> u32 {
-        self.contents.push(Some(obj));
+        self.contents.push(Some(Arc::new(Mutex::new(obj))));
         self.refcounts.push(0);
         (self.contents.len() - 1 + HEAP_START as usize) as u32
     }
@@ -99,6 +97,7 @@ impl Heap {
         let Some(obj) = core::mem::take(&mut self.contents[idx]) else {
             return;
         };
+        let obj = obj.lock().unwrap();
         // deallocate any references that object had within it
         let obj_class = self.class_area.search(&obj.class).unwrap();
         for (field, idx) in &obj_class.fields {
@@ -118,6 +117,7 @@ impl Heap {
                 self.dec_ref(c);
             }
         }
+        drop(obj);
     }
 }
 

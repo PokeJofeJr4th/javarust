@@ -1,8 +1,4 @@
-use std::{
-    cmp::Ordering,
-    fmt::Write,
-    sync::{Arc, Mutex},
-};
+use std::{cmp::Ordering, fmt::Write, sync::Arc};
 
 use crate::{
     class::{BootstrapMethod, Class, Constant, FieldType, Method, MethodDescriptor, MethodHandle},
@@ -1445,12 +1441,4 @@ fn long_load(stackframe: &mut StackFrame, index: usize) {
     let value_upper = stackframe.locals[index];
     let value_lower = stackframe.locals[index + 1];
     stackframe.operand_stack.extend([value_upper, value_lower]);
-}
-
-pub fn heap_allocate(heap: &mut Vec<Arc<Mutex<Object>>>, element: Object) -> u32 {
-    let length = heap.len();
-
-    heap.push(Arc::new(Mutex::new(element)));
-
-    length as u32
 }
