@@ -3,7 +3,10 @@ use std::{fmt::Display, sync::Arc};
 use crate::{
     access,
     class::{
-        code::{NativeSingleMethod, NativeStringMethod, NativeTodo, NativeVoid},
+        code::{
+            native_property, NativeDoubleMethod, NativeSingleMethod, NativeStringMethod,
+            NativeTodo, NativeVoid,
+        },
         AccessFlags, Field, FieldType, MethodDescriptor,
     },
     class_loader::{RawClass, RawCode, RawMethod},
@@ -28,7 +31,8 @@ pub(super) fn make_primitives(
             class_area,
             object_class.clone(),
             FieldType::Byte,
-            "Byte".into(),
+            "java/lang/Byte".into(),
+            "byte",
             |i, _| i as u8,
         ),
         make_primitive_class::<i16>(
@@ -36,7 +40,8 @@ pub(super) fn make_primitives(
             class_area,
             object_class.clone(),
             FieldType::Short,
-            "Short".into(),
+            "java/lang/Short".into(),
+            "short",
             |i, _| i as i16,
         ),
         make_primitive_class::<i32>(
@@ -44,7 +49,8 @@ pub(super) fn make_primitives(
             class_area,
             object_class.clone(),
             FieldType::Int,
-            "Integer".into(),
+            "java/lang/Integer".into(),
+            "int",
             |i, _| i as i32,
         ),
         make_primitive_class::<i64>(
@@ -52,7 +58,8 @@ pub(super) fn make_primitives(
             class_area,
             object_class.clone(),
             FieldType::Long,
-            "Long".into(),
+            "java/lang/Long".into(),
+            "long",
             |u, l| (((u as u64) << 32) | (l as u64)) as i64,
         ),
         make_primitive_class::<f32>(
@@ -60,7 +67,8 @@ pub(super) fn make_primitives(
             class_area,
             object_class.clone(),
             FieldType::Float,
-            "Float".into(),
+            "java/lang/Float".into(),
+            "float",
             |i, _| f32::from_bits(i),
         ),
         make_primitive_class::<f64>(
@@ -68,7 +76,8 @@ pub(super) fn make_primitives(
             class_area,
             object_class.clone(),
             FieldType::Double,
-            "Double".into(),
+            "java/lang/Double".into(),
+            "double",
             |u, l| f64::from_bits(((u as u64) << 32) | (l as u64)),
         ),
         make_primitive_class::<bool>(
@@ -76,7 +85,8 @@ pub(super) fn make_primitives(
             class_area,
             object_class.clone(),
             FieldType::Boolean,
-            "Boolean".into(),
+            "java/lang/Boolean".into(),
+            "boolean",
             |i, _| i != 0,
         ),
         make_primitive_class::<Char>(
@@ -84,7 +94,8 @@ pub(super) fn make_primitives(
             class_area,
             object_class,
             FieldType::Float,
-            "Float".into(),
+            "java/lang/Character".into(),
+            "char",
             |i, _| Char(i as u16),
         ),
     ]
@@ -97,6 +108,7 @@ fn make_primitive_class<T: Stackable<u32> + Display + 'static>(
     object_class: Arc<str>,
     primitive: FieldType,
     primitive_class: Arc<str>,
+    primitive_name: &str,
     from_parameter: fn(u32, u32) -> T,
 ) -> RawMethod {
     let mut class = RawClass::new(
@@ -145,7 +157,7 @@ fn make_primitive_class<T: Stackable<u32> + Display + 'static>(
         name: "valueOf".into(),
         descriptor: MethodDescriptor {
             parameter_size: primitive_size,
-            parameters: vec![primitive],
+            parameters: vec![primitive.clone()],
             return_type: Some(FieldType::Object(primitive_class.clone())),
         },
         code: RawCode::native(NativeSingleMethod(
@@ -184,17 +196,38 @@ fn make_primitive_class<T: Stackable<u32> + Display + 'static>(
         )),
         ..Default::default()
     };
+    let primitive_value = RawMethod {
+        access_flags: access!(public native),
+        name: format!("{primitive_name}Value").into(),
+        descriptor: MethodDescriptor {
+            parameter_size: primitive_size,
+            parameters: Vec::new(),
+            return_type: Some(primitive),
+        },
+        code: if primitive_size == 2 {
+            RawCode::native(NativeDoubleMethod(native_property(AnyObj, |obj| {
+                (obj.fields[0] as u64) << 32 | obj.fields[1] as u64
+            })))
+        } else {
+            RawCode::native(NativeSingleMethod(native_property(AnyObj, |obj| {
+                obj.fields[0]
+            })))
+        },
+        ..Default::default()
+    };
 
     class.methods.extend([
         value_of.name(class.this.clone()),
         init.name(class.this.clone()),
         to_string.name(class.this.clone()),
+        primitive_value.name(class.this.clone()),
     ]);
 
     method_area.extend([
         (class.this.clone(), value_of),
         (class.this.clone(), init),
         (class.this.clone(), to_string),
+        (class.this.clone(), primitive_value),
     ]);
     class_area.push(class);
 
