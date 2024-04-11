@@ -2,7 +2,7 @@ use std::{
     any::Any,
     collections::{HashMap, HashSet},
     marker::PhantomData,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use rand::rngs::StdRng;
@@ -55,7 +55,7 @@ impl Object {
     /// # Panics
     #[must_use]
     pub fn resolve_method(
-        &self,
+        &mut self,
         method_area: &SharedMethodArea,
         class_area: &SharedClassArea,
         method: &str,
@@ -150,44 +150,28 @@ impl Object {
 
 pub trait ObjectFinder {
     type Target<'a>;
-    type TargetMut<'a>;
 
     /// # Errors
-    fn get<T>(
+    fn inspect<T>(
         &self,
-        heap: &Heap,
+        heap: &Mutex<Heap>,
         index: usize,
         func: impl FnOnce(Self::Target<'_>) -> T,
     ) -> error::Result<T> {
-        heap.get(index)
-            .ok_or_else(|| String::from("Null pointer exception").into())
-            .and_then(|obj| self.extract(&obj.lock().unwrap(), func))
-    }
-
-    /// # Errors
-    fn get_mut<T>(
-        &self,
-        heap: &mut Heap,
-        index: usize,
-        func: impl FnOnce(Self::TargetMut<'_>) -> T,
-    ) -> error::Result<T> {
-        heap.get(index)
-            .ok_or_else(|| String::from("Null pointer exception").into())
-            .and_then(|obj| self.extract_mut(&mut obj.lock().unwrap(), func))
+        let heap_borrow = heap.lock().unwrap();
+        let obj = heap_borrow
+            .get(index)
+            .ok_or_else(|| String::from("Null pointer exception"))?;
+        drop(heap_borrow);
+        let x = self.extract(&mut obj.lock().unwrap(), func);
+        x
     }
 
     /// # Errors
     fn extract<T>(
         &self,
-        object: &Object,
-        func: impl FnOnce(Self::Target<'_>) -> T,
-    ) -> error::Result<T>;
-
-    /// # Errors
-    fn extract_mut<T>(
-        &self,
         object: &mut Object,
-        func: impl FnOnce(Self::TargetMut<'_>) -> T,
+        func: impl FnOnce(Self::Target<'_>) -> T,
     ) -> error::Result<T>;
 }
 
@@ -204,13 +188,9 @@ impl<T: Send + Sync + 'static, const I: usize> NativeFieldObj<T, I> {
             code: RawCode::native(NativeVoid(
                 move |thread: &mut Thread, [obj_pointer]: [u32; 1], _verbose| {
                     AnyObj
-                        .get_mut(
-                            &mut thread.heap.lock().unwrap(),
-                            obj_pointer as usize,
-                            |instance| {
-                                instance.native_fields.push(Box::new(func()));
-                            },
-                        )
+                        .inspect(&thread.heap, obj_pointer as usize, |instance| {
+                            instance.native_fields.push(Box::new(func()));
+                        })
                         .map(Option::Some)
                 },
             )),
@@ -230,7 +210,7 @@ impl<T: Send + Sync + 'static, const I: usize> NativeFieldObj<T, I> {
             descriptor: method!(()->void),
             code: RawCode::native(NativeVoid(|thread: &mut Thread, [ptr]: [u32; 1], _| {
                 AnyObj
-                    .get_mut(&mut thread.heap.lock().unwrap(), ptr as usize, |obj| {
+                    .inspect(&thread.heap, ptr as usize, |obj| {
                         obj.native_fields.push(Box::<T>::default());
                     })
                     .map(Option::Some)
@@ -246,47 +226,22 @@ impl<T, const I: usize> NativeFieldObj<T, I> {
 
 impl<E: 'static, const I: usize> NativeFieldObj<E, I> {
     /// # Errors
-    pub fn get<O>(
-        heap: &Heap,
+    pub fn inspect<O>(
+        heap: &Mutex<Heap>,
         index: usize,
         func: impl FnOnce(<Self as ObjectFinder>::Target<'_>) -> O,
     ) -> error::Result<O> {
-        Self::SELF.get(heap, index, func)
-    }
-
-    /// # Errors
-    pub fn get_mut<O>(
-        heap: &mut Heap,
-        index: usize,
-        func: impl FnOnce(<Self as ObjectFinder>::TargetMut<'_>) -> O,
-    ) -> error::Result<O> {
-        Self::SELF.get_mut(heap, index, func)
+        Self::SELF.inspect(heap, index, func)
     }
 }
 
 impl<E: 'static, const I: usize> ObjectFinder for NativeFieldObj<E, I> {
-    type Target<'b> = &'b E;
-
-    type TargetMut<'b> = &'b mut E;
+    type Target<'b> = &'b mut E;
 
     fn extract<T>(
         &self,
-        object: &Object,
-        func: impl FnOnce(Self::Target<'_>) -> T,
-    ) -> error::Result<T> {
-        object
-            .native_fields
-            .get(I)
-            .ok_or_else(|| String::from("Native field is missing"))?
-            .downcast_ref::<E>()
-            .ok_or_else(|| String::from("Native field is wrong type").into())
-            .map(func)
-    }
-
-    fn extract_mut<T>(
-        &self,
         object: &mut Object,
-        func: impl FnOnce(Self::TargetMut<'_>) -> T,
+        func: impl FnOnce(Self::Target<'_>) -> T,
     ) -> error::Result<T> {
         object
             .native_fields
@@ -316,21 +271,12 @@ impl StringObj {
 pub struct AnyObj;
 
 impl ObjectFinder for AnyObj {
-    type Target<'a> = &'a Object;
-    type TargetMut<'a> = &'a mut Object;
+    type Target<'a> = &'a mut Object;
 
     fn extract<T>(
         &self,
-        object: &Object,
+        object: Self::Target<'_>,
         func: impl FnOnce(Self::Target<'_>) -> T,
-    ) -> error::Result<T> {
-        Ok(func(object))
-    }
-
-    fn extract_mut<T>(
-        &self,
-        object: &mut Object,
-        func: impl FnOnce(Self::TargetMut<'_>) -> T,
     ) -> error::Result<T> {
         Ok(func(object))
     }
@@ -453,13 +399,8 @@ impl LambdaOverride {
 }
 
 pub struct ArrayFields<'a, T> {
-    pub arr_type: &'a FieldType,
-    pub contents: &'a [T],
-}
-
-pub struct ArrayFieldsMut<'a, T> {
     pub arr_type: &'a mut FieldType,
-    pub contents: &'a mut Vec<T>,
+    pub contents: &'a mut [T],
 }
 
 pub struct Array1;
@@ -489,29 +430,11 @@ impl Array1 {
 
 impl ObjectFinder for Array1 {
     type Target<'a> = ArrayFields<'a, u32>;
-    type TargetMut<'a> = ArrayFieldsMut<'a, u32>;
 
     fn extract<T>(
         &self,
-        object: &Object,
-        func: impl FnOnce(Self::Target<'_>) -> T,
-    ) -> error::Result<T> {
-        let [arr_type, contents] = &object.native_fields[..] else {
-            return Err(String::from("Array class has wrong number of native fields").into());
-        };
-        let Some(arr_type) = arr_type.downcast_ref::<FieldType>() else {
-            return Err(String::from("Native field has the wrong type").into());
-        };
-        let Some(contents) = contents.downcast_ref::<Vec<u32>>() else {
-            return Err(String::from("Native field has the wrong type").into());
-        };
-        Ok(func(ArrayFields { arr_type, contents }))
-    }
-
-    fn extract_mut<T>(
-        &self,
         object: &mut Object,
-        func: impl FnOnce(Self::TargetMut<'_>) -> T,
+        func: impl FnOnce(Self::Target<'_>) -> T,
     ) -> error::Result<T> {
         let [arr_type, contents] = &mut object.native_fields[..] else {
             return Err(String::from("Array class has wrong number of native fields").into());
@@ -522,7 +445,7 @@ impl ObjectFinder for Array1 {
         let Some(contents) = contents.downcast_mut::<Vec<u32>>() else {
             return Err(String::from("Native field has the wrong type").into());
         };
-        Ok(func(ArrayFieldsMut { arr_type, contents }))
+        Ok(func(ArrayFields { arr_type, contents }))
     }
 }
 
@@ -548,39 +471,21 @@ impl Array2 {
 
 impl ObjectFinder for Array2 {
     type Target<'a> = ArrayFields<'a, u64>;
-    type TargetMut<'a> = ArrayFieldsMut<'a, u64>;
 
     fn extract<T>(
         &self,
-        object: &Object,
+        object: &mut Object,
         func: impl FnOnce(Self::Target<'_>) -> T,
     ) -> error::Result<T> {
-        let [arr_type, contents] = &object.native_fields[..] else {
+        let [arr_type, contents] = &mut object.native_fields[..] else {
             return Err(String::from("Array class has wrong number of fields").into());
         };
-        let Some(arr_type) = arr_type.downcast_ref::<FieldType>() else {
+        let Some(arr_type) = arr_type.downcast_mut::<FieldType>() else {
             return Err(String::from("Native field has wrong type").into());
         };
-        let Some(contents) = contents.downcast_ref::<Vec<u64>>() else {
+        let Some(contents) = contents.downcast_mut::<Vec<u64>>() else {
             return Err(String::from("Native field has wrong type").into());
         };
         Ok(func(ArrayFields { arr_type, contents }))
-    }
-
-    fn extract_mut<T>(
-        &self,
-        object: &mut Object,
-        func: impl FnOnce(Self::TargetMut<'_>) -> T,
-    ) -> error::Result<T> {
-        let [arr_type, contents] = &mut object.native_fields[..] else {
-            return Err(String::from("Array object has the wrong number of native fields").into());
-        };
-        let Some(arr_type) = arr_type.downcast_mut::<FieldType>() else {
-            return Err(String::from("Native field is the wrong type").into());
-        };
-        let Some(contents) = contents.downcast_mut::<Vec<u64>>() else {
-            return Err(String::from("Native field is the wrong type").into());
-        };
-        Ok(func(ArrayFieldsMut { arr_type, contents }))
     }
 }

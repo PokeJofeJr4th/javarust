@@ -17,7 +17,7 @@ pub fn native_string_value_of(
         Ok(Some(str_ref))
     } else if thread.pc_register == 0 {
         let (to_string_class, to_string_method) =
-            AnyObj.get(&thread.heap.lock().unwrap(), obj_ref as usize, |obj| {
+            AnyObj.inspect(&thread.heap, obj_ref as usize, |obj| {
                 obj.resolve_method(
                     &thread.method_area,
                     &thread.class_area,
@@ -48,7 +48,7 @@ pub fn native_println_object(
     // println!("{stackframe:?}");
     if thread.pc_register == 0 {
         let (to_string_class, to_string_method) =
-            AnyObj.get(&thread.heap.lock().unwrap(), arg as usize, |obj| {
+            AnyObj.inspect(&thread.heap, arg as usize, |obj| {
                 obj.resolve_method(
                     &thread.method_area,
                     &thread.class_area,
@@ -74,7 +74,7 @@ pub fn native_println_object(
         Ok(None)
     } else {
         let ret = thread.stackframe.operand_stack.pop().unwrap();
-        let str = StringObj::SELF.get(&thread.heap.lock().unwrap(), ret as usize, Clone::clone)?;
+        let str = StringObj::SELF.inspect(&thread.heap, ret as usize, |a| a.clone())?;
         println!("{str}");
         Ok(Some(()))
     }
@@ -87,7 +87,7 @@ pub fn native_string_char_at(
 ) -> NativeReturn<u32> {
     let index = index as usize;
     StringObj::SELF
-        .get(&thread.heap.lock().unwrap(), string_ref as usize, |str| {
+        .inspect(&thread.heap, string_ref as usize, |str| {
             str.chars().nth(index).unwrap() as u32
         })
         .map(Option::Some)

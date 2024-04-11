@@ -15,13 +15,11 @@ pub fn deep_to_string(
     [index]: [u32; 1],
     verbose: bool,
 ) -> NativeReturn<Arc<str>> {
-    let heap = thread.heap.lock().unwrap();
     let index = index as usize;
-    let arr_type = ArrayType::SELF.get(&heap, index, Clone::clone)?;
+    let arr_type = ArrayType::SELF.inspect(&thread.heap, index, |a| a.clone())?;
     match arr_type {
         FieldType::Array(_) => {
-            let indices_vec = Array1.get(&heap, index, |arr| arr.contents.to_vec())?;
-            drop(heap);
+            let indices_vec = Array1.inspect(&thread.heap, index, |arr| arr.contents.to_vec())?;
             Ok(Some(
                 format!(
                     "[{}]",
@@ -38,19 +36,19 @@ pub fn deep_to_string(
             ))
         }
         FieldType::Int | FieldType::Byte | FieldType::Short => Array1
-            .get(&heap, index, |arr| {
+            .inspect(&thread.heap, index, |arr| {
                 arr.contents.iter().map(|i| *i as i32).collect::<Vec<_>>()
             })
             .map(|vec| format!("{vec:?}").into())
             .map(Option::Some),
         FieldType::Boolean => Array1
-            .get(&heap, index, |arr| {
+            .inspect(&thread.heap, index, |arr| {
                 arr.contents.iter().map(|i| *i != 0).collect::<Vec<_>>()
             })
             .map(|vec| format!("{vec:?}").into())
             .map(Option::Some),
         FieldType::Char => Array1
-            .get(&heap, index, |arr| {
+            .inspect(&thread.heap, index, |arr| {
                 format!(
                     "{:?}",
                     arr.contents
@@ -62,7 +60,7 @@ pub fn deep_to_string(
             })
             .map(Option::Some),
         FieldType::Float => Array1
-            .get(&heap, index, |arr| {
+            .inspect(&thread.heap, index, |arr| {
                 format!(
                     "{:?}",
                     arr.contents
@@ -83,11 +81,11 @@ pub fn to_string(
     _verbose: bool,
 ) -> NativeReturn<Arc<str>> {
     let arr_ref = arr_ref as usize;
-    let field_type = ArrayType::SELF.get(&thread.heap.lock().unwrap(), arr_ref, Clone::clone)?;
+    let field_type = ArrayType::SELF.inspect(&thread.heap, arr_ref, |a| a.clone())?;
     if field_type.get_size() == 2 {
         Array2
-            .get(
-                &thread.heap.lock().unwrap(),
+            .inspect(
+                &thread.heap,
                 arr_ref,
                 match field_type {
                     FieldType::Double => |arr: ArrayFields<'_, u64>| {
@@ -108,8 +106,8 @@ pub fn to_string(
             .map(Option::Some)
     } else {
         Array1
-            .get(
-                &thread.heap.lock().unwrap(),
+            .inspect(
+                &thread.heap,
                 arr_ref,
                 match field_type {
                     FieldType::Int => |arr: ArrayFields<'_, u32>| {

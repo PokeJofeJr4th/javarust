@@ -330,8 +330,8 @@ pub fn native_property<F: ObjectFinder, O>(
 ) -> impl Fn(&mut Thread, [u32; 1], bool) -> NativeReturn<O> {
     move |thread: &mut Thread, [ptr]: [u32; 1], _| {
         finder
-            .get(
-                &thread.heap.lock().unwrap(),
+            .inspect(
+                &thread.heap,
                 ptr as usize,
                 |obj: F::Target<'_>| func(obj),
             )

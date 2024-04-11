@@ -91,7 +91,7 @@ impl Heap {
         let Some(obj) = core::mem::take(&mut self.contents[idx]) else {
             return;
         };
-        let obj = obj.lock().unwrap();
+        let mut obj = obj.lock().unwrap();
         // deallocate any references that object had within it
         let obj_class = self.class_area.search(&obj.class).unwrap();
         for (field, idx) in &obj_class.fields {
@@ -100,7 +100,7 @@ impl Heap {
             }
         }
         // deallocate any references that an array had within it
-        if let Ok(Some(contents)) = Array1.extract(&obj, |fields: ArrayFields<u32>| {
+        if let Ok(Some(contents)) = Array1.extract(&mut obj, |fields: ArrayFields<u32>| {
             if fields.arr_type.is_reference() {
                 Some(fields.contents.to_vec())
             } else {

@@ -690,10 +690,8 @@ impl Thread {
                 // get a field from an object
                 let object_index = self.stackframe.operand_stack.pop().unwrap();
 
-                let rember = AnyObj.get_mut(
-                    &mut self.heap.lock().unwrap(),
-                    object_index as usize,
-                    |object_borrow| {
+                let rember =
+                    AnyObj.inspect(&self.heap, object_index as usize, |object_borrow| {
                         if field_type.get_size() == 1 {
                             let value = object_borrow.fields[idx];
                             self.stackframe.operand_stack.push(value);
@@ -708,8 +706,7 @@ impl Thread {
                             self.stackframe.operand_stack.extend([upper, lower]);
                             None
                         }
-                    },
-                )?;
+                    })?;
                 if let Some(value) = rember {
                     self.rember_temp(value, verbose);
                 }
@@ -725,8 +722,8 @@ impl Thread {
                 };
                 let object_index = self.stackframe.operand_stack.pop().unwrap();
 
-                let forgor_rember = AnyObj.get_mut(
-                    &mut self.heap.lock().unwrap(),
+                let forgor_rember = AnyObj.inspect(
+                    &self.heap,
                     object_index as usize,
                     |object_borrow| -> Result<Option<(u32, u32)>, String> {
                         if verbose {
@@ -766,7 +763,7 @@ impl Thread {
                     .nth(arg_count)
                     .unwrap();
                 let (resolved_class, resolved_method) =
-                    AnyObj.get(&self.heap.lock().unwrap(), obj_pointer as usize, |obj| {
+                    AnyObj.inspect(&self.heap, obj_pointer as usize, |obj| {
                         obj.resolve_method(
                             &self.method_area,
                             &self.class_area,
@@ -941,7 +938,7 @@ impl Thread {
                 let array_ref = self.stackframe.operand_stack.pop().unwrap();
 
                 let (old, is_reference) =
-                    Array1.get_mut(&mut self.heap.lock().unwrap(), array_ref as usize, |arr| {
+                    Array1.inspect(&self.heap, array_ref as usize, |arr| {
                         let old = arr.contents[index as usize];
                         arr.contents[index as usize] = value;
                         (old, arr.arr_type.is_reference())
@@ -958,7 +955,7 @@ impl Thread {
                 let index = self.stackframe.operand_stack.pop().unwrap();
                 let array_ref = self.stackframe.operand_stack.pop().unwrap();
 
-                Array2.get_mut(&mut self.heap.lock().unwrap(), array_ref as usize, |arr| {
+                Array2.inspect(&self.heap, array_ref as usize, |arr| {
                     arr.contents[index as usize] = value;
                 })?;
             }
@@ -967,15 +964,14 @@ impl Thread {
                 let index = self.stackframe.operand_stack.pop().unwrap();
                 let array_ref = self.stackframe.operand_stack.pop().unwrap();
 
-                let value =
-                    Array1.get_mut(&mut self.heap.lock().unwrap(), array_ref as usize, |arr| {
-                        arr.contents[index as usize]
-                    })?;
+                let value = Array1.inspect(&self.heap, array_ref as usize, |arr| {
+                    arr.contents[index as usize]
+                })?;
                 self.stackframe.operand_stack.push(value);
-                if ArrayType::SELF.get(
-                    &self.heap.lock().unwrap(),
+                if ArrayType::SELF.inspect(
+                    &self.heap,
                     array_ref as usize,
-                    FieldType::is_reference,
+                    |f| f.is_reference(),
                 )? {
                     self.rember_temp(value, verbose);
                 }
@@ -985,10 +981,9 @@ impl Thread {
                 let index = self.stackframe.operand_stack.pop().unwrap();
                 let array_ref = self.stackframe.operand_stack.pop().unwrap();
 
-                let value =
-                    Array2.get_mut(&mut self.heap.lock().unwrap(), array_ref as usize, |arr| {
-                        arr.contents[index as usize]
-                    })?;
+                let value = Array2.inspect(&self.heap, array_ref as usize, |arr| {
+                    arr.contents[index as usize]
+                })?;
                 self.stackframe.operand_stack.pushd(value);
             }
             Instruction::NewMultiArray(dimensions, arr_type) => {
@@ -1006,9 +1001,7 @@ impl Thread {
             }
             Instruction::ArrayLength => {
                 let arr_ref = self.stackframe.operand_stack.pop().unwrap() as usize;
-                let length = Array1.get(&self.heap.lock().unwrap(), arr_ref, |arr| {
-                    arr.contents.len()
-                })? as u32;
+                let length = Array1.inspect(&self.heap, arr_ref, |arr| arr.contents.len())? as u32;
                 self.stackframe.operand_stack.push(length);
             }
             Instruction::CheckedCast(ty) => {
@@ -1017,15 +1010,13 @@ impl Thread {
                     // get the fields of the given class; if it works, we have a subclass
                     let class_name = &self.class_area.search(&ty).unwrap().this;
                     let obj_works = AnyObj
-                        .get(&self.heap.lock().unwrap(), objref as usize, |o| {
+                        .inspect(&self.heap, objref as usize, |o| {
                             o.isinstance(&self.class_area, class_name, verbose)
                         })
                         .is_ok();
                     if !obj_works {
                         let obj_type =
-                            AnyObj.get(&self.heap.lock().unwrap(), objref as usize, |obj| {
-                                obj.this_class()
-                            })?;
+                            AnyObj.inspect(&self.heap, objref as usize, |o| o.this_class())?;
                         return Err(format!(
                             "CheckedCast failed; expected a(n) {ty} but got a(n) {obj_type}"
                         )
@@ -1125,7 +1116,7 @@ impl Thread {
                 if entry.catch_type.is_none()
                     || entry.catch_type.as_ref().is_some_and(|catch_type| {
                         AnyObj
-                            .get(&self.heap.lock().unwrap(), exception_ptr as usize, |obj| {
+                            .inspect(&self.heap, exception_ptr as usize, |obj| {
                                 obj.isinstance(&self.class_area, catch_type, verbose)
                             })
                             .is_ok_and(|a| a)
@@ -1237,14 +1228,12 @@ impl Thread {
                                     .map_err(|err| format!("{err:?}"))?;
                             }
                             FieldType::Object(class) if &**class == "java/lang/String" => {
-                let heap_borrow = self.heap.lock().unwrap();
                 if verbose {
                     println!("{value}");
                 }
-                StringObj::SELF.get(&heap_borrow, value as usize, |str| {
+                StringObj::SELF.inspect(&self.heap, value as usize, |str| {
                     write!(output, "{str}").map_err(|err| format!("{err:?}"))
                 }).unwrap()?;
-                drop(heap_borrow);
                             }
                             other => return Err(format!("Unsupported item for java/lang/invoke/StringConcatFactory.makeConcatWithConstants: {other:?}")),
                         }

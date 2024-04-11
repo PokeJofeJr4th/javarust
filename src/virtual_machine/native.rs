@@ -47,7 +47,7 @@ pub static mut RANDOM_CLASS: Option<Arc<Class>> = None;
 
 /// return a Class object of the given name
 pub fn get_class(
-    heap: &mut Heap,
+    heap: &Mutex<Heap>,
     class_area: &SharedClassArea,
     obj_class: Arc<str>,
 ) -> Option<u32> {
@@ -60,7 +60,7 @@ pub fn get_class(
     let class_class = class_area.search("java/lang/Class")?;
     let mut class_obj = Object::from_class(&class_class);
     class_obj.native_fields.push(Box::new(class_class));
-    let ptr = heap.allocate(class_obj);
+    let ptr = heap.lock().unwrap().allocate(class_obj);
     binding.get_mut().unwrap().insert(obj_class, ptr);
     drop(binding);
     Some(ptr)
@@ -86,16 +86,10 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: method!(() -> Object("java/lang/Class".into())),
         code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, [obj]: [u32; 1], _| {
-                let obj_class = AnyObj.get(&thread.heap.lock().unwrap(), obj as usize, |obj| {
-                    obj.class.clone()
-                })?;
+                let obj_class =
+                    AnyObj.inspect(&thread.heap, obj as usize, |obj| obj.class.clone())?;
                 Ok(Some(
-                    get_class(
-                        &mut thread.heap.lock().unwrap(),
-                        &thread.class_area,
-                        obj_class,
-                    )
-                    .unwrap_or(NULL),
+                    get_class(&thread.heap, &thread.class_area, obj_class).unwrap_or(NULL),
                 ))
             },
         )),
@@ -168,13 +162,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         code: RawCode::native(NativeVoid(
             |thread: &mut Thread, [obj_ref, string, id]: [u32; 3], _verbose| {
                 AnyObj
-                    .get_mut(
-                        &mut thread.heap.lock().unwrap(),
-                        obj_ref as usize,
-                        |instance| {
-                            instance.fields = vec![string, id];
-                        },
-                    )
+                    .inspect(&thread.heap, obj_ref as usize, |instance| {
+                        instance.fields = vec![string, id];
+                    })
                     .map(Option::Some)
             },
         )),
@@ -283,10 +273,8 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: method!(((Object(java_lang_string.clone()))) -> int),
         code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, [this, other]: [u32; 2], _| {
-                let this_str =
-                    StringObj::get(&thread.heap.lock().unwrap(), this as usize, Clone::clone)?;
-                let other_str =
-                    StringObj::get(&thread.heap.lock().unwrap(), other as usize, Clone::clone)?;
+                let this_str = StringObj::inspect(&thread.heap, this as usize, |a| a.clone())?;
+                let other_str = StringObj::inspect(&thread.heap, other as usize, |a| a.clone())?;
                 Ok(Some(match this_str.cmp(&other_str) {
                     std::cmp::Ordering::Less => u32::MAX,
                     std::cmp::Ordering::Equal => 0,
@@ -352,11 +340,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                     println!("java/util/Random.nextInt(int): obj_ref={obj_ref}");
                     println!("java/util/Random.nextInt(int): right_bound={right_bound}");
                 }
-                Random::get_mut(
-                    &mut thread.heap.lock().unwrap(),
-                    obj_ref as usize,
-                    |random_obj| random_obj.gen_range(0..right_bound),
-                )
+                Random::inspect(&thread.heap, obj_ref as usize, |random_obj| {
+                    random_obj.gen_range(0..right_bound)
+                })
                 .map(Option::Some)
             },
         )),
@@ -445,7 +431,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public native),
         name: "println".into(),
         descriptor: method!(() -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, []: [u32; 0], _| {
+        code: RawCode::native(NativeVoid(|_: &mut _, [_]: [u32; 1], _| {
             println!();
             Ok(Some(()))
         })),
@@ -519,40 +505,28 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
              [src_idx, start, dest_idx, start_dest, count]: [u32; 5],
              _verbose| {
                 let arr_size =
-                    ArrayType::get(&thread.heap.lock().unwrap(), src_idx as usize, |ty| {
-                        ty.get_size()
-                    })?;
+                    ArrayType::inspect(&thread.heap, src_idx as usize, |f| f.get_size())?;
                 if arr_size == 1 {
-                    let copied =
-                        Array1.get(&thread.heap.lock().unwrap(), src_idx as usize, |fields| {
-                            fields.contents[(start as usize)..(start + count) as usize].to_vec()
-                        })?;
+                    let copied = Array1.inspect(&thread.heap, src_idx as usize, |fields| {
+                        fields.contents[(start as usize)..(start + count) as usize].to_vec()
+                    })?;
                     Array1
-                        .get_mut(
-                            &mut thread.heap.lock().unwrap(),
-                            dest_idx as usize,
-                            |fields| {
-                                for (i, value) in copied.into_iter().enumerate() {
-                                    fields.contents[start_dest as usize + i] = value;
-                                }
-                            },
-                        )
+                        .inspect(&thread.heap, dest_idx as usize, |fields| {
+                            for (i, value) in copied.into_iter().enumerate() {
+                                fields.contents[start_dest as usize + i] = value;
+                            }
+                        })
                         .map(Option::Some)
                 } else {
-                    let copied =
-                        Array2.get(&thread.heap.lock().unwrap(), src_idx as usize, |fields| {
-                            fields.contents[(start as usize)..(start + count) as usize].to_vec()
-                        })?;
+                    let copied = Array2.inspect(&thread.heap, src_idx as usize, |fields| {
+                        fields.contents[(start as usize)..(start + count) as usize].to_vec()
+                    })?;
                     Array2
-                        .get_mut(
-                            &mut thread.heap.lock().unwrap(),
-                            dest_idx as usize,
-                            |fields| {
-                                for (i, value) in copied.into_iter().enumerate() {
-                                    fields.contents[start_dest as usize + i] = value;
-                                }
-                            },
-                        )
+                        .inspect(&thread.heap, dest_idx as usize, |fields| {
+                            for (i, value) in copied.into_iter().enumerate() {
+                                fields.contents[start_dest as usize + i] = value;
+                            }
+                        })
                         .map(Option::Some)
                 }
             },
