@@ -32,6 +32,7 @@ use super::{
 };
 
 pub mod arrays;
+pub mod character;
 pub mod collections;
 pub mod primitives;
 pub mod reflect;

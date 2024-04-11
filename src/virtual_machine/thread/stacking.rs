@@ -1,3 +1,5 @@
+use crate::virtual_machine::native::character::Char;
+
 pub trait Stack<T>: Sized {
     fn pushd<K: Stackable<T>>(&mut self, value: K) {
         K::push(self, value);
@@ -86,5 +88,45 @@ impl Stackable<u32> for i64 {
 
     fn push(stack: &mut impl Stack<u32>, value: Self) {
         stack.pushd(value as u64);
+    }
+}
+
+impl Stackable<u32> for u8 {
+    fn pop(stack: &mut impl Stack<u32>) -> Option<Self> {
+        stack.pop_one().map(|i| i as u8)
+    }
+
+    fn push(stack: &mut impl Stack<u32>, value: Self) {
+        stack.push_one(value as i8 as i32 as u32);
+    }
+}
+
+impl Stackable<u32> for i16 {
+    fn pop(stack: &mut impl Stack<u32>) -> Option<Self> {
+        stack.pop_one().map(|i| i as i16)
+    }
+
+    fn push(stack: &mut impl Stack<u32>, value: Self) {
+        stack.push_one(value as i32 as u32);
+    }
+}
+
+impl Stackable<u32> for Char {
+    fn pop(stack: &mut impl Stack<u32>) -> Option<Self> {
+        stack.pop_one().map(|i| Self(i as u16))
+    }
+
+    fn push(stack: &mut impl Stack<u32>, value: Self) {
+        stack.push_one(value.0 as u32);
+    }
+}
+
+impl Stackable<u32> for bool {
+    fn pop(stack: &mut impl Stack<u32>) -> Option<Self> {
+        stack.pop_one().map(|i| i != 0)
+    }
+
+    fn push(stack: &mut impl Stack<u32>, value: Self) {
+        stack.push_one(value as u32);
     }
 }
