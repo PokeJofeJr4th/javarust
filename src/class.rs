@@ -648,6 +648,22 @@ impl FieldType {
     pub const fn is_reference(&self) -> bool {
         matches!(self, Self::Array(_) | Self::Object(_))
     }
+
+    #[must_use]
+    pub const fn idx(&self) -> u64 {
+        match self {
+            Self::Byte => 0,
+            Self::Char => 1,
+            Self::Double => 2,
+            Self::Float => 3,
+            Self::Int => 4,
+            Self::Long => 5,
+            Self::Object(_) => 6,
+            Self::Short => 7,
+            Self::Boolean => 8,
+            Self::Array(_) => 9,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    class::{Class, Method, MethodDescriptor},
+    class::{Class, FieldType, Method, MethodDescriptor},
     class_loader::{RawClass, RawMethod},
     virtual_machine::object::{Array1, ArrayFields, Object, ObjectFinder, StringObj},
 };
@@ -350,4 +350,29 @@ fn hash_method(class: &str, name: &str, signature: &MethodDescriptor) -> MethodH
     name.hash(&mut state);
     signature.hash(&mut state);
     MethodHash(state.finish())
+}
+
+fn custom_hash(class: &str, name: &str, signature: &MethodDescriptor) -> MethodHash {
+    let mut state: u64 = 0xCAFE_BABE;
+    for c in class.bytes().rev().take(5) {
+        state = state.rotate_left(17) ^ c as u64;
+    }
+    for c in name.bytes().rev().take(5) {
+        state = state.rotate_left(15) ^ c as u64;
+    }
+    for p in signature.parameters.iter().chain(&signature.return_type) {
+        state = state.rotate_left(9) ^ p.idx();
+        match p {
+            FieldType::Array(arr) => {
+                state = state.rotate_left(11) ^ arr.idx();
+            }
+            FieldType::Object(obj) => {
+                for c in obj.bytes().rev().take(5) {
+                    state = state.rotate_right(19) ^ c as u64;
+                }
+            }
+            _ => {}
+        }
+    }
+    MethodHash(state)
 }
