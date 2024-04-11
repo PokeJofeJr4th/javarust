@@ -968,11 +968,7 @@ impl Thread {
                     arr.contents[index as usize]
                 })?;
                 self.stackframe.operand_stack.push(value);
-                if ArrayType::SELF.inspect(
-                    &self.heap,
-                    array_ref as usize,
-                    |f| f.is_reference(),
-                )? {
+                if ArrayType::SELF.inspect(&self.heap, array_ref as usize, |f| f.is_reference())? {
                     self.rember_temp(value, verbose);
                 }
             }
