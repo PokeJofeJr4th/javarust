@@ -266,6 +266,9 @@ impl WorkingMethodArea {
     }
 
     pub fn push(&mut self, class: Arc<str>, method: RawMethod) {
+        if method.access_flags.is_abstract() {
+            return;
+        }
         self.methods
             .entry(hash_method(&class, &method.name, &method.descriptor))
             .or_default()
