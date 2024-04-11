@@ -269,7 +269,7 @@ impl Debug for Constant {
 #[macro_export]
 macro_rules! access {
     ($($acc:ident)*) => {
-        $($crate::access!(@$acc))|*
+        $crate::class::AccessFlags(0) $(|$crate::access!(@$acc))*
     };
 
     (@public) => {

@@ -33,7 +33,7 @@ pub struct StackFrame {
 impl StackFrame {
     pub fn from_method(method: Arc<Method>, class: Arc<Class>) -> Self {
         Self {
-            locals: (0..=method.max_locals).map(|_| 0).collect(),
+            locals: vec![0; method.max_locals as usize],
             operand_stack: Vec::with_capacity(
                 method
                     .code

@@ -56,6 +56,7 @@ pub fn add_native_collections(
                                 verbose,
                             )
                         })?;
+                    thread.stackframe.operand_stack.push(1);
                     thread.invoke_method(method, class);
                     thread.stackframe.locals[0] = key;
                     Ok(None)
@@ -89,6 +90,7 @@ pub fn add_native_collections(
                                 verbose,
                             )
                         })?;
+                    thread.stackframe.operand_stack.push(1);
                     thread.invoke_method(method, class);
                     thread.stackframe.locals[0] = key;
                     Ok(None)
@@ -147,6 +149,7 @@ pub fn add_native_collections(
                                 verbose,
                             )
                         })?;
+                    thread.stackframe.operand_stack.push(1);
                     thread.invoke_method(method, class);
                     thread.stackframe.locals[0] = key;
                     Ok(None)
@@ -180,6 +183,7 @@ pub fn add_native_collections(
                                 verbose,
                             )
                         })?;
+                    thread.stackframe.operand_stack.push(1);
                     thread.invoke_method(method, class);
                     thread.stackframe.locals[0] = key;
                     Ok(None)
@@ -459,6 +463,23 @@ pub fn add_native_collections(
         arrlist_to_string.name(array_list.this.clone()),
     ]);
 
+    let mut comparator = RawClass::new(
+        access!(public abstract native),
+        "java/util/Comparator".into(),
+        java_lang_object.clone(),
+    );
+    let compare = RawMethod {
+        name: "compare".into(),
+        access_flags: access!(public native),
+        descriptor: method!(((Object(java_lang_object.clone())), (Object(java_lang_object.clone()))) -> boolean),
+        code: RawCode::Abstract,
+        ..Default::default()
+    };
+
+    comparator
+        .methods
+        .push(compare.name(comparator.this.clone()));
+
     method_area.extend([
         (hash_map.this.clone(), hash_map_init),
         (hash_map.this.clone(), hash_map_put),
@@ -474,6 +495,7 @@ pub fn add_native_collections(
         (array_list.this.clone(), arrlist_size),
         (array_list.this.clone(), arrlist_sort),
         (array_list.this.clone(), arrlist_to_string),
+        (comparator.this.clone(), compare),
     ]);
-    class_area.extend([hash_map, hash_set, array_list]);
+    class_area.extend([hash_map, hash_set, array_list, comparator]);
 }

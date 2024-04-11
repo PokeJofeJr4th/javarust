@@ -107,9 +107,9 @@ impl Code {
     }
 
     #[must_use]
-    pub fn as_native(&self) -> Option<&dyn NativeMethod> {
+    pub fn as_native(&self) -> Option<&Box<dyn NativeMethod>> {
         match self {
-            Self::Native(nm) => Some(&***nm),
+            Self::Native(nm) => Some(&**nm),
             _ => None,
         }
     }
@@ -128,7 +128,7 @@ impl Debug for Code {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Code(byte_code) => byte_code.fmt(f),
-            Self::Native(_) => write!(f, "<<native code>>"),
+            Self::Native(native) => write!(f, "{native:?}"),
             Self::Abstract => write!(f, "<<abstract method>>"),
         }
     }
@@ -151,7 +151,7 @@ pub type NativeReturn<T> = error::Result<Option<T>>;
 ///  - `NativeVoid`
 ///  - `NativeNoop`
 ///  - `native_property`
-pub trait NativeMethod: Send + Sync + 'static {
+pub trait NativeMethod: Send + Sync + Debug + 'static {
     /// # Native Method
     /// Called each tick while the native method is in the current stackframe
     /// # Errors
@@ -160,7 +160,7 @@ pub trait NativeMethod: Send + Sync + 'static {
     fn args(&self) -> u16;
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 /// A native method that panics with a TODO macro
 pub struct NativeTodo;
 
@@ -183,6 +183,12 @@ impl NativeMethod for NativeTodo {
 #[derive(Clone, Copy)]
 /// A native method that returns a 32-bit value
 pub struct NativeSingleMethod<T, const N: usize = 1>(pub T);
+
+impl<T, const N: usize> Debug for NativeSingleMethod<T, N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<<native code: [?; {N}] => [?; 1]>>")
+    }
+}
 
 impl<
         T: Fn(&mut Thread, [u32; N], bool) -> NativeReturn<u32> + Send + Sync + 'static,
@@ -209,6 +215,12 @@ impl<
 /// A native method that returns a 64-bit value
 pub struct NativeDoubleMethod<T, const N: usize = 1>(pub T);
 
+impl<T, const N: usize> Debug for NativeDoubleMethod<T, N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<<native code: [?; {N}] => [?; 2]>>")
+    }
+}
+
 impl<
         T: Fn(&mut Thread, [u32; N], bool) -> NativeReturn<u64> + Send + Sync + 'static,
         const N: usize,
@@ -233,6 +245,12 @@ impl<
 #[derive(Clone, Copy)]
 /// A native method that returns a string
 pub struct NativeStringMethod<T, const N: usize = 1>(pub T);
+
+impl<T, const N: usize> Debug for NativeStringMethod<T, N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<<native code: [?; {N}] => java.lang.String>>")
+    }
+}
 
 impl<
         T: Fn(&mut Thread, [u32; N], bool) -> NativeReturn<Arc<str>> + Send + Sync + 'static,
@@ -260,6 +278,12 @@ impl<
 /// A native method that returns void
 pub struct NativeVoid<T, const ARGS: usize = 1>(pub T);
 
+impl<T, const ARGS: usize> Debug for NativeVoid<T, ARGS> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<<native code: [?; ARGS] => void>>")
+    }
+}
+
 impl<
         T: Fn(&mut Thread, [u32; ARGS], bool) -> NativeReturn<()> + Send + Sync + 'static,
         const ARGS: usize,
@@ -283,6 +307,12 @@ impl<
 
 /// A native method that does nothing
 pub struct NativeNoop;
+
+impl Debug for NativeNoop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<<native no-op>>")
+    }
+}
 
 impl NativeMethod for NativeNoop {
     fn run(&self, thread: &mut Thread, _is_verbose: bool) -> error::Result<()> {

@@ -9,7 +9,10 @@ use rand::rngs::StdRng;
 
 use crate::{
     access,
-    class::{code::NativeVoid, Class, Code, FieldType, Method, MethodDescriptor},
+    class::{
+        code::{NativeMethod, NativeVoid},
+        Class, Code, FieldType, Method, MethodDescriptor, MethodHandle,
+    },
     class_loader::{RawCode, RawMethod},
     data::{BuildNonHasher, Heap, SharedClassArea, SharedMethodArea, NULL},
     method,
@@ -63,6 +66,23 @@ impl Object {
             println!("Resolving {descriptor:?} {method}");
         }
         let mut current_class = class_area.search(&self.class).unwrap();
+        if let Ok(Some(lambda_override)) = LambdaObject::SELF.extract(self, |lambda_override| {
+            if &*lambda_override.method_name == method
+                && &lambda_override.method_descriptor == descriptor
+            {
+                Some(lambda_override.as_method())
+            } else {
+                None
+            }
+        }) {
+            if verbose {
+                println!(
+                    "Resolved Lambda Override: {:#?}",
+                    lambda_override.code.as_native().unwrap()
+                );
+            }
+            return (current_class, Arc::new(lambda_override));
+        }
         let mut class_list = vec![current_class.clone()];
         loop {
             if let Some(values) = method_area.search(&current_class.this, method, descriptor) {
@@ -332,6 +352,103 @@ impl StringBuilder {
         let mut obj = Object::from_class(&class_area.search("java/lang/StringBuilder").unwrap());
         obj.native_fields.push(Box::new(str));
         obj
+    }
+}
+
+pub type LambdaObject = NativeFieldObj<LambdaOverride>;
+
+/// # Lambda Override
+/// On a function object created by a lambda expression or method reference, this will be the first native field.
+#[derive(Clone, Debug)]
+pub struct LambdaOverride {
+    /// The name of the method implemented on the interface
+    pub method_name: Arc<str>,
+    /// The descriptor of the method implemented on the interface
+    pub method_descriptor: MethodDescriptor,
+    /// the method handle that the lambda invokes internally
+    pub invoke: MethodHandle,
+    /// any captured values from the lambda's scope
+    pub captures: Vec<u32>,
+}
+
+impl NativeMethod for LambdaOverride {
+    fn args(&self) -> u16 {
+        self.method_descriptor.parameter_size as u16 + 1
+    }
+
+    fn run(&self, thread: &mut Thread, verbose: bool) -> error::Result<()> {
+        match &self.invoke {
+            MethodHandle::InvokeStatic {
+                class: invoke_class,
+                name: invoke_name,
+                method_type: invoke_type,
+            } => {
+                match thread.pc_register {
+                    0 => {
+                        let (class_ref, method_ref) = thread
+                        .method_area
+                        .search(invoke_class, invoke_name, invoke_type)
+                        .ok_or_else(|| {
+                            format!("Error during Lambda Override InvokeStatic; {invoke_class}.{invoke_name}: {invoke_type:?}")
+                        })?;
+
+                        if thread.maybe_initialize_class(&class_ref) {
+                            return Ok(());
+                        }
+
+                        if verbose {
+                            println!(
+                                "Lambda Override: Invoking Static Method {} on {}",
+                                method_ref.name, class_ref.this,
+                            );
+                        }
+                        let combined_args: Vec<u32> = self
+                            .captures
+                            .iter()
+                            .copied()
+                            .chain(
+                                thread
+                                    .stackframe
+                                    .locals
+                                    .iter()
+                                    .skip(1)
+                                    .take(self.method_descriptor.parameter_size)
+                                    .copied(),
+                            )
+                            .collect();
+                        // push the return address
+                        thread.stackframe.operand_stack.push(1);
+                        thread.invoke_method(method_ref, class_ref);
+                        thread.stackframe.locals = combined_args;
+                        if verbose {
+                            println!("new locals: {:?}", thread.stackframe.locals);
+                        }
+                    }
+                    1 => match &self.method_descriptor.return_type {
+                        None => thread.return_void()?,
+                        Some(t) if t.get_size() == 1 => thread.return_one(verbose),
+                        _ => thread.return_two(verbose),
+                    },
+                    o => return Err(format!("Invalid opcode in Lambda Override: {o}").into()),
+                }
+                Ok(())
+            }
+            other => Err(format!("Unimplemented Lambda Override: {other:?}").into()),
+        }
+    }
+}
+
+impl LambdaOverride {
+    #[must_use]
+    pub fn as_method(&self) -> Method {
+        Method {
+            max_locals: self.method_descriptor.parameter_size as u16 + 1,
+            access_flags: access!(),
+            name: self.method_name.clone(),
+            code: Code::native(self.clone()),
+            descriptor: self.method_descriptor.clone(),
+            ..Default::default()
+        }
     }
 }
 

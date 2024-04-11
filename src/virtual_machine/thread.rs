@@ -3,6 +3,7 @@ use std::{cmp::Ordering, fmt::Write, sync::Arc};
 use crate::{
     class::{BootstrapMethod, Class, Constant, FieldType, Method, MethodDescriptor, MethodHandle},
     data::{Heap, SharedClassArea, SharedHeap, SharedMethodArea, NULL},
+    virtual_machine::object::LambdaOverride,
 };
 
 use super::{
@@ -1158,7 +1159,7 @@ impl Thread {
         method_name: &str,
         method_handle: BootstrapMethod,
         method_descriptor: MethodDescriptor,
-        callsite_number: u16,
+        _callsite_number: u16,
         verbose: bool,
     ) -> Result<(), String> {
         match (method_name, method_handle, method_descriptor) {
@@ -1256,14 +1257,13 @@ impl Thread {
                     println!("makeConcatWithConstants: {heap_pointer}");
                 }
             }
-            // TODO: AAAAAAAAA
             (
                 method_name,
                 BootstrapMethod {
                     method:
                         MethodHandle::InvokeStatic {
-                            class,
-                            name,
+                            class: bootstrap_class,
+                            name: bootstrap_name,
                             method_type: _,
                         },
                     args,
@@ -1273,25 +1273,36 @@ impl Thread {
                     parameters,
                     return_type,
                 },
-            ) if &*name == "metafactory" && &*class == "java/lang/invoke/LambdaMetafactory" => {
+            ) if &*bootstrap_name == "metafactory"
+                && &*bootstrap_class == "java/lang/invoke/LambdaMetafactory" =>
+            {
                 println!("LambdaMetafactory:\nMethod name: {method_name}\nBootstrap Arguments: {args:#?}\nMethod Descriptor: {return_type:?} {parameters:?}");
-                let lambda_class =
-                    format!("{}$Lambda#{callsite_number}", self.stackframe.class.this).into();
-                let [Constant::MethodType(MethodDescriptor {
-                    parameter_size: inner_param_size,
-                    parameters: inner_params,
-                    return_type: inner_return,
-                }), Constant::MethodHandle(method_handle), Constant::MethodType(_enforced_type)] =
+                let Some(FieldType::Object(lambda_class)) = return_type else {
+                    return Err(format!(
+                        "LambdaMetaFactory expects an object return; got {return_type:?}"
+                    ));
+                };
+                let [Constant::MethodType(interface_descriptor), Constant::MethodHandle(method_handle), Constant::MethodType(_enforced_type)] =
                     &args[..]
                 else {
                     return Err("Wrong parameters for LambdaMetaFactory".to_string());
                 };
-                let mut lambda_object = Object {
-                    fields: vec![0; parameter_size],
-                    native_fields: Vec::new(),
+                let lambda_object = Object {
+                    fields: Vec::new(),
+                    native_fields: vec![Box::new(LambdaOverride {
+                        method_name: Arc::from(method_name),
+                        method_descriptor: interface_descriptor.clone(),
+                        invoke: method_handle.clone(),
+                        captures: (0..parameter_size)
+                            .map(|_| self.stackframe.operand_stack.pop().unwrap())
+                            .rev()
+                            .collect(),
+                    })],
                     class: lambda_class,
                 };
-                return Err("LambdaMetafactory".to_string());
+                let lambda_index = self.heap.lock().unwrap().allocate(lambda_object);
+                self.rember_temp(lambda_index, verbose);
+                self.stackframe.operand_stack.push(lambda_index);
             }
             (n, h, d) => return Err(format!("Error during InvokeDynamic: {n}: {d:?}; {h:?}")),
         }
@@ -1323,6 +1334,9 @@ impl Thread {
     pub fn return_one(&mut self, verbose: bool) {
         // outer_stackframe is the calling method and self.stackframe is the method that was called
         let mut outer_stackframe = self.stack.pop().unwrap();
+        if verbose {
+            println!("ret1 from {:#?}", self.stackframe.method);
+        }
         let is_reference = self
             .stackframe
             .method
