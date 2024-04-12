@@ -12,6 +12,13 @@ use crate::{
     },
 };
 
+pub fn make_option(thread: &Thread, value: u32) -> u32 {
+    let mut opt = Object::from_class(&thread.class_area.search("java/util/Optional").unwrap());
+    opt.fields[0] = value;
+    let idx = thread.heap.lock().unwrap().allocate(opt);
+    idx
+}
+
 #[allow(clippy::too_many_lines)]
 pub(super) fn add_native_methods(
     method_area: &mut WorkingMethodArea,
@@ -198,22 +205,60 @@ pub(super) fn add_native_methods(
         ..Default::default()
     };
 
-    composed_function
-        .methods
-        .push(compose_apply.name(composed_function.this.clone()));
-    function.methods.extend([
-        apply.name(function.this.clone()),
-        and_then.name(function.this.clone()),
-        identity.name(function.this.clone()),
-        identity_lambda.name(function.this.clone()),
-    ]);
-    method_area.extend([
-        (function.this.clone(), apply),
-        (function.this.clone(), and_then),
-        (function.this.clone(), compose),
-        (function.this.clone(), identity),
-        (function.this.clone(), identity_lambda),
-        (composed_function.this.clone(), compose_apply),
-    ]);
-    class_area.extend([function, composed_function]);
+    composed_function.register_method(compose_apply, method_area);
+    function.register_methods([apply, and_then, identity, identity_lambda], method_area);
+
+    let mut optional = RawClass::new(
+        access!(public native),
+        "java/util/Optional".into(),
+        java_lang_object.clone(),
+    );
+    optional.fields.push((
+        Field {
+            access_flags: access!(public),
+            name: "$value".into(),
+            descriptor: field!(Object(java_lang_object.clone())),
+            ..Default::default()
+        },
+        0,
+    ));
+    optional.field_size += 1;
+
+    let opt_empty = RawMethod {
+        name: "empty".into(),
+        access_flags: access!(public static native),
+        descriptor: method!(() -> Object(optional.this.clone())),
+        code: RawCode::native(NativeSingleMethod(
+            |thread: &mut Thread, []: [u32; 0], _verbose| Ok(Some(make_option(thread, u32::MAX))),
+        )),
+        ..Default::default()
+    };
+    let opt_of = RawMethod {
+        name: "of".into(),
+        access_flags: access!(public static native),
+        descriptor: method!(((Object(java_lang_object.clone()))) -> Object(optional.this.clone())),
+        code: RawCode::native(NativeSingleMethod(
+            |thread: &mut Thread, [idx]: [u32; 1], _verbose: bool| {
+                Ok(Some(make_option(thread, idx)))
+            },
+        )),
+        ..Default::default()
+    };
+    let opt_of_nullable = RawMethod {
+        name: "ofNullable".into(),
+        access_flags: access!(public static native),
+        descriptor: method!(((Object(java_lang_object.clone()))) -> Object(optional.this.clone())),
+        code: RawCode::native(NativeSingleMethod(
+            |thread: &mut Thread, [idx]: [u32; 1], _verbose: bool| {
+                Ok(Some(make_option(
+                    thread,
+                    if idx == 0 { u32::MAX } else { idx },
+                )))
+            },
+        )),
+        ..Default::default()
+    };
+    optional.register_methods([opt_empty, opt_of, opt_of_nullable], method_area);
+
+    class_area.extend([function, composed_function, optional]);
 }

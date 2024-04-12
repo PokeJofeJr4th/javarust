@@ -29,10 +29,7 @@ pub fn add_native_methods(
         }))),
         ..Default::default()
     };
-    class_class
-        .methods
-        .extend([class_name.name(class_class.this.clone())]);
+    class_class.register_method(class_name, method_area);
 
-    method_area.extend([(class_class.this.clone(), class_name)]);
     class_area.extend([class_class]);
 }

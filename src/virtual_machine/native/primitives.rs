@@ -216,19 +216,8 @@ fn make_primitive_class<T: Stackable<u32> + Display + 'static>(
         ..Default::default()
     };
 
-    class.methods.extend([
-        value_of.name(class.this.clone()),
-        init.name(class.this.clone()),
-        to_string.name(class.this.clone()),
-        primitive_value.name(class.this.clone()),
-    ]);
+    class.register_methods([value_of, init, to_string, primitive_value], method_area);
 
-    method_area.extend([
-        (class.this.clone(), value_of),
-        (class.this.clone(), init),
-        (class.this.clone(), to_string),
-        (class.this.clone(), primitive_value),
-    ]);
     class_area.push(class);
 
     // this is the array to string

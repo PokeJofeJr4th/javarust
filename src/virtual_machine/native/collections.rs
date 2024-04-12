@@ -105,12 +105,10 @@ pub fn add_native_collections(
         )),
         ..Default::default()
     };
-    hash_map.methods.extend([
-        hash_map_init.name(hash_map.this.clone()),
-        hash_map_put.name(hash_map.this.clone()),
-        hash_map_get.name(hash_map.this.clone()),
-        hash_map_size.name(hash_map.this.clone()),
-    ]);
+    hash_map.register_methods(
+        [hash_map_init, hash_map_put, hash_map_get, hash_map_size],
+        method_area,
+    );
 
     let mut hash_set = RawClass::new(
         access!(public native),
@@ -196,12 +194,15 @@ pub fn add_native_collections(
         ..Default::default()
     };
 
-    hash_set.methods.extend([
-        hash_set_init.name(hash_set.this.clone()),
-        hash_set_contains.name(hash_set.this.clone()),
-        hash_set_insert.name(hash_set.this.clone()),
-        hash_set_size.name(hash_set.this.clone()),
-    ]);
+    hash_set.register_methods(
+        [
+            hash_set_init,
+            hash_set_contains,
+            hash_set_insert,
+            hash_set_size,
+        ],
+        method_area,
+    );
 
     let mut array_list = RawClass::new(
         access!(public native),
@@ -428,14 +429,17 @@ pub fn add_native_collections(
         )),
         ..Default::default()
     };
-    array_list.methods.extend([
-        arrlist_init.name(array_list.this.clone()),
-        arrlist_append.name(array_list.this.clone()),
-        arrlist_size.name(array_list.this.clone()),
-        arrlist_add.name(array_list.this.clone()),
-        arrlist_sort.name(array_list.this.clone()),
-        arrlist_to_string.name(array_list.this.clone()),
-    ]);
+    array_list.register_methods(
+        [
+            arrlist_init,
+            arrlist_append,
+            arrlist_size,
+            arrlist_add,
+            arrlist_sort,
+            arrlist_to_string,
+        ],
+        method_area,
+    );
 
     let mut comparator = RawClass::new(
         access!(public abstract native),
@@ -450,26 +454,7 @@ pub fn add_native_collections(
         ..Default::default()
     };
 
-    comparator
-        .methods
-        .push(compare.name(comparator.this.clone()));
+    comparator.register_method(compare, method_area);
 
-    method_area.extend([
-        (hash_map.this.clone(), hash_map_init),
-        (hash_map.this.clone(), hash_map_put),
-        (hash_map.this.clone(), hash_map_get),
-        (hash_map.this.clone(), hash_map_size),
-        (hash_set.this.clone(), hash_set_init),
-        (hash_set.this.clone(), hash_set_contains),
-        (hash_set.this.clone(), hash_set_insert),
-        (hash_set.this.clone(), hash_set_size),
-        (array_list.this.clone(), arrlist_init),
-        (array_list.this.clone(), arrlist_append),
-        (array_list.this.clone(), arrlist_add),
-        (array_list.this.clone(), arrlist_size),
-        (array_list.this.clone(), arrlist_sort),
-        (array_list.this.clone(), arrlist_to_string),
-        (comparator.this.clone(), compare),
-    ]);
     class_area.extend([hash_map, hash_set, array_list, comparator]);
 }

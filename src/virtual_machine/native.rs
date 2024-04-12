@@ -37,6 +37,7 @@ pub mod collections;
 pub mod function;
 pub mod primitives;
 pub mod reflect;
+pub mod stream;
 pub mod string;
 pub mod string_builder;
 pub mod throwable;
@@ -73,6 +74,7 @@ pub fn get_class(
 pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut WorkingClassArea) {
     let java_lang_object: Arc<str> = Arc::from("java/lang/Object");
     let java_lang_string: Arc<str> = Arc::from("java/lang/String");
+
     let object_init = RawMethod {
         access_flags: access!(public native),
         name: "<init>".into(),
@@ -124,12 +126,10 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         java_lang_object.clone(),
         java_lang_object.clone(),
     );
-    object.methods.extend([
-        object_init.name(java_lang_object.clone()),
-        object_to_string.name(java_lang_object.clone()),
-        object_hash.name(java_lang_object.clone()),
-        object_get_class.name(java_lang_object.clone()),
-    ]);
+    object.register_methods(
+        [object_init, object_to_string, object_hash, object_get_class],
+        method_area,
+    );
 
     let mut enum_class = RawClass::new(
         access!(public abstract native),
@@ -185,11 +185,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         name: "name".into(),
         ..enum_to_string.clone()
     };
-    enum_class.methods.extend([
-        enum_init.name(enum_class.this.clone()),
-        enum_to_string.name(enum_class.this.clone()),
-        enum_name.name(enum_class.this.clone()),
-    ]);
+    enum_class.register_methods([enum_init, enum_to_string, enum_name], method_area);
 
     let array = RawClass::new(
         access!(public native),
@@ -225,11 +221,10 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         "java/util/Arrays".into(),
         java_lang_object.clone(),
     );
-    arrays.methods.extend([
-        arrays_to_string.name(arrays.this.clone()),
-        arrays_to_string_obj_arr.name(arrays.this.clone()),
-        deep_to_string.name(arrays.this.clone()),
-    ]);
+    arrays.register_methods(
+        [arrays_to_string, arrays_to_string_obj_arr, deep_to_string],
+        method_area,
+    );
     let array_methods = make_primitives(method_area, class_area, java_lang_object.clone());
     arrays.methods.extend(
         array_methods
@@ -291,13 +286,16 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         java_lang_string.clone(),
         java_lang_object.clone(),
     );
-    string.methods.extend([
-        string_length.name(string.this.clone()),
-        char_at.name(string.this.clone()),
-        string_value_of.name(string.this.clone()),
-        string_to_string.name(string.this.clone()),
-        string_compare_to.name(string.this.clone()),
-    ]);
+    string.register_methods(
+        [
+            string_length,
+            char_at,
+            string_value_of,
+            string_to_string,
+            string_compare_to,
+        ],
+        method_area,
+    );
 
     let builder_init = RawMethod {
         access_flags: access!(public native),
@@ -325,11 +323,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         "java/lang/StringBuilder".into(),
         java_lang_object.clone(),
     );
-    string_builder.methods.extend([
-        builder_init.name(string_builder.this.clone()),
-        set_char_at.name(string_builder.this.clone()),
-        to_string.name(string_builder.this.clone()),
-    ]);
+    string_builder.register_methods([builder_init, set_char_at, to_string], method_area);
 
     let random_init = Random::make_init(StdRng::from_entropy);
     let next_int = RawMethod {
@@ -355,10 +349,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         "java/util/Random".into(),
         java_lang_object.clone(),
     );
-    random.methods.extend([
-        random_init.name(random.this.clone()),
-        next_int.name(random.this.clone()),
-    ]);
+    random.register_methods([random_init, next_int], method_area);
 
     let println_string = RawMethod {
         access_flags: access!(public native),
@@ -444,16 +435,19 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         "java/io/PrintStream".into(),
         java_lang_object.clone(),
     );
-    printstream.methods.extend([
-        println_string.name(printstream.this.clone()),
-        println_object.name(printstream.this.clone()),
-        println_empty.name(printstream.this.clone()),
-        println_float.name(printstream.this.clone()),
-        println_int.name(printstream.this.clone()),
-        println_bool.name(printstream.this.clone()),
-        println_char.name(printstream.this.clone()),
-        println_long.name(printstream.this.clone()),
-    ]);
+    printstream.register_methods(
+        [
+            println_string,
+            println_object,
+            println_empty,
+            println_float,
+            println_int,
+            println_bool,
+            println_char,
+            println_long,
+        ],
+        method_area,
+    );
 
     // let system_out = heap.allocate(Object::from_class(class_area, &printstream));
 
@@ -477,7 +471,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         })),
         ..Default::default()
     };
-    system.methods.push(system_clinit.name(system.this.clone()));
+    system.register_method(system_clinit, method_area);
 
     system.static_data.push(NULL);
     system.statics.push((
@@ -535,7 +529,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         )),
         ..Default::default()
     };
-    system.methods.push(arraycopy.name(system.this.clone()));
+    system.register_method(arraycopy, method_area);
 
     let make_concat_with_constants = RawMethod {
         access_flags: access!(public static native),
@@ -560,9 +554,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         "java/lang/invoke/StringConcatFactory".into(),
         java_lang_object.clone(),
     );
-    string_concat_factory
-        .methods
-        .push(make_concat_with_constants.name(string_concat_factory.this.clone()));
+    string_concat_factory.register_method(make_concat_with_constants, method_area);
 
     let sqrt_double = RawMethod {
         access_flags: access!(public static native),
@@ -584,7 +576,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         "java/lang/Math".into(),
         java_lang_object.clone(),
     );
-    math.methods.push(sqrt_double.name(math.this.clone()));
+    math.register_method(sqrt_double, method_area);
 
     throwable::add_native_methods(
         &java_lang_object,
@@ -605,44 +597,8 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         &java_lang_string,
     );
     function::add_native_methods(method_area, class_area, &java_lang_object);
+    stream::add_native_methods(method_area, class_area, &java_lang_object);
 
-    method_area.extend([
-        (object.this.clone(), object_init),
-        (object.this.clone(), object_to_string),
-        (object.this.clone(), object_hash),
-        (object.this.clone(), object_get_class),
-        (enum_class.this.clone(), enum_init),
-        (enum_class.this.clone(), enum_to_string),
-        (enum_class.this.clone(), enum_name),
-        (arrays.this.clone(), arrays_to_string),
-        (arrays.this.clone(), arrays_to_string_obj_arr),
-        (arrays.this.clone(), deep_to_string),
-        (string.this.clone(), string_length),
-        (string.this.clone(), char_at),
-        (string.this.clone(), string_value_of),
-        (string.this.clone(), string_to_string),
-        (string.this.clone(), string_compare_to),
-        (string_builder.this.clone(), builder_init),
-        (string_builder.this.clone(), to_string),
-        (string_builder.this.clone(), set_char_at),
-        (random.this.clone(), random_init),
-        (random.this.clone(), next_int),
-        (system.this.clone(), arraycopy),
-        (system.this.clone(), system_clinit),
-        (printstream.this.clone(), println_string),
-        (printstream.this.clone(), println_object),
-        (printstream.this.clone(), println_float),
-        (printstream.this.clone(), println_int),
-        (printstream.this.clone(), println_bool),
-        (printstream.this.clone(), println_char),
-        (printstream.this.clone(), println_long),
-        (printstream.this.clone(), println_empty),
-        (
-            string_concat_factory.this.clone(),
-            make_concat_with_constants,
-        ),
-        (math.this.clone(), sqrt_double),
-    ]);
     method_area.extend(
         array_methods
             .into_iter()

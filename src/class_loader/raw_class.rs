@@ -9,7 +9,7 @@ use crate::{
         AccessFlags, Attribute, BootstrapMethod, Class, ClassVersion, Code, Constant, Field,
         FieldType, InnerClass, Method, MethodDescriptor,
     },
-    data::{SharedClassArea, WorkingClassArea, NULL},
+    data::{SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
 };
 
 use super::parse_code_attribute;
@@ -123,6 +123,21 @@ impl RawClass {
             inner_classes: Vec::new(),
             attributes: Vec::new(),
         }
+    }
+
+    pub fn register_method(&mut self, method: RawMethod, method_area: &mut WorkingMethodArea) {
+        self.methods.push(method.name(self.this.clone()));
+        method_area.push(self.this.clone(), method);
+    }
+
+    pub fn register_methods(
+        &mut self,
+        methods: impl IntoIterator<Item = RawMethod>,
+        method_area: &mut WorkingMethodArea,
+    ) {
+        methods
+            .into_iter()
+            .for_each(|method| self.register_method(method, method_area));
     }
 }
 

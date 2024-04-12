@@ -52,9 +52,7 @@ pub fn add_native_methods(
         ..Default::default()
     };
 
-    throwable
-        .methods
-        .extend([throwable_init.name(throwable.this.clone())]);
+    throwable.register_method(throwable_init, method_area);
 
     let mut exception = RawClass::new(
         access!(public native),
@@ -70,9 +68,7 @@ pub fn add_native_methods(
         ..Default::default()
     };
 
-    exception
-        .methods
-        .extend([exception_init.name(exception.this.clone())]);
+    exception.register_method(exception_init, method_area);
 
     let mut runtime_exception = RawClass::new(
         access!(public native),
@@ -88,9 +84,7 @@ pub fn add_native_methods(
         ..Default::default()
     };
 
-    runtime_exception
-        .methods
-        .extend([runtime_exception_init.name(runtime_exception.this.clone())]);
+    runtime_exception.register_method(runtime_exception_init, method_area);
 
     let mut illegal_argument_exception = RawClass::new(
         access!(public native),
@@ -115,24 +109,14 @@ pub fn add_native_methods(
         ..Default::default()
     };
 
-    illegal_argument_exception.methods.extend([
-        illegal_argument_exception_init.name(illegal_argument_exception.this.clone()),
-        illegal_argument_exception_to_string.name(illegal_argument_exception.this.clone()),
-    ]);
-
-    method_area.extend([
-        (throwable.this.clone(), throwable_init),
-        (exception.this.clone(), exception_init),
-        (runtime_exception.this.clone(), runtime_exception_init),
-        (
-            illegal_argument_exception.this.clone(),
+    illegal_argument_exception.register_methods(
+        [
             illegal_argument_exception_init,
-        ),
-        (
-            illegal_argument_exception.this.clone(),
             illegal_argument_exception_to_string,
-        ),
-    ]);
+        ],
+        method_area,
+    );
+
     class_area.extend([
         throwable,
         exception,
