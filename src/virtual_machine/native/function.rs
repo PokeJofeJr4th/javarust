@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{
     access,
     class::{
-        code::{NativeSingleMethod, NativeStringMethod, NativeVoid},
+        code::{NativeMethod, NativeSingleMethod, NativeStringMethod, NativeVoid},
         Field, MethodHandle,
     },
     class_loader::{RawClass, RawCode, RawMethod},
@@ -40,6 +40,35 @@ impl ObjectFinder for Optional {
         object.fields[0] = value.unwrap_or(u32::MAX);
         Ok(output)
     }
+}
+
+pub fn make_lambda_override<const CAPTURES: usize>(
+    overrided: &RawMethod,
+    instance_class: &Arc<str>,
+    invoke: &RawMethod,
+    invoke_class: &Arc<str>,
+) -> impl NativeMethod {
+    let method_name = overrided.name.clone();
+    let method_descriptor = overrided.descriptor.clone();
+    let invoke = MethodHandle::InvokeStatic {
+        class: invoke_class.clone(),
+        name: invoke.name.clone(),
+        method_type: invoke.descriptor.clone(),
+    };
+    let instance_class = instance_class.clone();
+    NativeSingleMethod(
+        move |thread: &mut Thread, caps: [u32; CAPTURES], _verbose| {
+            let lambda_object = LambdaOverride {
+                method_name: method_name.clone(),
+                method_descriptor: method_descriptor.clone(),
+                invoke: invoke.clone(),
+                captures: caps.to_vec(),
+            }
+            .as_object(instance_class.clone());
+            let idx = thread.heap.lock().unwrap().allocate(lambda_object);
+            Ok(Some(idx))
+        },
+    )
 }
 
 #[allow(clippy::too_many_lines)]
@@ -153,34 +182,17 @@ pub(super) fn add_native_methods(
             ..Default::default()
         }
     };
-    let and_then = {
-        let function_this = function.this.clone();
-        let apply_name = apply.name.clone();
-        let apply_signature = apply.descriptor.clone();
-        let compose_handle = MethodHandle::InvokeStatic {
-            class: function_this.clone(),
-            name: "$compose".into(),
-            method_type: compose_lambda.descriptor.clone(),
-        };
-        RawMethod {
-            name: "andThen".into(),
-            access_flags: access!(public native),
-            descriptor: method!(((Object(function.this.clone()))) -> Object(function.this.clone())),
-            code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [this, after]: [u32; 2], _verbose| {
-                    let lambda_object = LambdaOverride {
-                        method_name: apply_name.clone(),
-                        method_descriptor: apply_signature.clone(),
-                        invoke: compose_handle.clone(),
-                        captures: vec![this, after],
-                    }
-                    .as_object(function_this.clone());
-                    let idx = thread.heap.lock().unwrap().allocate(lambda_object);
-                    Ok(Some(idx))
-                },
-            )),
-            ..Default::default()
-        }
+    let and_then = RawMethod {
+        name: "andThen".into(),
+        access_flags: access!(public native),
+        descriptor: method!(((Object(function.this.clone()))) -> Object(function.this.clone())),
+        code: RawCode::native(make_lambda_override::<2>(
+            &apply,
+            &function.this,
+            &compose_lambda,
+            &function.this,
+        )),
+        ..Default::default()
     };
     let function_clinit = {
         let function_this = function.this.clone();
@@ -298,63 +310,29 @@ pub(super) fn add_native_methods(
             ..Default::default()
         }
     };
-    let predicate_negate = {
-        let negative_handle = MethodHandle::InvokeStatic {
-            class: predicate.this.clone(),
-            name: "$negative".into(),
-            method_type: predicate_neg_lambda.descriptor.clone(),
-        };
-        let test_name = predicate_test.name.clone();
-        let test_signature = predicate_test.descriptor.clone();
-        let predicate_name = predicate.this.clone();
-        RawMethod {
-            name: "negate".into(),
-            access_flags: access!(public native),
-            descriptor: method!(() -> Object(predicate.this.clone())),
-            code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [this]: [u32; 1], _verbose| {
-                    let lambda_object = LambdaOverride {
-                        method_name: test_name.clone(),
-                        method_descriptor: test_signature.clone(),
-                        invoke: negative_handle.clone(),
-                        captures: vec![this],
-                    }
-                    .as_object(predicate_name.clone());
-                    let idx = thread.heap.lock().unwrap().allocate(lambda_object);
-                    Ok(Some(idx))
-                },
-            )),
-            ..Default::default()
-        }
+    let predicate_negate = RawMethod {
+        name: "negate".into(),
+        access_flags: access!(public native),
+        descriptor: method!(() -> Object(predicate.this.clone())),
+        code: RawCode::native(make_lambda_override::<1>(
+            &predicate_test,
+            &predicate.this,
+            &predicate_neg_lambda,
+            &predicate.this,
+        )),
+        ..Default::default()
     };
-    let predicate_not = {
-        let negative_handle = MethodHandle::InvokeStatic {
-            class: predicate.this.clone(),
-            name: "$negative".into(),
-            method_type: predicate_neg_lambda.descriptor.clone(),
-        };
-        let test_name = predicate_test.name.clone();
-        let test_signature = predicate_test.descriptor.clone();
-        let predicate_name = predicate.this.clone();
-        RawMethod {
-            name: "negate".into(),
-            access_flags: access!(public static native),
-            descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
-            code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [target]: [u32; 1], _verbose| {
-                    let lambda_object = LambdaOverride {
-                        method_name: test_name.clone(),
-                        method_descriptor: test_signature.clone(),
-                        invoke: negative_handle.clone(),
-                        captures: vec![target],
-                    }
-                    .as_object(predicate_name.clone());
-                    let idx = thread.heap.lock().unwrap().allocate(lambda_object);
-                    Ok(Some(idx))
-                },
-            )),
-            ..Default::default()
-        }
+    let predicate_not = RawMethod {
+        name: "negate".into(),
+        access_flags: access!(public static native),
+        descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
+        code: RawCode::native(make_lambda_override::<1>(
+            &predicate_test,
+            &predicate.this,
+            &predicate_neg_lambda,
+            &predicate.this,
+        )),
+        ..Default::default()
     };
     let is_equal = {
         let equals_handle = MethodHandle::InvokeStatic {
@@ -455,63 +433,29 @@ pub(super) fn add_native_methods(
             ..Default::default()
         }
     };
-    let predicate_and = {
-        let test_name = predicate_test.name.clone();
-        let test_signature = predicate_test.descriptor.clone();
-        let and_handle = MethodHandle::InvokeStatic {
-            class: predicate.this.clone(),
-            name: predicate_and_lambda.name.clone(),
-            method_type: predicate_and_lambda.descriptor.clone(),
-        };
-        let predicate_name = predicate.this.clone();
-        RawMethod {
-            name: "and".into(),
-            access_flags: access!(public native),
-            descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
-            code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [this, other]: [u32; 2], _verbose| {
-                    let lambda_object = LambdaOverride {
-                        method_name: test_name.clone(),
-                        method_descriptor: test_signature.clone(),
-                        invoke: and_handle.clone(),
-                        captures: vec![this, other],
-                    }
-                    .as_object(predicate_name.clone());
-                    let idx = thread.heap.lock().unwrap().allocate(lambda_object);
-                    Ok(Some(idx))
-                },
-            )),
-            ..Default::default()
-        }
+    let predicate_and = RawMethod {
+        name: "and".into(),
+        access_flags: access!(public native),
+        descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
+        code: RawCode::native(make_lambda_override::<2>(
+            &predicate_test,
+            &predicate.this,
+            &predicate_and_lambda,
+            &predicate.this,
+        )),
+        ..Default::default()
     };
-    let predicate_or = {
-        let test_name = predicate_test.name.clone();
-        let test_signature = predicate_test.descriptor.clone();
-        let or_handle = MethodHandle::InvokeStatic {
-            class: predicate.this.clone(),
-            name: predicate_or_lambda.name.clone(),
-            method_type: predicate_or_lambda.descriptor.clone(),
-        };
-        let predicate_name = predicate.this.clone();
-        RawMethod {
-            name: "or".into(),
-            access_flags: access!(public native),
-            descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
-            code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [this, other]: [u32; 2], _verbose| {
-                    let lambda_object = LambdaOverride {
-                        method_name: test_name.clone(),
-                        method_descriptor: test_signature.clone(),
-                        invoke: or_handle.clone(),
-                        captures: vec![this, other],
-                    }
-                    .as_object(predicate_name.clone());
-                    let idx = thread.heap.lock().unwrap().allocate(lambda_object);
-                    Ok(Some(idx))
-                },
-            )),
-            ..Default::default()
-        }
+    let predicate_or = RawMethod {
+        name: "or".into(),
+        access_flags: access!(public native),
+        descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
+        code: RawCode::native(make_lambda_override::<2>(
+            &predicate_test,
+            &predicate.this,
+            &predicate_or_lambda,
+            &predicate.this,
+        )),
+        ..Default::default()
     };
     predicate.register_methods(
         [
