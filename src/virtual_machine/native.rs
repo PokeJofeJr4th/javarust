@@ -596,7 +596,12 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         &java_lang_object,
         &java_lang_string,
     );
-    function::add_native_methods(method_area, class_area, &java_lang_object);
+    function::add_native_methods(
+        method_area,
+        class_area,
+        &java_lang_object,
+        &java_lang_string,
+    );
     stream::add_native_methods(method_area, class_area, &java_lang_object);
 
     method_area.extend(

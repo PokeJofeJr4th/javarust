@@ -396,6 +396,14 @@ impl LambdaOverride {
             ..Default::default()
         }
     }
+
+    pub fn as_object(self, class: Arc<str>) -> Object {
+        Object {
+            fields: Vec::new(),
+            native_fields: vec![Box::new(self)],
+            class,
+        }
+    }
 }
 
 pub struct ArrayFields<'a, T> {

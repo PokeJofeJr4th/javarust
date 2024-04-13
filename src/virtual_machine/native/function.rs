@@ -2,21 +2,44 @@ use std::sync::Arc;
 
 use crate::{
     access,
-    class::{code::NativeSingleMethod, Field, MethodHandle},
+    class::{
+        code::{NativeSingleMethod, NativeStringMethod, NativeVoid},
+        Field, MethodHandle,
+    },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
     field, method,
     virtual_machine::{
-        object::{AnyObj, LambdaOverride, Object, ObjectFinder},
+        object::{AnyObj, LambdaOverride, Object, ObjectFinder, StringObj},
         Thread,
     },
 };
 
-pub fn make_option(thread: &Thread, value: u32) -> u32 {
-    let mut opt = Object::from_class(&thread.class_area.search("java/util/Optional").unwrap());
-    opt.fields[0] = value;
-    let idx = thread.heap.lock().unwrap().allocate(opt);
-    idx
+pub struct Optional;
+
+impl Optional {
+    pub fn make(thread: &Thread, value: u32) -> u32 {
+        let mut opt = Object::from_class(&thread.class_area.search("java/util/Optional").unwrap());
+        opt.fields[0] = value;
+        let idx = thread.heap.lock().unwrap().allocate(opt);
+        idx
+    }
+}
+
+impl ObjectFinder for Optional {
+    type Target<'a> = &'a mut Option<u32>;
+
+    fn extract<T>(
+        &self,
+        object: &mut Object,
+        func: impl FnOnce(Self::Target<'_>) -> T,
+    ) -> crate::virtual_machine::error::Result<T> {
+        let value = object.fields[0];
+        let mut value = if value == u32::MAX { None } else { Some(value) };
+        let output = func(&mut value);
+        object.fields[0] = value.unwrap_or(u32::MAX);
+        Ok(output)
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -24,12 +47,23 @@ pub(super) fn add_native_methods(
     method_area: &mut WorkingMethodArea,
     class_area: &mut WorkingClassArea,
     java_lang_object: &Arc<str>,
+    java_lang_string: &Arc<str>,
 ) {
     let mut function = RawClass::new(
         access!(public native abstract),
         "java/util/Function".into(),
         java_lang_object.clone(),
     );
+    function.static_data.extend([0, 0]);
+    function.statics.extend([(
+        Field {
+            access_flags: access!(public static),
+            name: "$IDENTITY".into(),
+            descriptor: field!(Object(function.this.clone())),
+            ..Default::default()
+        },
+        0,
+    )]);
     let mut composed_function = RawClass::new(
         access!(public native),
         "java/util/Function$Compose".into(),
@@ -106,37 +140,58 @@ pub(super) fn add_native_methods(
         )),
         ..Default::default()
     };
-    let identity = {
-        let apply_name = apply_name.clone();
-        let apply_signature = apply_signature.clone();
+    let function_clinit = {
         let function_this = function.this.clone();
-        let java_lang_object = java_lang_object.clone();
+        let identity_override = LambdaOverride {
+            method_name: apply_name.clone(),
+            method_descriptor: apply_signature.clone(),
+            invoke: MethodHandle::InvokeStatic {
+                class: function.this.clone(),
+                name: "$identity".into(),
+                method_type: method!(((Object(java_lang_object.clone()))) -> Object(java_lang_object.clone())),
+            },
+            captures: Vec::new(),
+        };
         RawMethod {
-            name: "identity".into(),
-            access_flags: access!(public static native),
-            descriptor: method!(() -> Object(function.this.clone())),
-            code: RawCode::native(NativeSingleMethod(
+            name: "<clinit>".into(),
+            access_flags: access!(static native),
+            descriptor: method!(() -> void),
+            code: RawCode::native(NativeVoid(
                 move |thread: &mut Thread, []: [u32; 0], _verbose| {
-                    let lambda = Object {
+                    let identity_lambda = Object {
                         fields: Vec::new(),
-                        native_fields: vec![Box::new(LambdaOverride {
-                            method_name: apply_name.clone(),
-                            method_descriptor: apply_signature.clone(),
-                            invoke: MethodHandle::InvokeStatic {
-                                class: function_this.clone(),
-                                name: "$identity".into(),
-                                method_type: method!(((Object(java_lang_object.clone()))) -> Object(java_lang_object.clone())),
-                            },
-                            captures: Vec::new(),
-                        })],
+                        native_fields: vec![Box::new(identity_override.clone())],
                         class: function_this.clone(),
                     };
-                    let idx = thread.heap.lock().unwrap().allocate(lambda);
-                    Ok(Some(idx))
+                    let idx = thread.heap.lock().unwrap().allocate(identity_lambda);
+                    thread
+                        .class_area
+                        .search("java/util/Function")
+                        .unwrap()
+                        .static_data
+                        .lock()
+                        .unwrap()[0] = idx;
+                    Ok(Some(()))
                 },
             )),
             ..Default::default()
         }
+    };
+    let identity = RawMethod {
+        name: "identity".into(),
+        access_flags: access!(public static native),
+        descriptor: method!(() -> Object(function.this.clone())),
+        code: RawCode::native(NativeSingleMethod(
+            move |thread: &mut Thread, []: [u32; 0], _verbose| {
+                let function = thread.class_area.search("java/util/Function").unwrap();
+                if thread.maybe_initialize_class(&function) {
+                    return Ok(None);
+                }
+                let value = function.static_data.lock().unwrap()[0];
+                Ok(Some(value))
+            },
+        )),
+        ..Default::default()
     };
     let identity_lambda = RawMethod {
         name: "$identity".into(),
@@ -206,7 +261,287 @@ pub(super) fn add_native_methods(
     };
 
     composed_function.register_method(compose_apply, method_area);
-    function.register_methods([apply, and_then, identity, identity_lambda], method_area);
+    function.register_methods(
+        [
+            apply,
+            and_then,
+            compose,
+            identity,
+            identity_lambda,
+            function_clinit,
+        ],
+        method_area,
+    );
+
+    let mut predicate = RawClass::new(
+        access!(public native),
+        "java/util/Predicate".into(),
+        java_lang_object.clone(),
+    );
+    let predicate_test = RawMethod {
+        name: "test".into(),
+        access_flags: access!(public abstract),
+        descriptor: method!(((Object(java_lang_object.clone()))) -> boolean),
+        code: RawCode::Abstract,
+        ..Default::default()
+    };
+    let predicate_neg_lambda = {
+        let test_signature = predicate_test.descriptor.clone();
+        RawMethod {
+            name: "$negative".into(),
+            access_flags: access!(public static),
+            descriptor: method!(((Object(predicate.this.clone())), (Object(java_lang_object.clone()))) -> boolean),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [predicate, object]: [u32; 2], verbose| match thread
+                    .pc_register
+                {
+                    0 => {
+                        thread.stackframe.operand_stack.push(1);
+                        thread.resolve_and_invoke(predicate, "test", &test_signature, verbose)?;
+                        thread.stackframe.locals[0] = predicate;
+                        thread.stackframe.locals[1] = object;
+                        Ok(None)
+                    }
+                    1 => {
+                        // reverse the output
+                        let value = thread.stackframe.operand_stack.pop().unwrap();
+                        Ok(Some(u32::from(value == 0)))
+                    }
+                    _ => unreachable!(),
+                },
+            )),
+            ..Default::default()
+        }
+    };
+    let predicate_negate = {
+        let negative_handle = MethodHandle::InvokeStatic {
+            class: predicate.this.clone(),
+            name: "$negative".into(),
+            method_type: predicate_neg_lambda.descriptor.clone(),
+        };
+        let test_name = predicate_test.name.clone();
+        let test_signature = predicate_test.descriptor.clone();
+        let predicate_name = predicate.this.clone();
+        RawMethod {
+            name: "negate".into(),
+            access_flags: access!(public native),
+            descriptor: method!(() -> Object(predicate.this.clone())),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [this]: [u32; 1], _verbose| {
+                    let lambda_object = LambdaOverride {
+                        method_name: test_name.clone(),
+                        method_descriptor: test_signature.clone(),
+                        invoke: negative_handle.clone(),
+                        captures: vec![this],
+                    }
+                    .as_object(predicate_name.clone());
+                    let idx = thread.heap.lock().unwrap().allocate(lambda_object);
+                    Ok(Some(idx))
+                },
+            )),
+            ..Default::default()
+        }
+    };
+    let predicate_not = {
+        let negative_handle = MethodHandle::InvokeStatic {
+            class: predicate.this.clone(),
+            name: "$negative".into(),
+            method_type: predicate_neg_lambda.descriptor.clone(),
+        };
+        let test_name = predicate_test.name.clone();
+        let test_signature = predicate_test.descriptor.clone();
+        let predicate_name = predicate.this.clone();
+        RawMethod {
+            name: "negate".into(),
+            access_flags: access!(public static native),
+            descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [target]: [u32; 1], _verbose| {
+                    let lambda_object = LambdaOverride {
+                        method_name: test_name.clone(),
+                        method_descriptor: test_signature.clone(),
+                        invoke: negative_handle.clone(),
+                        captures: vec![target],
+                    }
+                    .as_object(predicate_name.clone());
+                    let idx = thread.heap.lock().unwrap().allocate(lambda_object);
+                    Ok(Some(idx))
+                },
+            )),
+            ..Default::default()
+        }
+    };
+    let is_equal = {
+        let equals_handle = MethodHandle::InvokeStatic {
+            class: "java/util/Objects".into(),
+            name: "equals".into(),
+            method_type: method!(((Object(java_lang_object.clone()))) -> boolean),
+        };
+        let test_name = predicate_test.name.clone();
+        let test_signature = predicate_test.descriptor.clone();
+        let predicate_name = predicate.this.clone();
+        RawMethod {
+            name: "isEqual".into(),
+            access_flags: access!(public static native),
+            descriptor: method!(((Object(java_lang_object.clone()))) -> Object(predicate.this.clone())),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [target_ref]: [u32; 1], _verbose| {
+                    let lambda_object = LambdaOverride {
+                        method_name: test_name.clone(),
+                        method_descriptor: test_signature.clone(),
+                        invoke: equals_handle.clone(),
+                        captures: vec![target_ref],
+                    }
+                    .as_object(predicate_name.clone());
+                    let idx = thread.heap.lock().unwrap().allocate(lambda_object);
+                    Ok(Some(idx))
+                },
+            )),
+            ..Default::default()
+        }
+    };
+    let predicate_and_lambda = {
+        let test_signature = method!(((Object(java_lang_object.clone()))) -> boolean);
+        RawMethod {
+            name: "$and".into(),
+            access_flags: access!(public static native),
+            descriptor: method!(((Object(predicate.this.clone())), (Object(predicate.this.clone())), (Object(java_lang_object.clone()))) -> boolean),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [first, second, operand]: [u32; 3], verbose| match thread
+                    .pc_register
+                {
+                    0 => {
+                        thread.stackframe.operand_stack.push(1);
+                        thread.resolve_and_invoke(first, "test", &test_signature, verbose)?;
+                        thread.stackframe.locals[0] = first;
+                        thread.stackframe.locals[1] = operand;
+                        Ok(None)
+                    }
+                    1 => {
+                        let ret = thread.stackframe.operand_stack.pop().unwrap();
+                        if ret == 0 {
+                            return Ok(Some(0));
+                        }
+                        thread.stackframe.operand_stack.push(2);
+                        thread.resolve_and_invoke(second, "test", &test_signature, verbose)?;
+                        thread.stackframe.locals[0] = second;
+                        thread.stackframe.locals[1] = operand;
+                        Ok(None)
+                    }
+                    2 => Ok(Some(thread.stackframe.operand_stack.pop().unwrap())),
+                    _ => unreachable!(),
+                },
+            )),
+            ..Default::default()
+        }
+    };
+    let predicate_or_lambda = {
+        let test_signature = method!(((Object(java_lang_object.clone()))) -> boolean);
+        RawMethod {
+            name: "$or".into(),
+            access_flags: access!(public static native),
+            descriptor: method!(((Object(predicate.this.clone())), (Object(predicate.this.clone())), (Object(java_lang_object.clone()))) -> boolean),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [first, second, operand]: [u32; 3], verbose| match thread
+                    .pc_register
+                {
+                    0 => {
+                        thread.stackframe.operand_stack.push(1);
+                        thread.resolve_and_invoke(first, "test", &test_signature, verbose)?;
+                        thread.stackframe.locals[0] = first;
+                        thread.stackframe.locals[1] = operand;
+                        Ok(None)
+                    }
+                    1 => {
+                        let ret = thread.stackframe.operand_stack.pop().unwrap();
+                        if ret == 1 {
+                            return Ok(Some(1));
+                        }
+                        thread.stackframe.operand_stack.push(2);
+                        thread.resolve_and_invoke(second, "test", &test_signature, verbose)?;
+                        thread.stackframe.locals[0] = second;
+                        thread.stackframe.locals[1] = operand;
+                        Ok(None)
+                    }
+                    2 => Ok(Some(thread.stackframe.operand_stack.pop().unwrap())),
+                    _ => unreachable!(),
+                },
+            )),
+            ..Default::default()
+        }
+    };
+    let predicate_and = {
+        let test_name = predicate_test.name.clone();
+        let test_signature = predicate_test.descriptor.clone();
+        let and_handle = MethodHandle::InvokeStatic {
+            class: predicate.this.clone(),
+            name: predicate_and_lambda.name.clone(),
+            method_type: predicate_and_lambda.descriptor.clone(),
+        };
+        let predicate_name = predicate.this.clone();
+        RawMethod {
+            name: "and".into(),
+            access_flags: access!(public native),
+            descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [this, other]: [u32; 2], _verbose| {
+                    let lambda_object = LambdaOverride {
+                        method_name: test_name.clone(),
+                        method_descriptor: test_signature.clone(),
+                        invoke: and_handle.clone(),
+                        captures: vec![this, other],
+                    }
+                    .as_object(predicate_name.clone());
+                    let idx = thread.heap.lock().unwrap().allocate(lambda_object);
+                    Ok(Some(idx))
+                },
+            )),
+            ..Default::default()
+        }
+    };
+    let predicate_or = {
+        let test_name = predicate_test.name.clone();
+        let test_signature = predicate_test.descriptor.clone();
+        let or_handle = MethodHandle::InvokeStatic {
+            class: predicate.this.clone(),
+            name: predicate_or_lambda.name.clone(),
+            method_type: predicate_or_lambda.descriptor.clone(),
+        };
+        let predicate_name = predicate.this.clone();
+        RawMethod {
+            name: "or".into(),
+            access_flags: access!(public native),
+            descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [this, other]: [u32; 2], _verbose| {
+                    let lambda_object = LambdaOverride {
+                        method_name: test_name.clone(),
+                        method_descriptor: test_signature.clone(),
+                        invoke: or_handle.clone(),
+                        captures: vec![this, other],
+                    }
+                    .as_object(predicate_name.clone());
+                    let idx = thread.heap.lock().unwrap().allocate(lambda_object);
+                    Ok(Some(idx))
+                },
+            )),
+            ..Default::default()
+        }
+    };
+    predicate.register_methods(
+        [
+            predicate_test,
+            predicate_neg_lambda,
+            predicate_not,
+            is_equal,
+            predicate_negate,
+            predicate_and_lambda,
+            predicate_or_lambda,
+            predicate_and,
+            predicate_or,
+        ],
+        method_area,
+    );
 
     let mut optional = RawClass::new(
         access!(public native),
@@ -223,13 +558,41 @@ pub(super) fn add_native_methods(
         0,
     ));
     optional.field_size += 1;
+    optional.statics.push((
+        Field {
+            access_flags: access!(public static),
+            name: "$EMPTY".into(),
+            descriptor: field!(Object(java_lang_object.clone())),
+            ..Default::default()
+        },
+        0,
+    ));
+    optional.static_data.push(0);
 
+    let opt_clinit = RawMethod {
+        name: "<clinit>".into(),
+        access_flags: access!(public static native),
+        descriptor: method!(() -> void),
+        code: RawCode::native(NativeVoid(|thread: &mut Thread, []: [u32; 0], _verbose| {
+            let optional = thread.class_area.search("java/util/Optional").unwrap();
+            optional.static_data.lock().unwrap()[0] = Optional::make(thread, u32::MAX);
+            Ok(Some(()))
+        })),
+        ..Default::default()
+    };
     let opt_empty = RawMethod {
         name: "empty".into(),
         access_flags: access!(public static native),
         descriptor: method!(() -> Object(optional.this.clone())),
         code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, []: [u32; 0], _verbose| Ok(Some(make_option(thread, u32::MAX))),
+            |thread: &mut Thread, []: [u32; 0], _verbose| {
+                let optional = thread.class_area.search("java/util/Optional").unwrap();
+                if thread.maybe_initialize_class(&optional) {
+                    return Ok(None);
+                }
+                let empty = optional.static_data.lock().unwrap()[0];
+                Ok(Some(empty))
+            },
         )),
         ..Default::default()
     };
@@ -239,7 +602,7 @@ pub(super) fn add_native_methods(
         descriptor: method!(((Object(java_lang_object.clone()))) -> Object(optional.this.clone())),
         code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, [idx]: [u32; 1], _verbose: bool| {
-                Ok(Some(make_option(thread, idx)))
+                Ok(Some(Optional::make(thread, idx)))
             },
         )),
         ..Default::default()
@@ -250,15 +613,228 @@ pub(super) fn add_native_methods(
         descriptor: method!(((Object(java_lang_object.clone()))) -> Object(optional.this.clone())),
         code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, [idx]: [u32; 1], _verbose: bool| {
-                Ok(Some(make_option(
-                    thread,
-                    if idx == 0 { u32::MAX } else { idx },
-                )))
+                if idx != 0 {
+                    return Ok(Some(Optional::make(thread, idx)));
+                }
+                let nullable = thread.class_area.search("java/util/Optional").unwrap();
+                if thread.maybe_initialize_class(&nullable) {
+                    return Ok(None);
+                }
+                let null = nullable.static_data.lock().unwrap()[0];
+                Ok(Some(null))
             },
         )),
         ..Default::default()
     };
-    optional.register_methods([opt_empty, opt_of, opt_of_nullable], method_area);
+    let equals_descriptor = method!(((Object(java_lang_object.clone()))) -> boolean);
+    let opt_equals = RawMethod {
+        name: "equals".into(),
+        access_flags: access!(public native),
+        descriptor: method!(((Object(java_lang_object.clone()))) -> boolean),
+        code: RawCode::native(NativeSingleMethod(
+            move |thread: &mut Thread, [this, other]: [u32; 2], verbose| match thread.pc_register {
+                0 => {
+                    let Some(other_inner) = AnyObj.inspect(&thread.heap, other as usize, |o| {
+                        if o.isinstance(&thread.class_area, "java/util/Optional", verbose) {
+                            Some(o.fields[0])
+                        } else {
+                            None
+                        }
+                    })?
+                    else {
+                        // if it's not an Optional, return false
+                        return Ok(Some(0));
+                    };
+                    let this_inner =
+                        AnyObj.inspect(&thread.heap, this as usize, |o| o.fields[0])?;
+                    // if they're both None, they're equal
+                    if this_inner == u32::MAX && other_inner == u32::MAX {
+                        return Ok(Some(1));
+                    }
+                    // if one's None but the other isn't, they're not equal
+                    if this_inner == u32::MAX || other_inner == u32::MAX {
+                        return Ok(Some(0));
+                    }
+                    thread.stackframe.operand_stack.push(1);
+                    thread.resolve_and_invoke(this_inner, "equals", &equals_descriptor, verbose)?;
+                    thread.stackframe.locals[0] = this_inner;
+                    thread.stackframe.locals[1] = other_inner;
+                    Ok(None)
+                }
+                // re-return the value from Object.equals
+                1 => Ok(Some(thread.stackframe.operand_stack.pop().unwrap())),
+                _ => unreachable!(),
+            },
+        )),
+        ..Default::default()
+    };
+    let opt_filter = {
+        let test_signature = method!(((Object(java_lang_object.clone()))) -> boolean);
+        RawMethod {
+            name: "filter".into(),
+            access_flags: access!(public native),
+            descriptor: method!(((Object(predicate.this.clone()))) -> Object(optional.this.clone())),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [this, predicate]: [u32; 2], verbose| match thread
+                    .pc_register
+                {
+                    0 => {
+                        let this_value =
+                            AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
 
-    class_area.extend([function, composed_function, optional]);
+                        if this_value == u32::MAX {
+                            let optional = thread.class_area.search("java/util/Optional").unwrap();
+                            if thread.maybe_initialize_class(&optional) {
+                                return Ok(None);
+                            }
+                            let null = optional.static_data.lock().unwrap()[0];
+                            return Ok(Some(null));
+                        }
+
+                        thread.stackframe.operand_stack.push(1);
+                        thread.resolve_and_invoke(predicate, "test", &test_signature, verbose)?;
+                        thread.stackframe.locals[0] = predicate;
+                        thread.stackframe.locals[1] = this_value;
+                        Ok(None)
+                    }
+                    1 => {
+                        let result = *thread.stackframe.operand_stack.last().unwrap();
+
+                        if result == 0 {
+                            let optional = thread.class_area.search("java/util/Optional").unwrap();
+                            if thread.maybe_initialize_class(&optional) {
+                                return Ok(None);
+                            }
+                            let null = optional.static_data.lock().unwrap()[0];
+                            return Ok(Some(null));
+                        }
+                        Ok(Some(this))
+                    }
+                    _ => unreachable!(),
+                },
+            )),
+            ..Default::default()
+        }
+    };
+    // TODO: flatMap
+    // TODO: get
+    let hash_code_descriptor = method!(() -> int);
+    let opt_hash_code = RawMethod {
+        name: "hashCode".into(),
+        access_flags: access!(public native),
+        descriptor: method!(() -> int),
+        code: RawCode::native(NativeSingleMethod(
+            move |thread: &mut Thread, [this]: [u32; 1], verbose| {
+                match thread.pc_register {
+                    0 => {
+                        let value =
+                            AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
+                        if value == u32::MAX {
+                            Ok(Some(0))
+                        } else {
+                            // push return address
+                            thread.stackframe.operand_stack.push(1);
+                            thread.resolve_and_invoke(
+                                value,
+                                "hashCode",
+                                &hash_code_descriptor,
+                                verbose,
+                            )?;
+                            thread.stackframe.locals[0] = value;
+                            Ok(None)
+                        }
+                    }
+                    1 => Ok(Some(thread.stackframe.operand_stack.pop().unwrap())),
+                    _ => unreachable!(),
+                }
+            },
+        )),
+        ..Default::default()
+    };
+    // TODO: ifPresent
+    // TODO: ifPresentOrElse
+    let is_empty = RawMethod {
+        name: "isEmpty".into(),
+        access_flags: access!(public native),
+        descriptor: method!(() -> boolean),
+        code: RawCode::native(NativeSingleMethod(
+            |thread: &mut Thread, [this]: [u32; 1], _verbose| {
+                Ok(Some(
+                    AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0] == u32::MAX)?
+                        as u32,
+                ))
+            },
+        )),
+        ..Default::default()
+    };
+    let is_present = RawMethod {
+        name: "isPresent".into(),
+        access_flags: access!(public native),
+        descriptor: method!(() -> boolean),
+        code: RawCode::native(NativeSingleMethod(
+            |thread: &mut Thread, [this]: [u32; 1], _verbose| {
+                Ok(Some(
+                    AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0] != u32::MAX)?
+                        as u32,
+                ))
+            },
+        )),
+        ..Default::default()
+    };
+    // TODO: map
+    // TODO: orElse
+    // TODO: orElseGet
+    // TODO: orElseThrow
+    // TODO: stream
+    let to_string_descriptor = method!(() -> Object(java_lang_string.clone()));
+    let opt_to_string = RawMethod {
+        name: "toString".into(),
+        access_flags: access!(public native),
+        descriptor: method!(() -> Object(java_lang_string.clone())),
+        code: RawCode::native(NativeStringMethod(
+            move |thread: &mut Thread, [this]: [u32; 1], verbose| match thread.pc_register {
+                0 => {
+                    let value = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
+                    if value == u32::MAX {
+                        Ok(Some("None".into()))
+                    } else {
+                        // push return address
+                        thread.stackframe.operand_stack.push(1);
+                        thread.resolve_and_invoke(
+                            value,
+                            "toString",
+                            &to_string_descriptor,
+                            verbose,
+                        )?;
+                        thread.stackframe.locals[0] = value;
+                        Ok(None)
+                    }
+                }
+                1 => StringObj::inspect(
+                    &thread.heap,
+                    thread.stackframe.operand_stack.pop().unwrap() as usize,
+                    |s| Some(format!("Some({s})").into()),
+                ),
+                _ => unreachable!(),
+            },
+        )),
+        ..Default::default()
+    };
+    optional.register_methods(
+        [
+            opt_empty,
+            opt_of,
+            opt_of_nullable,
+            is_empty,
+            is_present,
+            opt_to_string,
+            opt_hash_code,
+            opt_equals,
+            opt_clinit,
+            opt_filter,
+        ],
+        method_area,
+    );
+
+    class_area.extend([function, composed_function, optional, predicate]);
 }
