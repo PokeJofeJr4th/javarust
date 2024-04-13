@@ -107,6 +107,7 @@ impl Code {
     }
 
     #[must_use]
+    #[allow(clippy::borrowed_box)]
     pub fn as_native(&self) -> Option<&Box<dyn NativeMethod>> {
         match self {
             Self::Native(nm) => Some(&**nm),
@@ -330,11 +331,7 @@ pub fn native_property<F: ObjectFinder, O>(
 ) -> impl Fn(&mut Thread, [u32; 1], bool) -> NativeReturn<O> {
     move |thread: &mut Thread, [ptr]: [u32; 1], _| {
         finder
-            .inspect(
-                &thread.heap,
-                ptr as usize,
-                |obj: F::Target<'_>| func(obj),
-            )
+            .inspect(&thread.heap, ptr as usize, |obj: F::Target<'_>| func(obj))
             .map(Option::Some)
     }
 }

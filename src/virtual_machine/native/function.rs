@@ -64,32 +64,6 @@ pub(super) fn add_native_methods(
         },
         0,
     )]);
-    let mut composed_function = RawClass::new(
-        access!(public native),
-        "java/util/Function$Compose".into(),
-        function.this.clone(),
-    );
-    composed_function.fields.extend([
-        (
-            Field {
-                access_flags: access!(public),
-                name: "$first".into(),
-                descriptor: field!(Object(function.this.clone())),
-                ..Default::default()
-            },
-            0,
-        ),
-        (
-            Field {
-                access_flags: access!(public),
-                name: "$second".into(),
-                descriptor: field!(Object(function.this.clone())),
-                ..Default::default()
-            },
-            1,
-        ),
-    ]);
-    composed_function.field_size += 2;
 
     let apply = RawMethod {
         name: "apply".into(),
@@ -100,51 +74,119 @@ pub(super) fn add_native_methods(
     };
     let apply_name = apply.name.clone();
     let apply_signature = apply.descriptor.clone();
-    let and_then = RawMethod {
-        name: "andThen".into(),
-        access_flags: access!(public native),
-        descriptor: method!(((Object(function.this.clone()))) -> Object(function.this.clone())),
-        code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [this, after]: [u32; 2], _verbose| {
-                let mut compose = Object::from_class(
-                    &thread
-                        .class_area
-                        .search("java/util/Function$Compose")
-                        .unwrap(),
-                );
-                compose.fields[0] = this;
-                compose.fields[1] = after;
-                let idx = thread.heap.lock().unwrap().allocate(compose);
-                Ok(Some(idx))
-            },
-        )),
-        ..Default::default()
+    let compose_lambda = {
+        let apply_signature = apply_signature.clone();
+        RawMethod {
+            name: "$compose".into(),
+            access_flags: access!(public static native),
+            descriptor: method!(((Object(function.this.clone())), (Object(function.this.clone())), (Object(java_lang_object.clone()))) -> Object(java_lang_object.clone())),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread,
+                      [first_fn_ptr, second_fn_ptr, arg]: [u32; 3],
+                      verbose| {
+                    match thread.pc_register {
+                        0 => {
+                            // push the return address
+                            thread.stackframe.operand_stack.push(1);
+                            thread.resolve_and_invoke(
+                                first_fn_ptr,
+                                "apply",
+                                &apply_signature,
+                                verbose,
+                            )?;
+                            thread.stackframe.locals[0] = first_fn_ptr;
+                            thread.stackframe.locals[1] = arg;
+                            Ok(None)
+                        }
+                        1 => {
+                            // get the first value returned
+                            let first_return = thread.stackframe.operand_stack.pop().unwrap();
+                            // push the return address
+                            thread.stackframe.operand_stack.push(2);
+                            thread.resolve_and_invoke(
+                                second_fn_ptr,
+                                "apply",
+                                &apply_signature,
+                                verbose,
+                            )?;
+                            thread.stackframe.locals[0] = second_fn_ptr;
+                            thread.stackframe.locals[1] = first_return;
+                            Ok(None)
+                        }
+                        2 => {
+                            // return the result
+                            Ok(Some(thread.stackframe.operand_stack.pop().unwrap()))
+                        }
+                        pc => Err(format!("Invalid PC: {pc}").into()),
+                    }
+                },
+            )),
+            ..Default::default()
+        }
     };
-    let compose = RawMethod {
-        name: "compose".into(),
-        access_flags: access!(public native),
-        descriptor: method!(((Object(function.this.clone()))) -> Object(function.this.clone())),
-        code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [this, before]: [u32; 2], _verbose| {
-                let mut compose = Object::from_class(
-                    &thread
-                        .class_area
-                        .search("java/util/Function$Compose")
-                        .unwrap(),
-                );
-                compose.fields[0] = before;
-                compose.fields[1] = this;
-                let idx = thread.heap.lock().unwrap().allocate(compose);
-                Ok(Some(idx))
-            },
-        )),
-        ..Default::default()
+    let compose = {
+        let function_this = function.this.clone();
+        let apply_name = apply.name.clone();
+        let apply_signature = apply.descriptor.clone();
+        let compose_handle = MethodHandle::InvokeStatic {
+            class: function_this.clone(),
+            name: "$compose".into(),
+            method_type: compose_lambda.descriptor.clone(),
+        };
+        RawMethod {
+            name: "compose".into(),
+            access_flags: access!(public native),
+            descriptor: method!(((Object(function.this.clone()))) -> Object(function.this.clone())),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [this, before]: [u32; 2], _verbose| {
+                    let lambda_object = LambdaOverride {
+                        method_name: apply_name.clone(),
+                        method_descriptor: apply_signature.clone(),
+                        invoke: compose_handle.clone(),
+                        captures: vec![before, this],
+                    }
+                    .as_object(function_this.clone());
+                    let idx = thread.heap.lock().unwrap().allocate(lambda_object);
+                    Ok(Some(idx))
+                },
+            )),
+            ..Default::default()
+        }
+    };
+    let and_then = {
+        let function_this = function.this.clone();
+        let apply_name = apply.name.clone();
+        let apply_signature = apply.descriptor.clone();
+        let compose_handle = MethodHandle::InvokeStatic {
+            class: function_this.clone(),
+            name: "$compose".into(),
+            method_type: compose_lambda.descriptor.clone(),
+        };
+        RawMethod {
+            name: "andThen".into(),
+            access_flags: access!(public native),
+            descriptor: method!(((Object(function.this.clone()))) -> Object(function.this.clone())),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [this, after]: [u32; 2], _verbose| {
+                    let lambda_object = LambdaOverride {
+                        method_name: apply_name.clone(),
+                        method_descriptor: apply_signature.clone(),
+                        invoke: compose_handle.clone(),
+                        captures: vec![this, after],
+                    }
+                    .as_object(function_this.clone());
+                    let idx = thread.heap.lock().unwrap().allocate(lambda_object);
+                    Ok(Some(idx))
+                },
+            )),
+            ..Default::default()
+        }
     };
     let function_clinit = {
         let function_this = function.this.clone();
         let identity_override = LambdaOverride {
-            method_name: apply_name.clone(),
-            method_descriptor: apply_signature.clone(),
+            method_name: apply_name,
+            method_descriptor: apply_signature,
             invoke: MethodHandle::InvokeStatic {
                 class: function.this.clone(),
                 name: "$identity".into(),
@@ -203,64 +245,6 @@ pub(super) fn add_native_methods(
         ..Default::default()
     };
 
-    let compose_apply = RawMethod {
-        name: apply_name,
-        access_flags: access!(public native),
-        descriptor: apply_signature.clone(),
-        code: RawCode::native(NativeSingleMethod(
-            move |thread: &mut Thread, [this, arg]: [u32; 2], verbose| {
-                match thread.pc_register {
-                    0 => {
-                        // invoke the first function
-                        let first_fn_ptr =
-                            AnyObj.inspect(&thread.heap, this as usize, |compose| {
-                                compose.fields[0]
-                            })?;
-                        // push the return address
-                        thread.stackframe.operand_stack.push(1);
-                        thread.resolve_and_invoke(
-                            first_fn_ptr,
-                            "apply",
-                            &apply_signature,
-                            verbose,
-                        )?;
-                        thread.stackframe.locals[0] = first_fn_ptr;
-                        thread.stackframe.locals[1] = arg;
-                        Ok(None)
-                    }
-                    1 => {
-                        // invoke the second function
-                        // invoke the first function
-                        let second_fn_ptr =
-                            AnyObj.inspect(&thread.heap, this as usize, |compose| {
-                                compose.fields[1]
-                            })?;
-                        // get the first value returned
-                        let first_return = thread.stackframe.operand_stack.pop().unwrap();
-                        // push the return address
-                        thread.stackframe.operand_stack.push(2);
-                        thread.resolve_and_invoke(
-                            second_fn_ptr,
-                            "apply",
-                            &apply_signature,
-                            verbose,
-                        )?;
-                        thread.stackframe.locals[0] = second_fn_ptr;
-                        thread.stackframe.locals[1] = first_return;
-                        Ok(None)
-                    }
-                    2 => {
-                        // return the result
-                        Ok(Some(thread.stackframe.operand_stack.pop().unwrap()))
-                    }
-                    pc => Err(format!("Invalid PC: {pc}").into()),
-                }
-            },
-        )),
-        ..Default::default()
-    };
-
-    composed_function.register_method(compose_apply, method_area);
     function.register_methods(
         [
             apply,
@@ -269,6 +253,7 @@ pub(super) fn add_native_methods(
             identity,
             identity_lambda,
             function_clinit,
+            compose_lambda,
         ],
         method_area,
     );
@@ -836,5 +821,5 @@ pub(super) fn add_native_methods(
         method_area,
     );
 
-    class_area.extend([function, composed_function, optional, predicate]);
+    class_area.extend([function, optional, predicate]);
 }

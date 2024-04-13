@@ -19,6 +19,13 @@ pub(super) fn add_native_methods(
         java_lang_object.clone(),
     );
 
+    let stream_next = RawMethod {
+        name: "$next".into(),
+        access_flags: access!(public abstract native),
+        descriptor: method!(() -> Object(java_lang_object.clone())),
+        code: RawCode::Abstract,
+        ..Default::default()
+    };
     let all_match = RawMethod {
         name: "allMatch".into(),
         access_flags: access!(public native),
@@ -63,7 +70,7 @@ pub(super) fn add_native_methods(
     // TODO: takeWhile
     // TODO: toArray
     // TODO: toList
-    stream.register_methods([all_match, any_match], method_area);
+    stream.register_methods([all_match, any_match, stream_next], method_area);
 
     class_area.extend([stream]);
 }

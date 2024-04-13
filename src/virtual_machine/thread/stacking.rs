@@ -93,7 +93,7 @@ impl Stackable<u32> for i64 {
 
 impl Stackable<u32> for u8 {
     fn pop(stack: &mut impl Stack<u32>) -> Option<Self> {
-        stack.pop_one().map(|i| i as u8)
+        stack.pop_one().map(|i| i as Self)
     }
 
     fn push(stack: &mut impl Stack<u32>, value: Self) {
@@ -103,7 +103,7 @@ impl Stackable<u32> for u8 {
 
 impl Stackable<u32> for i16 {
     fn pop(stack: &mut impl Stack<u32>) -> Option<Self> {
-        stack.pop_one().map(|i| i as i16)
+        stack.pop_one().map(|i| i as Self)
     }
 
     fn push(stack: &mut impl Stack<u32>, value: Self) {

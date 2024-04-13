@@ -397,6 +397,7 @@ impl LambdaOverride {
         }
     }
 
+    #[must_use]
     pub fn as_object(self, class: Arc<str>) -> Object {
         Object {
             fields: Vec::new(),
