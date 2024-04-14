@@ -15,7 +15,7 @@ pub(super) fn add_native_methods(
 ) {
     let mut stream = RawClass::new(
         access!(public abstract native),
-        "java/util/Stream".into(),
+        "java/util/stream/Stream".into(),
         java_lang_object.clone(),
     );
 

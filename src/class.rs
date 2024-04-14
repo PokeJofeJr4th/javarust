@@ -286,6 +286,10 @@ macro_rules! access {
 
     (@abstract) => {
         $crate::class::AccessFlags::ACC_ABSTRACT
+    };
+
+    (@private) => {
+        $crate::class::AccessFlags::ACC_PRIVATE
     }
 }
 
@@ -373,7 +377,7 @@ impl AccessFlags {
 
     // pub const ZERO: Self = Self(0);
     pub const ACC_PUBLIC: Self = Self(0x0001);
-    // pub const ACC_PRIVATE: u16 = 0x0002;
+    pub const ACC_PRIVATE: Self = Self(0x0002);
     // pub const ACC_PROTECTED: u16 = 0x0004;
     pub const ACC_STATIC: Self = Self(0x0008);
     // pub const ACC_FINAL: u16 = 0x0010;

@@ -1345,7 +1345,7 @@ impl Thread {
         // outer_stackframe is the calling method and self.stackframe is the method that was called
         let mut outer_stackframe = self.stack.pop().unwrap();
         if verbose {
-            println!("ret1 from {:#?}", self.stackframe.method);
+            println!("ret1 from {}.{}", self.stackframe.class.this, self.stackframe.method.name);
         }
         let is_reference = self
             .stackframe
