@@ -1286,7 +1286,9 @@ impl Thread {
             ) if &*bootstrap_name == "metafactory"
                 && &*bootstrap_class == "java/lang/invoke/LambdaMetafactory" =>
             {
-                println!("LambdaMetafactory:\nMethod name: {method_name}\nBootstrap Arguments: {args:#?}\nMethod Descriptor: {return_type:?} {parameters:?}");
+                if verbose {
+                    println!("LambdaMetafactory:\nMethod name: {method_name}\nBootstrap Arguments: {args:#?}\nMethod Descriptor: {return_type:?} {parameters:?}");
+                }
                 let Some(FieldType::Object(lambda_class)) = return_type else {
                     return Err(format!(
                         "LambdaMetaFactory expects an object return; got {return_type:?}"
@@ -1345,7 +1347,10 @@ impl Thread {
         // outer_stackframe is the calling method and self.stackframe is the method that was called
         let mut outer_stackframe = self.stack.pop().unwrap();
         if verbose {
-            println!("ret1 from {}.{}", self.stackframe.class.this, self.stackframe.method.name);
+            println!(
+                "ret1 from {}.{}",
+                self.stackframe.class.this, self.stackframe.method.name
+            );
         }
         let is_reference = self
             .stackframe

@@ -4,7 +4,7 @@ use crate::{
     access,
     class::{
         code::{NativeMethod, NativeSingleMethod, NativeStringMethod, NativeVoid},
-        Field, MethodHandle,
+        Field, MethodDescriptor, MethodHandle,
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
@@ -43,17 +43,19 @@ impl ObjectFinder for Optional {
 }
 
 pub fn make_lambda_override<const CAPTURES: usize>(
-    overrided: &RawMethod,
+    overrided_name: &Arc<str>,
+    overrided_descriptor: &MethodDescriptor,
     instance_class: &Arc<str>,
-    invoke: &RawMethod,
+    invoke_name: &Arc<str>,
+    invoke_descriptor: &MethodDescriptor,
     invoke_class: &Arc<str>,
 ) -> impl NativeMethod {
-    let method_name = overrided.name.clone();
-    let method_descriptor = overrided.descriptor.clone();
+    let method_name = overrided_name.clone();
+    let method_descriptor = overrided_descriptor.clone();
     let invoke = MethodHandle::InvokeStatic {
         class: invoke_class.clone(),
-        name: invoke.name.clone(),
-        method_type: invoke.descriptor.clone(),
+        name: invoke_name.clone(),
+        method_type: invoke_descriptor.clone(),
     };
     let instance_class = instance_class.clone();
     NativeSingleMethod(
@@ -80,7 +82,7 @@ pub(super) fn add_native_methods(
 ) {
     let mut function = RawClass::new(
         access!(public native abstract),
-        "java/util/Function".into(),
+        "java/util/function/Function".into(),
         java_lang_object.clone(),
     );
     function.static_data.extend([0, 0]);
@@ -187,9 +189,11 @@ pub(super) fn add_native_methods(
         access_flags: access!(public native),
         descriptor: method!(((Object(function.this.clone()))) -> Object(function.this.clone())),
         code: RawCode::native(make_lambda_override::<2>(
-            &apply,
+            &apply.name,
+            &apply.descriptor,
             &function.this,
-            &compose_lambda,
+            &compose_lambda.name,
+            &compose_lambda.descriptor,
             &function.this,
         )),
         ..Default::default()
@@ -220,7 +224,7 @@ pub(super) fn add_native_methods(
                     let idx = thread.heap.lock().unwrap().allocate(identity_lambda);
                     thread
                         .class_area
-                        .search("java/util/Function")
+                        .search("java/util/function/Function")
                         .unwrap()
                         .static_data
                         .lock()
@@ -237,7 +241,10 @@ pub(super) fn add_native_methods(
         descriptor: method!(() -> Object(function.this.clone())),
         code: RawCode::native(NativeSingleMethod(
             move |thread: &mut Thread, []: [u32; 0], _verbose| {
-                let function = thread.class_area.search("java/util/Function").unwrap();
+                let function = thread
+                    .class_area
+                    .search("java/util/function/Function")
+                    .unwrap();
                 if thread.maybe_initialize_class(&function) {
                     return Ok(None);
                 }
@@ -272,7 +279,7 @@ pub(super) fn add_native_methods(
 
     let mut predicate = RawClass::new(
         access!(public native),
-        "java/util/Predicate".into(),
+        "java/util/function/Predicate".into(),
         java_lang_object.clone(),
     );
     let predicate_test = RawMethod {
@@ -315,9 +322,11 @@ pub(super) fn add_native_methods(
         access_flags: access!(public native),
         descriptor: method!(() -> Object(predicate.this.clone())),
         code: RawCode::native(make_lambda_override::<1>(
-            &predicate_test,
+            &predicate_test.name,
+            &predicate_test.descriptor,
             &predicate.this,
-            &predicate_neg_lambda,
+            &predicate_neg_lambda.name,
+            &predicate_neg_lambda.descriptor,
             &predicate.this,
         )),
         ..Default::default()
@@ -327,9 +336,11 @@ pub(super) fn add_native_methods(
         access_flags: access!(public static native),
         descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
         code: RawCode::native(make_lambda_override::<1>(
-            &predicate_test,
+            &predicate_test.name,
+            &predicate_test.descriptor,
             &predicate.this,
-            &predicate_neg_lambda,
+            &predicate_neg_lambda.name,
+            &predicate_neg_lambda.descriptor,
             &predicate.this,
         )),
         ..Default::default()
@@ -438,9 +449,11 @@ pub(super) fn add_native_methods(
         access_flags: access!(public native),
         descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
         code: RawCode::native(make_lambda_override::<2>(
-            &predicate_test,
+            &predicate_test.name,
+            &predicate_test.descriptor,
             &predicate.this,
-            &predicate_and_lambda,
+            &predicate_and_lambda.name,
+            &predicate_and_lambda.descriptor,
             &predicate.this,
         )),
         ..Default::default()
@@ -450,9 +463,11 @@ pub(super) fn add_native_methods(
         access_flags: access!(public native),
         descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
         code: RawCode::native(make_lambda_override::<2>(
-            &predicate_test,
+            &predicate_test.name,
+            &predicate_test.descriptor,
             &predicate.this,
-            &predicate_or_lambda,
+            &predicate_or_lambda.name,
+            &predicate_or_lambda.descriptor,
             &predicate.this,
         )),
         ..Default::default()
@@ -765,5 +780,20 @@ pub(super) fn add_native_methods(
         method_area,
     );
 
-    class_area.extend([function, optional, predicate]);
+    let mut consumer = RawClass::new(
+        access!(public native abstract),
+        "java/util/function/Consumer".into(),
+        java_lang_object.clone(),
+    );
+
+    let consumer_accept = RawMethod {
+        name: "accept".into(),
+        access_flags: access!(public abstract native),
+        descriptor: method!(((Object(java_lang_object.clone()))) -> void),
+        code: RawCode::Abstract,
+        ..Default::default()
+    };
+    consumer.register_method(consumer_accept, method_area);
+
+    class_area.extend([function, optional, predicate, consumer]);
 }

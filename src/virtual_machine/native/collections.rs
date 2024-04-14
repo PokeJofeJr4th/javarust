@@ -513,6 +513,9 @@ pub fn add_native_collections(
         )),
         ..Default::default()
     };
+    array_stream
+        .interfaces
+        .push("java/util/stream/Stream".into());
     array_stream.register_methods([arr_stream_next, arr_stream_count], method_area);
 
     let arrlist_stream = RawMethod {
@@ -527,7 +530,7 @@ pub fn add_native_collections(
                     .unwrap();
                 let mut stream = Object::from_class(&array_stream);
                 stream.fields[0] = this;
-                stream.fields[1] =
+                stream.fields[2] =
                     ArrayListObj::inspect(&thread.heap, this as usize, |arrls| arrls.len() as u32)?;
                 let stream_idx = thread.heap.lock().unwrap().allocate(stream);
                 Ok(Some(stream_idx))

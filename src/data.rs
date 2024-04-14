@@ -68,7 +68,11 @@ impl Heap {
         if ptr == NULL {
             return;
         }
-        self.refcounts[(ptr - HEAP_START) as usize] += 1;
+        let idx = (ptr - HEAP_START) as usize;
+        if idx >= self.refcounts.len() {
+            return;
+        }
+        self.refcounts[idx] += 1;
     }
 
     pub fn dec_ref(&mut self, ptr: u32) {
@@ -76,6 +80,9 @@ impl Heap {
             return;
         }
         let idx = (ptr - HEAP_START) as usize;
+        if idx >= self.refcounts.len() {
+            return;
+        }
         self.refcounts[idx] -= 1;
         if self.refcounts[idx] == 0 {
             // println!("Deallocating {idx}");
