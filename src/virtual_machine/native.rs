@@ -281,6 +281,20 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         )),
         ..Default::default()
     };
+    let string_contains = RawMethod {
+        name: "contains".into(),
+        access_flags: access!(public native),
+        descriptor: method!(((Object("java/lang/CharSequence".into()))) -> boolean),
+        code: RawCode::native(NativeSingleMethod(
+            |thread: &mut Thread, [this, seq]: [u32; 2], _verbose| {
+                let this_str = StringObj::inspect(&thread.heap, this as usize, |s| s.clone())?;
+                let seq_str = StringObj::inspect(&thread.heap, seq as usize, |s| s.clone())?;
+                let contains = this_str.contains(&*seq_str);
+                Ok(Some(u32::from(contains)))
+            },
+        )),
+        ..Default::default()
+    };
     let mut string = RawClass::new(
         access!(public native),
         java_lang_string.clone(),
@@ -293,6 +307,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
             string_value_of,
             string_to_string,
             string_compare_to,
+            string_contains,
         ],
         method_area,
     );
@@ -604,11 +619,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     );
     stream::add_native_methods(method_area, class_area, &java_lang_object);
 
-    method_area.extend(
-        array_methods
-            .into_iter()
-            .map(|method| (arrays.this.clone(), method)),
-    );
+    arrays.register_methods(array_methods, method_area);
     class_area.extend([
         object,
         enum_class,

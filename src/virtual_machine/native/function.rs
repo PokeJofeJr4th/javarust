@@ -18,9 +18,12 @@ use crate::{
 pub struct Optional;
 
 impl Optional {
-    pub fn make(thread: &Thread, value: u32) -> u32 {
+    pub fn make(thread: &Thread, value: u32, verbose: bool) -> u32 {
         let mut opt = Object::from_class(&thread.class_area.search("java/util/Optional").unwrap());
         opt.fields[0] = value;
+        if value != u32::MAX {
+            thread.rember(value, verbose);
+        }
         let idx = thread.heap.lock().unwrap().allocate(opt);
         idx
     }
@@ -517,9 +520,9 @@ pub(super) fn add_native_methods(
         name: "<clinit>".into(),
         access_flags: access!(public static native),
         descriptor: method!(() -> void),
-        code: RawCode::native(NativeVoid(|thread: &mut Thread, []: [u32; 0], _verbose| {
+        code: RawCode::native(NativeVoid(|thread: &mut Thread, []: [u32; 0], verbose| {
             let optional = thread.class_area.search("java/util/Optional").unwrap();
-            optional.static_data.lock().unwrap()[0] = Optional::make(thread, u32::MAX);
+            optional.static_data.lock().unwrap()[0] = Optional::make(thread, u32::MAX, verbose);
             Ok(Some(()))
         })),
         ..Default::default()
@@ -545,8 +548,8 @@ pub(super) fn add_native_methods(
         access_flags: access!(public static native),
         descriptor: method!(((Object(java_lang_object.clone()))) -> Object(optional.this.clone())),
         code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [idx]: [u32; 1], _verbose: bool| {
-                Ok(Some(Optional::make(thread, idx)))
+            |thread: &mut Thread, [idx]: [u32; 1], verbose: bool| {
+                Ok(Some(Optional::make(thread, idx, verbose)))
             },
         )),
         ..Default::default()
@@ -556,9 +559,9 @@ pub(super) fn add_native_methods(
         access_flags: access!(public static native),
         descriptor: method!(((Object(java_lang_object.clone()))) -> Object(optional.this.clone())),
         code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [idx]: [u32; 1], _verbose: bool| {
+            |thread: &mut Thread, [idx]: [u32; 1], verbose: bool| {
                 if idx != 0 {
-                    return Ok(Some(Optional::make(thread, idx)));
+                    return Ok(Some(Optional::make(thread, idx, verbose)));
                 }
                 let nullable = thread.class_area.search("java/util/Optional").unwrap();
                 if thread.maybe_initialize_class(&nullable) {

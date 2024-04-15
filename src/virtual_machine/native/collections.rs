@@ -477,7 +477,7 @@ pub fn add_native_collections(
         access_flags: access!(public native),
         descriptor: method!(() -> Object(java_lang_object.clone())),
         code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [this]: [u32; 1], _verbose| {
+            |thread: &mut Thread, [this]: [u32; 1], verbose| {
                 let next_item = AnyObj.inspect(&thread.heap, this as usize, |o| {
                     let [array_ref, index, end_index] = &mut o.fields[0..3] else {
                         return Ok(None);
@@ -492,7 +492,7 @@ pub fn add_native_collections(
                     })
                     .map(Option::Some)
                 })??;
-                let opt_idx = Optional::make(thread, next_item.unwrap_or(u32::MAX));
+                let opt_idx = Optional::make(thread, next_item.unwrap_or(u32::MAX), verbose);
                 Ok(Some(opt_idx))
             },
         )),
