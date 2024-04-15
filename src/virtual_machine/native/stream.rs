@@ -73,9 +73,12 @@ pub(super) fn add_native_methods(
                         let Some(returned_obj) =
                             Optional.inspect(&thread.heap, returned_opt as usize, |o| *o)?
                         else {
+                            if verbose {
+                                println!("Stream end - returning None");
+                            }
                             return Ok(Some(returned_opt));
                         };
-                        thread.stackframe.operand_stack.push(returned_obj);
+                        thread.stackframe.operand_stack.push(returned_opt);
                         thread.stackframe.operand_stack.push(2);
                         thread.resolve_and_invoke(predicate, "test", &test_descriptor, verbose)?;
                         thread.stackframe.locals[0] = predicate;
@@ -85,9 +88,15 @@ pub(super) fn add_native_methods(
                     2 => {
                         let test_result = thread.stackframe.operand_stack.pop().unwrap();
                         if test_result == 0 {
+                            if verbose {
+                                println!("Predicate failed - continuing to next option");
+                            }
                             thread.stackframe.operand_stack.pop();
                             thread.pc_register = 0;
                             return Ok(None);
+                        }
+                        if verbose {
+                            println!("Predicate succeeded - returning the tested object");
                         }
                         Ok(Some(thread.stackframe.operand_stack.pop().unwrap()))
                     }

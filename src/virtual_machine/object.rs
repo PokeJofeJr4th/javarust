@@ -365,7 +365,12 @@ impl NativeMethod for LambdaOverride {
                         // push the return address
                         thread.stackframe.operand_stack.push(1);
                         thread.invoke_method(method_ref, class_ref);
-                        thread.stackframe.locals = combined_args;
+                        thread
+                            .stackframe
+                            .locals
+                            .iter_mut()
+                            .zip(combined_args)
+                            .for_each(|(l, a)| *l = a);
                         if verbose {
                             println!("new locals: {:?}", thread.stackframe.locals);
                         }

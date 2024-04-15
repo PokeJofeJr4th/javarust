@@ -1377,6 +1377,9 @@ impl Thread {
         self.collect_garbage();
         // now self.stackframe is the calling method and outer_stackframe is the method that was called
         core::mem::swap(&mut outer_stackframe, &mut self.stackframe);
+        if verbose {
+            println!("Stack: {:?}", self.stackframe.operand_stack);
+        }
     }
 
     /// # Panics
