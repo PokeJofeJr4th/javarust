@@ -30,27 +30,114 @@ pub(super) fn add_native_methods(
         code: RawCode::Abstract,
         ..Default::default()
     };
-    let all_match = RawMethod {
-        name: "allMatch".into(),
-        access_flags: access!(public native),
-        descriptor: method!(((Object("java/util/function/Predicate".into()))) -> boolean),
-        code: RawCode::native(NativeTodo),
-        ..Default::default()
+    let all_match = {
+        let next_descriptor = stream_next.descriptor.clone();
+        let test_descriptor = method!(((Object(java_lang_object.clone()))) -> boolean);
+        RawMethod {
+            name: "allMatch".into(),
+            access_flags: access!(public native),
+            descriptor: method!(((Object("java/util/function/Predicate".into()))) -> boolean),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [this, predicate]: [u32; 2], verbose| match thread
+                    .pc_register
+                {
+                    0 => {
+                        thread.stackframe.operand_stack.push(1);
+                        thread.resolve_and_invoke(this, "$next", &next_descriptor, verbose)?;
+                        thread.stackframe.locals[0] = this;
+                        Ok(None)
+                    }
+                    1 => {
+                        let ret_opt = thread.stackframe.operand_stack.pop().unwrap();
+                        let Some(ret) = Optional.inspect(&thread.heap, ret_opt as usize, |o| *o)?
+                        else {
+                            return Ok(Some(1));
+                        };
+                        thread.stackframe.operand_stack.push(2);
+                        thread.resolve_and_invoke(predicate, "test", &test_descriptor, verbose)?;
+                        thread.stackframe.locals[0] = predicate;
+                        thread.stackframe.locals[1] = ret;
+                        Ok(None)
+                    }
+                    2 => {
+                        let predicate_ret = thread.stackframe.operand_stack.pop().unwrap();
+                        if predicate_ret == 0 {
+                            Ok(Some(0))
+                        } else {
+                            thread.pc_register = 0;
+                            Ok(None)
+                        }
+                    }
+                    _ => unreachable!(),
+                },
+            )),
+            ..Default::default()
+        }
     };
 
-    let any_match = RawMethod {
-        name: "anyMatch".into(),
-        access_flags: access!(public native),
-        descriptor: method!(((Object("java/util/function/Predicate".into()))) -> boolean),
-        code: RawCode::native(NativeTodo),
-        ..Default::default()
+    let any_match = {
+        let next_descriptor = stream_next.descriptor.clone();
+        let test_descriptor = method!(((Object(java_lang_object.clone()))) -> boolean);
+        RawMethod {
+            name: "anyMatch".into(),
+            access_flags: access!(public native),
+            descriptor: method!(((Object("java/util/function/Predicate".into()))) -> boolean),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [this, predicate]: [u32; 2], verbose| match thread
+                    .pc_register
+                {
+                    0 => {
+                        thread.stackframe.operand_stack.push(1);
+                        thread.resolve_and_invoke(this, "$next", &next_descriptor, verbose)?;
+                        thread.stackframe.locals[0] = this;
+                        Ok(None)
+                    }
+                    1 => {
+                        let ret_opt = thread.stackframe.operand_stack.pop().unwrap();
+                        let Some(ret) = Optional.inspect(&thread.heap, ret_opt as usize, |o| *o)?
+                        else {
+                            return Ok(Some(0));
+                        };
+                        thread.stackframe.operand_stack.push(2);
+                        thread.resolve_and_invoke(predicate, "test", &test_descriptor, verbose)?;
+                        thread.stackframe.locals[0] = predicate;
+                        thread.stackframe.locals[1] = ret;
+                        Ok(None)
+                    }
+                    2 => {
+                        let predicate_ret = thread.stackframe.operand_stack.pop().unwrap();
+                        if predicate_ret == 0 {
+                            thread.pc_register = 0;
+                            Ok(None)
+                        } else {
+                            Ok(Some(1))
+                        }
+                    }
+                    _ => unreachable!(),
+                },
+            )),
+            ..Default::default()
+        }
     };
     // TODO: collect
     // TODO: concat
     // TODO: count
     // TODO: distinct
     // TODO: dropWhile
-    // TODO: Empty
+    let empty_stream = RawMethod {
+        name: "empty".into(),
+        access_flags: access!(public static native),
+        descriptor: method!(() -> Object(stream.this.clone())),
+        code: RawCode::native(make_lambda_override::<0>(
+            &stream_next.name,
+            &stream_next.descriptor,
+            &stream.this,
+            &Arc::from("empty"),
+            &method!(() -> Object("java/util/Optional".into())),
+            &Arc::from("java/util/Optional"),
+        )),
+        ..Default::default()
+    };
     let filter_lambda = {
         let next_descriptor = method!(() -> Object(java_lang_object.clone()));
         let test_descriptor = method!(((Object(java_lang_object.clone()))) -> boolean);
@@ -179,7 +266,50 @@ pub(super) fn add_native_methods(
     // TODO: mapMulti <toPrimitive>
     // TODO: max
     // TODO: min
-    // TODO: noneMatch
+    let none_match = {
+        let next_descriptor = stream_next.descriptor.clone();
+        let test_descriptor = method!(((Object(java_lang_object.clone()))) -> boolean);
+        RawMethod {
+            name: "noneMatch".into(),
+            access_flags: access!(public native),
+            descriptor: method!(((Object("java/util/function/Predicate".into()))) -> boolean),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [this, predicate]: [u32; 2], verbose| match thread
+                    .pc_register
+                {
+                    0 => {
+                        thread.stackframe.operand_stack.push(1);
+                        thread.resolve_and_invoke(this, "$next", &next_descriptor, verbose)?;
+                        thread.stackframe.locals[0] = this;
+                        Ok(None)
+                    }
+                    1 => {
+                        let ret_opt = thread.stackframe.operand_stack.pop().unwrap();
+                        let Some(ret) = Optional.inspect(&thread.heap, ret_opt as usize, |o| *o)?
+                        else {
+                            return Ok(Some(1));
+                        };
+                        thread.stackframe.operand_stack.push(2);
+                        thread.resolve_and_invoke(predicate, "test", &test_descriptor, verbose)?;
+                        thread.stackframe.locals[0] = predicate;
+                        thread.stackframe.locals[1] = ret;
+                        Ok(None)
+                    }
+                    2 => {
+                        let predicate_ret = thread.stackframe.operand_stack.pop().unwrap();
+                        if predicate_ret == 0 {
+                            thread.pc_register = 0;
+                            Ok(None)
+                        } else {
+                            Ok(Some(0))
+                        }
+                    }
+                    _ => unreachable!(),
+                },
+            )),
+            ..Default::default()
+        }
+    };
     // TODO: of
     // TODO: ofNullable
     // TODO: peek
@@ -197,6 +327,7 @@ pub(super) fn add_native_methods(
             for_each,
             filter,
             filter_lambda,
+            empty_stream,
         ],
         method_area,
     );
