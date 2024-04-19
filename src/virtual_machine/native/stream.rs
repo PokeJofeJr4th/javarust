@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     access,
-    class::code::{NativeSingleMethod, NativeTodo, NativeVoid},
+    class::code::{NativeSingleMethod, NativeVoid},
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
     method,
@@ -263,6 +263,61 @@ pub(super) fn add_native_methods(
     // TODO: iterate
     // TODO: limit
     // TODO: map <toPrimitive>
+    let map_lambda = {
+        let next_descriptor = method!(() -> Object(java_lang_object.clone()));
+        let apply_descriptor =
+            method!(((Object(java_lang_object.clone()))) -> Object(java_lang_object.clone()));
+        RawMethod {
+            name: "$map".into(),
+            access_flags: access!(public static native),
+            descriptor: method!(((Object(stream.this.clone())), (Object("java/util/function/Function".into()))) -> Object(java_lang_object.clone())),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [this, func]: [u32; 2], verbose| match thread.pc_register
+                {
+                    0 => {
+                        thread.stackframe.operand_stack.push(1);
+                        thread.resolve_and_invoke(this, "$next", &next_descriptor, verbose)?;
+                        thread.stackframe.locals[0] = this;
+                        Ok(None)
+                    }
+                    1 => {
+                        let next_idx = thread.stackframe.operand_stack.pop().unwrap();
+                        let Some(next_obj) =
+                            Optional.inspect(&thread.heap, next_idx as usize, |o| *o)?
+                        else {
+                            return Ok(Some(next_idx));
+                        };
+                        thread.stackframe.operand_stack.push(2);
+                        thread.resolve_and_invoke(func, "apply", &apply_descriptor, verbose)?;
+                        thread.stackframe.locals[0] = func;
+                        thread.stackframe.locals[1] = next_obj;
+                        Ok(None)
+                    }
+                    2 => {
+                        let func_ret = thread.stackframe.operand_stack.pop().unwrap();
+                        let opt_ret = Optional::make(thread, func_ret, verbose);
+                        Ok(Some(opt_ret))
+                    }
+                    _ => unreachable!(),
+                },
+            )),
+            ..Default::default()
+        }
+    };
+    let map = RawMethod {
+        name: "map".into(),
+        access_flags: access!(public native),
+        descriptor: method!(((Object("java/util/function/Function".into()))) -> Object(stream.this.clone())),
+        code: RawCode::native(make_lambda_override::<1>(
+            &stream_next.name,
+            &stream_next.descriptor,
+            &stream.this,
+            &map_lambda.name,
+            &map_lambda.descriptor,
+            &stream.this,
+        )),
+        ..Default::default()
+    };
     // TODO: mapMulti <toPrimitive>
     // TODO: max
     // TODO: min
@@ -328,6 +383,9 @@ pub(super) fn add_native_methods(
             filter,
             filter_lambda,
             empty_stream,
+            none_match,
+            map,
+            map_lambda,
         ],
         method_area,
     );
