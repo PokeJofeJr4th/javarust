@@ -259,7 +259,43 @@ pub(super) fn add_native_methods(
         }
     };
     // TODO: forEachOrdered
-    // TODO: generate
+    let generate_lambda = {
+        let get_descriptor = method!(() -> Object(java_lang_object.clone()));
+        RawMethod {
+            name: "$generate".into(),
+            access_flags: access!(public static native),
+            descriptor: method!(((Object("java/util/function/Supplier".into()))) -> Object(java_lang_object.clone())),
+            code: RawCode::native(NativeSingleMethod(
+                move |thread: &mut Thread, [supplier]: [u32; 1], verbose| match thread.pc_register {
+                    0 => {
+                        thread.stackframe.operand_stack.push(1);
+                        thread.resolve_and_invoke(supplier, "get", &get_descriptor, verbose)?;
+                        thread.stackframe.locals[0] = supplier;
+                        Ok(None)
+                    }
+                    1 => Ok(Some(thread.stackframe.operand_stack.pop().unwrap())),
+                    _ => unreachable!(),
+                },
+            )),
+            ..Default::default()
+        }
+    };
+    let generate = {
+        RawMethod {
+            name: "generate".into(),
+            access_flags: access!(public static native),
+            descriptor: method!(((Object("java/util/function/Supplier".into()))) -> Object(stream.this.clone())),
+            code: RawCode::native(make_lambda_override::<1>(
+                &stream_next.name,
+                &stream_next.descriptor,
+                &stream.this.clone(),
+                &generate_lambda.name,
+                &generate_lambda.descriptor,
+                &stream.this.clone(),
+            )),
+            ..Default::default()
+        }
+    };
     // TODO: iterate
     // TODO: limit
     // TODO: map <toPrimitive>
@@ -386,6 +422,8 @@ pub(super) fn add_native_methods(
             none_match,
             map,
             map_lambda,
+            generate,
+            generate_lambda,
         ],
         method_area,
     );
