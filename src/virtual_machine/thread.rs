@@ -628,7 +628,7 @@ impl Thread {
                 // return one thing
                 self.return_one(verbose);
             }
-            Instruction::PutStatic(class, name, field_type) => {
+            Instruction::PutStatic(class, name, field_type, index_lock) => {
                 // putstatic
                 // put a static field to a class
                 let Some(class) = self.class_area.search(&class) else {
@@ -639,13 +639,17 @@ impl Thread {
                     return Ok(());
                 }
 
-                let &(ref static_ty, staticindex) = class
-                    .statics
-                    .iter()
-                    .find(|(field, _)| field.name == name)
-                    .ok_or_else(|| {
-                        format!("Couldn't find static `{name}` on class `{}`", class.this)
-                    })?;
+                let &staticindex = index_lock.get_or_init(|| {
+                    class
+                        .statics
+                        .iter()
+                        .find(|(field, _)| field.name == name)
+                        .ok_or_else(|| {
+                            format!("Couldn't find static `{name}` on class `{}`", class.this)
+                        })
+                        .unwrap()
+                        .1
+                });
                 if verbose {
                     println!("Putting Static {name} of {}", class.this);
                 }
@@ -653,7 +657,7 @@ impl Thread {
 
                 if field_type.get_size() == 1 {
                     let value = self.stackframe.operand_stack.pop().unwrap();
-                    if static_ty.descriptor.is_reference() {
+                    if field_type.is_reference() {
                         self.forgor(static_fields[staticindex], verbose);
                         self.rember(value, verbose);
                     }
@@ -666,7 +670,7 @@ impl Thread {
                     static_fields[staticindex + 1] = lower;
                 }
             }
-            Instruction::GetStatic(class, name, field_type) => {
+            Instruction::GetStatic(class, name, field_type, staticindex) => {
                 // getstatic
                 // get a static field from a class
                 let Some(class) = self.class_area.search(&class) else {
@@ -677,14 +681,17 @@ impl Thread {
                     return Ok(());
                 }
 
-                let staticindex = class
-                    .statics
-                    .iter()
-                    .find(|(field, _)| field.name == name)
-                    .ok_or_else(|| {
-                        format!("Couldn't find static `{name}` on class `{}`", class.this)
-                    })?
-                    .1;
+                let &staticindex = staticindex.get_or_init(|| {
+                    class
+                        .statics
+                        .iter()
+                        .find(|(field, _)| field.name == name)
+                        .ok_or_else(|| {
+                            format!("Couldn't find static `{name}` on class `{}`", class.this)
+                        })
+                        .unwrap()
+                        .1
+                });
                 if verbose {
                     println!("Getting Static {name} of {}", class.this);
                 }
@@ -863,14 +870,20 @@ impl Thread {
                     println!("new locals: {:?}", self.stackframe.locals);
                 }
             }
-            Instruction::InvokeStatic(class, name, method_type) => {
+            Instruction::InvokeStatic(class, name, method_type, resolved_method) => {
                 // make a static method
-                let (class_ref, method_ref) = self
-                    .method_area
-                    .search(&class, &name, &method_type)
-                    .ok_or_else(|| {
-                        format!("Error during InvokeStatic; {class}.{name}: {method_type:?}")
-                    })?;
+                let (class_ref, method_ref) = resolved_method
+                    .get_or_init(|| {
+                        self.method_area
+                            .search(&class, &name, &method_type)
+                            .ok_or_else(|| {
+                                format!(
+                                    "Error during InvokeStatic; {class}.{name}: {method_type:?}"
+                                )
+                            })
+                            .unwrap()
+                    })
+                    .clone();
 
                 if self.maybe_initialize_class(&class_ref) {
                     return Ok(());

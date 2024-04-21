@@ -1,7 +1,11 @@
-use std::{fmt::Debug, iter::Peekable, sync::Arc};
+use std::{
+    fmt::Debug,
+    iter::Peekable,
+    sync::{Arc, OnceLock},
+};
 
 use crate::{
-    class::{code::ExceptionTableEntry, Constant, FieldType, MethodDescriptor},
+    class::{code::ExceptionTableEntry, Class, Constant, FieldType, Method, MethodDescriptor},
     class_loader::parse_field_type,
     data::{SharedClassArea, NULL},
 };
@@ -45,14 +49,19 @@ pub enum Instruction {
     Return0,
     Return1,
     Return2,
-    GetStatic(Arc<str>, Arc<str>, FieldType),
-    PutStatic(Arc<str>, Arc<str>, FieldType),
+    GetStatic(Arc<str>, Arc<str>, FieldType, OnceLock<usize>),
+    PutStatic(Arc<str>, Arc<str>, FieldType, OnceLock<usize>),
     GetField(Option<usize>, Arc<str>, Arc<str>, FieldType),
     PutField(Option<usize>, Arc<str>, Arc<str>, FieldType),
     InvokeVirtual(Arc<str>, Arc<str>, MethodDescriptor),
     InvokeInterface(Arc<str>, Arc<str>, MethodDescriptor),
     InvokeSpecial(Arc<str>, Arc<str>, MethodDescriptor),
-    InvokeStatic(Arc<str>, Arc<str>, MethodDescriptor),
+    InvokeStatic(
+        Arc<str>,
+        Arc<str>,
+        MethodDescriptor,
+        OnceLock<(Arc<Class>, Arc<Method>)>,
+    ),
     InvokeDynamic(u16, Arc<str>, MethodDescriptor),
     New(Arc<str>),
     NewArray1(FieldType),
@@ -115,8 +124,8 @@ impl Debug for Instruction {
             Self::Return0 => write!(f, "ret0"),
             Self::Return1 => write!(f, "ret1"),
             Self::Return2 => write!(f, "ret2"),
-            Self::GetStatic(class, name, ty) => write!(f, "getstatic {ty} {class}.{name}"),
-            Self::PutStatic(class, name, ty) => write!(f, "putstatic {ty} {class}.{name}"),
+            Self::GetStatic(class, name, ty, _) => write!(f, "getstatic {ty} {class}.{name}"),
+            Self::PutStatic(class, name, ty, _) => write!(f, "putstatic {ty} {class}.{name}"),
             Self::GetField(_, class, name, ty) => write!(f, "getfield {ty} {class}.{name}"),
             Self::PutField(_, class, name, ty) => write!(f, "putfield {ty} {class}.{name}"),
             Self::InvokeVirtual(class, name, ty) => {
@@ -128,7 +137,9 @@ impl Debug for Instruction {
             Self::InvokeSpecial(class, name, ty) => {
                 write!(f, "invokespecial {ty:?} {class}.{name}")
             }
-            Self::InvokeStatic(class, name, ty) => write!(f, "invokestatic {ty:?} {class}.{name}"),
+            Self::InvokeStatic(class, name, ty, _) => {
+                write!(f, "invokestatic {ty:?} {class}.{name}")
+            }
             Self::InvokeDynamic(num, name, ty) => {
                 write!(f, "invokedynamic #{num} {ty:?} {name}")
             }
@@ -860,7 +871,12 @@ pub fn parse_instruction(
                     constants[index as usize - 1]
                 ));
             };
-            Ok(Instruction::GetStatic(class, name, field_type))
+            Ok(Instruction::GetStatic(
+                class,
+                name,
+                field_type,
+                OnceLock::new(),
+            ))
         }
         0xB3 => {
             // set a static field in a class
@@ -879,7 +895,12 @@ pub fn parse_instruction(
                     constants[index as usize - 1]
                 ));
             };
-            Ok(Instruction::PutStatic(class, name, field_type))
+            Ok(Instruction::PutStatic(
+                class,
+                name,
+                field_type,
+                OnceLock::new(),
+            ))
         }
         0xB4 => {
             // getfield
@@ -975,7 +996,12 @@ pub fn parse_instruction(
             else {
                 todo!("Error during InvokeStatic")
             };
-            Ok(Instruction::InvokeStatic(class, name, method_type))
+            Ok(Instruction::InvokeStatic(
+                class,
+                name,
+                method_type,
+                OnceLock::new(),
+            ))
         }
         0xB9 => {
             // invokeinterface
