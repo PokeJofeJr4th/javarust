@@ -520,6 +520,14 @@ pub struct MethodDescriptor {
     pub return_type: Option<FieldType>,
 }
 
+impl MethodDescriptor {
+    pub const EMPTY: Self = Self {
+        parameter_size: 0,
+        parameters: Vec::new(),
+        return_type: None,
+    };
+}
+
 #[macro_export]
 macro_rules! method {
     (($($params:tt),*) -> void) => {{

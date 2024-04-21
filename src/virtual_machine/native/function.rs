@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{
     access,
     class::{
-        code::{NativeMethod, NativeSingleMethod, NativeVoid},
+        code::{NativeMethod, NativeSingleMethod},
         Field, MethodDescriptor, MethodHandle,
     },
     class_loader::{RawClass, RawCode, RawMethod},
@@ -213,30 +213,22 @@ pub(super) fn add_native_methods(
             },
             captures: Vec::new(),
         };
-        RawMethod {
-            name: "<clinit>".into(),
-            access_flags: access!(static native),
-            descriptor: method!(() -> void),
-            code: RawCode::native(NativeVoid(
-                move |thread: &mut Thread, []: [u32; 0], _verbose| {
-                    let identity_lambda = Object {
-                        fields: Vec::new(),
-                        native_fields: vec![Box::new(identity_override.clone())],
-                        class: function_this.clone(),
-                    };
-                    let idx = thread.heap.lock().unwrap().allocate(identity_lambda);
-                    thread
-                        .class_area
-                        .search("java/util/function/Function")
-                        .unwrap()
-                        .static_data
-                        .lock()
-                        .unwrap()[0] = idx;
-                    Ok(Some(()))
-                },
-            )),
-            ..Default::default()
-        }
+        RawMethod::clinit(move |thread: &mut Thread, []: [u32; 0], _verbose| {
+            let identity_lambda = Object {
+                fields: Vec::new(),
+                native_fields: vec![Box::new(identity_override.clone())],
+                class: function_this.clone(),
+            };
+            let idx = thread.heap.lock().unwrap().allocate(identity_lambda);
+            thread
+                .class_area
+                .search("java/util/function/Function")
+                .unwrap()
+                .static_data
+                .lock()
+                .unwrap()[0] = idx;
+            Ok(Some(()))
+        })
     };
     let identity = RawMethod {
         name: "identity".into(),
@@ -516,17 +508,11 @@ pub(super) fn add_native_methods(
     ));
     optional.static_data.push(0);
 
-    let opt_clinit = RawMethod {
-        name: "<clinit>".into(),
-        access_flags: access!(public static native),
-        descriptor: method!(() -> void),
-        code: RawCode::native(NativeVoid(|thread: &mut Thread, []: [u32; 0], verbose| {
-            let optional = thread.class_area.search("java/util/Optional").unwrap();
-            optional.static_data.lock().unwrap()[0] = Optional::make(thread, u32::MAX, verbose);
-            Ok(Some(()))
-        })),
-        ..Default::default()
-    };
+    let opt_clinit = RawMethod::clinit(|thread: &mut Thread, []: [u32; 0], verbose| {
+        let optional = thread.class_area.search("java/util/Optional").unwrap();
+        optional.static_data.lock().unwrap()[0] = Optional::make(thread, u32::MAX, verbose);
+        Ok(Some(()))
+    });
     let opt_empty = RawMethod {
         name: "empty".into(),
         access_flags: access!(public static native),

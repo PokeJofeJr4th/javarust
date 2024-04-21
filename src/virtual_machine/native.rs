@@ -75,7 +75,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     let java_lang_object: Arc<str> = Arc::from("java/lang/Object");
     let java_lang_string: Arc<str> = Arc::from("java/lang/String");
 
-    let object_init = RawMethod {
+    let noop_init = RawMethod {
         access_flags: access!(public native),
         name: "<init>".into(),
         descriptor: method!(() -> void),
@@ -99,18 +99,12 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         )),
         ..Default::default()
     };
-    let object_to_string = RawMethod {
-        access_flags: access!(public native),
-        name: "toString".into(),
-        descriptor: method!(() -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeStringMethod(|_: &mut _, [obj_ref]: [u32; 1], _| {
-            Ok(Some(Arc::from(format!("{obj_ref:0>8X}"))))
-        })),
-        ..Default::default()
-    };
+    let object_to_string = RawMethod::to_string(|_: &mut _, [obj_ref]: [u32; 1], _| {
+        Ok(Some(Arc::from(format!("{obj_ref:0>8X}"))))
+    });
     let object_hash = RawMethod {
         access_flags: access!(public native),
-        name: "getHashCode".into(),
+        name: "hashCode".into(),
         descriptor: method!(() -> int),
         code: RawCode::native(NativeSingleMethod(|_: &mut _, [ptr]: [u32; 1], _| {
             let mut hasher = DefaultHasher::new();
@@ -127,7 +121,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         java_lang_object.clone(),
     );
     object.register_methods(
-        [object_init, object_to_string, object_hash, object_get_class],
+        [noop_init, object_to_string, object_hash, object_get_class],
         method_area,
     );
 

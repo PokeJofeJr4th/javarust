@@ -6,13 +6,12 @@ use std::{
 use crate::{
     access,
     class::{
-        code::{ByteCode, NativeMethod, NativeReturn, NativeStringMethod, NativeTodo},
+        code::{ByteCode, NativeMethod, NativeStringMethod, NativeTodo, NativeVoid},
         AccessFlags, Attribute, BootstrapMethod, Class, ClassVersion, Code, Constant, Field,
         FieldType, InnerClass, Method, MethodDescriptor,
     },
     data::{SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
     method,
-    virtual_machine::Thread,
 };
 
 use super::parse_code_attribute;
@@ -218,9 +217,10 @@ pub struct RawMethod {
 }
 
 impl RawMethod {
-    pub fn to_string<const ARGS: usize>(
-        s: impl Fn(&mut Thread, [u32; ARGS], bool) -> NativeReturn<Arc<str>> + Send + Sync + 'static,
-    ) -> Self {
+    pub fn to_string<T, const ARGS: usize>(s: T) -> Self
+    where
+        NativeStringMethod<T, ARGS>: NativeMethod,
+    {
         static TO_STRING: OnceLock<Arc<str>> = OnceLock::new();
         static DESCRIPTOR: OnceLock<MethodDescriptor> = OnceLock::new();
         Self {
@@ -230,6 +230,34 @@ impl RawMethod {
                 .get_or_init(|| method!(() -> Object("java/lang/String".into())))
                 .clone(),
             code: RawCode::native(NativeStringMethod(s)),
+            ..Default::default()
+        }
+    }
+
+    pub fn init<T, const ARGS: usize>(v: T) -> Self
+    where
+        NativeVoid<T, ARGS>: NativeMethod,
+    {
+        static INIT: OnceLock<Arc<str>> = OnceLock::new();
+        Self {
+            access_flags: access!(public native),
+            name: INIT.get_or_init(|| "<init>".into()).clone(),
+            descriptor: MethodDescriptor::EMPTY,
+            code: RawCode::native(NativeVoid(v)),
+            ..Default::default()
+        }
+    }
+
+    pub fn clinit<T, const ARGS: usize>(v: T) -> Self
+    where
+        NativeVoid<T, ARGS>: NativeMethod,
+    {
+        static CLINIT: OnceLock<Arc<str>> = OnceLock::new();
+        Self {
+            access_flags: access!(public static native),
+            name: CLINIT.get_or_init(|| "<clinit>".into()).clone(),
+            descriptor: MethodDescriptor::EMPTY,
+            code: RawCode::native(NativeVoid(v)),
             ..Default::default()
         }
     }
