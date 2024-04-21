@@ -3,9 +3,7 @@ use std::sync::Arc;
 use crate::{
     access,
     class::{
-        code::{
-            native_property, NativeDoubleMethod, NativeSingleMethod, NativeStringMethod, NativeVoid,
-        },
+        code::{native_property, NativeDoubleMethod, NativeSingleMethod, NativeVoid},
         Field,
     },
     class_loader::{RawClass, RawCode, RawMethod},
@@ -363,79 +361,69 @@ pub fn add_native_collections(
         ..Default::default()
     };
     let java_lang_string = java_lang_string.clone();
-    let arrlist_to_string = RawMethod {
-        access_flags: access!(public native),
-        name: "toString".into(),
-        descriptor: method!(() -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeStringMethod(
-            move |thread: &mut Thread, [this, builder, index, length]: [u32; 4], verbose: bool| {
-                let pc = thread.pc_register;
-                thread.pc_register += 1;
-                match pc {
-                    0 => {
-                        let builder = StringBuilder::new("[".to_string(), &thread.class_area);
-                        let builder_ref = thread.heap.lock().unwrap().allocate(builder);
-                        thread.rember_temp(builder_ref, verbose);
-                        let length = ArrayListObj::inspect(&thread.heap, this as usize, |vec| {
-                            vec.len() as u32
-                        })?;
-                        thread.stackframe.locals[1] = builder_ref;
-                        thread.stackframe.locals[2] = 0;
-                        thread.stackframe.locals[3] = length;
-                        Ok(None)
-                    }
-                    1 => {
-                        let next_obj = ArrayListObj::inspect(&thread.heap, this as usize, |vec| {
-                            vec[index as usize]
-                        })?;
-                        let (resolved_class, resolved_method) =
-                            AnyObj.inspect(&thread.heap, next_obj as usize, |obj| {
-                                obj.resolve_method(
-                                    &thread.method_area,
-                                    &thread.class_area,
-                                    "toString",
-                                    &method!(() -> Object(java_lang_string.clone())),
-                                    verbose,
-                                )
-                            })?;
-                        thread.stackframe.operand_stack.push(2);
-                        thread.invoke_method(resolved_method, resolved_class);
-                        thread.stackframe.locals[0] = next_obj;
-                        Ok(None)
-                    }
-                    2 => {
-                        let str_ptr = thread.stackframe.operand_stack.pop().unwrap();
-                        let string =
-                            StringObj::inspect(&thread.heap, str_ptr as usize, |arc| arc.clone())?;
-                        StringBuilder::inspect(&thread.heap, builder as usize, |str| {
-                            if index == 0 {
-                                str.push_str(&string);
-                            } else {
-                                str.push_str(&format!(", {string}"));
-                            }
-                        })?;
-                        thread.stackframe.locals[2] += 1;
-                        if thread.stackframe.locals[2] >= length {
-                            let str = StringBuilder::inspect(
-                                &thread.heap,
-                                builder as usize,
-                                |builder| {
-                                    builder.push(']');
-                                    Arc::<str>::from(&**builder)
-                                },
-                            )?;
-                            Ok(Some(str))
-                        } else {
-                            thread.pc_register = 1;
-                            Ok(None)
-                        }
-                    }
-                    _ => Err("Impossible PC reached".to_string().into()),
+    let arrlist_to_string = RawMethod::to_string(
+        move |thread: &mut Thread, [this, builder, index, length]: [u32; 4], verbose: bool| {
+            let pc = thread.pc_register;
+            thread.pc_register += 1;
+            match pc {
+                0 => {
+                    let builder = StringBuilder::new("[".to_string(), &thread.class_area);
+                    let builder_ref = thread.heap.lock().unwrap().allocate(builder);
+                    thread.rember_temp(builder_ref, verbose);
+                    let length =
+                        ArrayListObj::inspect(&thread.heap, this as usize, |vec| vec.len() as u32)?;
+                    thread.stackframe.locals[1] = builder_ref;
+                    thread.stackframe.locals[2] = 0;
+                    thread.stackframe.locals[3] = length;
+                    Ok(None)
                 }
-            },
-        )),
-        ..Default::default()
-    };
+                1 => {
+                    let next_obj = ArrayListObj::inspect(&thread.heap, this as usize, |vec| {
+                        vec[index as usize]
+                    })?;
+                    let (resolved_class, resolved_method) =
+                        AnyObj.inspect(&thread.heap, next_obj as usize, |obj| {
+                            obj.resolve_method(
+                                &thread.method_area,
+                                &thread.class_area,
+                                "toString",
+                                &method!(() -> Object(java_lang_string.clone())),
+                                verbose,
+                            )
+                        })?;
+                    thread.stackframe.operand_stack.push(2);
+                    thread.invoke_method(resolved_method, resolved_class);
+                    thread.stackframe.locals[0] = next_obj;
+                    Ok(None)
+                }
+                2 => {
+                    let str_ptr = thread.stackframe.operand_stack.pop().unwrap();
+                    let string =
+                        StringObj::inspect(&thread.heap, str_ptr as usize, |arc| arc.clone())?;
+                    StringBuilder::inspect(&thread.heap, builder as usize, |str| {
+                        if index == 0 {
+                            str.push_str(&string);
+                        } else {
+                            str.push_str(&format!(", {string}"));
+                        }
+                    })?;
+                    thread.stackframe.locals[2] += 1;
+                    if thread.stackframe.locals[2] >= length {
+                        let str =
+                            StringBuilder::inspect(&thread.heap, builder as usize, |builder| {
+                                builder.push(']');
+                                Arc::<str>::from(&**builder)
+                            })?;
+                        Ok(Some(str))
+                    } else {
+                        thread.pc_register = 1;
+                        Ok(None)
+                    }
+                }
+                _ => Err("Impossible PC reached".to_string().into()),
+            }
+        },
+    );
 
     let mut array_stream = RawClass::new(
         access!(public native),

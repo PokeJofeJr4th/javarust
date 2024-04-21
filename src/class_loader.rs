@@ -451,7 +451,7 @@ pub fn load_class(
 
     let (nest_host, attributes) = single_attribute(attributes, "NestHost")?;
 
-    let nest_host = match nest_host {
+    let _nest_host = match nest_host {
         Some(vec) => {
             let idx = get_u16(&mut vec.into_iter())?;
             let class = class_index(&constants, idx as usize)?;

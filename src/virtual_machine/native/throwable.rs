@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     access,
-    class::{
-        code::{NativeNoop, NativeStringMethod},
-        Field, FieldType,
-    },
+    class::{code::NativeNoop, Field, FieldType},
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
     method,
@@ -18,6 +15,14 @@ pub fn add_native_methods(
     method_area: &mut WorkingMethodArea,
     class_area: &mut WorkingClassArea,
 ) {
+    let noop_init = RawMethod {
+        access_flags: access!(public native),
+        name: "<init>".into(),
+        descriptor: method!(() -> void),
+        code: RawCode::native(NativeNoop),
+        ..Default::default()
+    };
+
     let mut throwable = RawClass::new(
         access!(public native),
         "java/lang/Throwable".into(),
@@ -44,15 +49,7 @@ pub fn add_native_methods(
         ),
     ]);
 
-    let throwable_init = RawMethod {
-        access_flags: access!(public native),
-        name: "<init>".into(),
-        descriptor: method!(() -> void),
-        code: RawCode::native(NativeNoop),
-        ..Default::default()
-    };
-
-    throwable.register_method(throwable_init, method_area);
+    throwable.register_method(noop_init.clone(), method_area);
 
     let mut exception = RawClass::new(
         access!(public native),
@@ -60,15 +57,7 @@ pub fn add_native_methods(
         throwable.this.clone(),
     );
 
-    let exception_init = RawMethod {
-        access_flags: access!(public native),
-        name: "<init>".into(),
-        descriptor: method!(() -> void),
-        code: RawCode::native(NativeNoop),
-        ..Default::default()
-    };
-
-    exception.register_method(exception_init, method_area);
+    exception.register_method(noop_init.clone(), method_area);
 
     let mut runtime_exception = RawClass::new(
         access!(public native),
@@ -76,51 +65,38 @@ pub fn add_native_methods(
         exception.this.clone(),
     );
 
-    let runtime_exception_init = RawMethod {
-        access_flags: access!(public native),
-        name: "<init>".into(),
-        descriptor: method!(() -> void),
-        code: RawCode::native(NativeNoop),
-        ..Default::default()
-    };
-
-    runtime_exception.register_method(runtime_exception_init, method_area);
+    runtime_exception.register_method(noop_init.clone(), method_area);
 
     let mut illegal_argument_exception = RawClass::new(
         access!(public native),
         "java/lang/IllegalArgumentException".into(),
         runtime_exception.this.clone(),
     );
-
-    let illegal_argument_exception_init = RawMethod {
-        access_flags: access!(public native),
-        name: "<init>".into(),
-        descriptor: method!(() -> void),
-        code: RawCode::native(NativeNoop),
-        ..Default::default()
-    };
-    let illegal_argument_exception_to_string = RawMethod {
-        access_flags: access!(public native),
-        name: "toString".into(),
-        descriptor: method!(() -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeStringMethod(|_: &mut _, _: [_; 0], _| {
-            Ok(Some("java.lang.IllegalArgumentException".into()))
-        })),
-        ..Default::default()
-    };
+    let illegal_argument_exception_to_string = RawMethod::to_string(|_: &mut _, _: [_; 0], _| {
+        Ok(Some("java.lang.IllegalArgumentException".into()))
+    });
 
     illegal_argument_exception.register_methods(
-        [
-            illegal_argument_exception_init,
-            illegal_argument_exception_to_string,
-        ],
+        [noop_init.clone(), illegal_argument_exception_to_string],
         method_area,
     );
+
+    let mut arithmetic_exception = RawClass::new(
+        access!(public native),
+        "java/lang/ArithmeticException".into(),
+        runtime_exception.this.clone(),
+    );
+
+    let arith_to_string = RawMethod::to_string(|_: &mut _, _: [_; 0], _| {
+        Ok(Some("java.lang.ArithmeticException".into()))
+    });
+    arithmetic_exception.register_methods([arith_to_string, noop_init], method_area);
 
     class_area.extend([
         throwable,
         exception,
         runtime_exception,
         illegal_argument_exception,
+        arithmetic_exception,
     ]);
 }

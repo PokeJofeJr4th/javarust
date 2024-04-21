@@ -222,6 +222,9 @@ impl Thread {
                 let rhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 let lhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 // TODO: Check for zero division
+                if rhs == 0 {
+                    todo!("throw new ArithmeticException");
+                }
                 let result = lhs / rhs;
                 self.stackframe.operand_stack.pushd(result);
             }
@@ -232,6 +235,16 @@ impl Thread {
                 let rhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 let lhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 // TODO: Check for zero division
+                if rhs == 0 {
+                    let exception = Object::from_class(
+                        &self
+                            .class_area
+                            .search("java/lang/ArithmeticException")
+                            .unwrap(),
+                    );
+                    self.throw_obj(exception, verbose)?;
+                    return Ok(());
+                }
                 let result = lhs / rhs;
                 self.stackframe.operand_stack.pushd(result);
             }
@@ -257,6 +270,9 @@ impl Thread {
                 let rhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 let lhs = self.stackframe.operand_stack.popd::<i32>().unwrap();
                 // TODO: Check for zero division
+                if rhs == 0 {
+                    todo!("throw new ArithmeticException");
+                }
                 let result = lhs % rhs;
                 self.stackframe.operand_stack.pushd(result);
             }
@@ -267,6 +283,9 @@ impl Thread {
                 let rhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 let lhs = self.stackframe.operand_stack.popd::<i64>().unwrap();
                 // TODO: Check for zero division
+                if rhs == 0 {
+                    todo!("throw new ArithmeticException");
+                }
                 let result = lhs % rhs;
                 self.stackframe.operand_stack.pushd(result);
             }
@@ -412,10 +431,9 @@ impl Thread {
             }
             Instruction::IInc(index, inc) => {
                 // iinc
-                // TODO: is this correct??
                 // int increment
-                let start = self.stackframe.locals[index] as i32;
-                self.stackframe.locals[index] = start.wrapping_add(inc) as u32;
+                self.stackframe.locals[index] =
+                    (self.stackframe.locals[index] as i32).wrapping_add(inc) as u32;
             }
             Instruction::Convert(Type::Int, Type::Long) => {
                 // i2l
@@ -1119,6 +1137,11 @@ impl Thread {
         self.stack
             .push(core::mem::replace(&mut self.stackframe, stackframe));
         self.pc_register = 0;
+    }
+
+    fn throw_obj(&mut self, exception: Object, verbose: bool) -> Result<(), String> {
+        let idx = self.heap.lock().unwrap().allocate(exception);
+        self.throw(idx, verbose)
     }
 
     fn throw(&mut self, exception_ptr: u32, verbose: bool) -> Result<(), String> {

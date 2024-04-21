@@ -3,10 +3,7 @@ use std::{fmt::Display, sync::Arc};
 use crate::{
     access,
     class::{
-        code::{
-            native_property, NativeDoubleMethod, NativeSingleMethod, NativeStringMethod,
-            NativeTodo, NativeVoid,
-        },
+        code::{native_property, NativeDoubleMethod, NativeSingleMethod, NativeTodo, NativeVoid},
         AccessFlags, Field, FieldType, MethodDescriptor,
     },
     class_loader::{RawClass, RawCode, RawMethod},
@@ -174,28 +171,17 @@ fn make_primitive_class<T: Stackable<u32> + Display + 'static>(
         )),
         ..Default::default()
     };
-    let to_string = RawMethod {
-        access_flags: access!(public native),
-        name: "toString".into(),
-        descriptor: method!(() -> Object("java/lang/String".into())),
-        code: RawCode::native(NativeStringMethod(
-            move |thread: &mut Thread, [this]: [u32; 1], _verbose| {
-                AnyObj
-                    .inspect(&thread.heap, this as usize, |o| {
-                        format!(
-                            "{}",
-                            from_parameter(
-                                o.fields[0],
-                                o.fields.get(1).copied().unwrap_or_default()
-                            )
-                        )
-                        .into()
-                    })
-                    .map(Option::Some)
-            },
-        )),
-        ..Default::default()
-    };
+    let to_string = RawMethod::to_string(move |thread: &mut Thread, [this]: [u32; 1], _verbose| {
+        AnyObj
+            .inspect(&thread.heap, this as usize, |o| {
+                format!(
+                    "{}",
+                    from_parameter(o.fields[0], o.fields.get(1).copied().unwrap_or_default())
+                )
+                .into()
+            })
+            .map(Option::Some)
+    });
     let primitive_value = RawMethod {
         access_flags: access!(public native),
         name: format!("{primitive_name}Value").into(),

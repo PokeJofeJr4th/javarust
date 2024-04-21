@@ -11,9 +11,9 @@ use crate::{
     class::{
         code::{
             native_property, NativeDoubleMethod, NativeNoop, NativeSingleMethod,
-            NativeStringMethod, NativeTodo, NativeVoid,
+            NativeStringMethod, NativeVoid,
         },
-        Class, Field, FieldType, MethodDescriptor,
+        Class, Field, FieldType,
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
@@ -326,13 +326,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         code: RawCode::native(NativeVoid(string_builder::set_char_at)),
         ..Default::default()
     };
-    let to_string = RawMethod {
-        access_flags: access!(public native),
-        name: "toString".into(),
-        descriptor: method!(() -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeStringMethod(string_builder::to_string)),
-        ..Default::default()
-    };
+    let to_string = RawMethod::to_string(string_builder::to_string);
     let mut string_builder = RawClass::new(
         access!(public native),
         "java/lang/StringBuilder".into(),
@@ -546,31 +540,6 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     };
     system.register_method(arraycopy, method_area);
 
-    let make_concat_with_constants = RawMethod {
-        access_flags: access!(public static native),
-        name: "makeConcatWithConstants".into(),
-        descriptor: MethodDescriptor {
-            parameter_size: 5,
-            parameters: vec![
-                FieldType::Object("java/lang/invoke/MethodHandles$Lookup".into()),
-                FieldType::Object(java_lang_string.clone()),
-                FieldType::Object("java/lang/invoke/MethodType".into()),
-                FieldType::Object(java_lang_string.clone()),
-                FieldType::Array(Box::new(FieldType::Object("java/lang/Object".into()))),
-            ],
-            return_type: Some(FieldType::Object("java/lang/invoke/CallSite".into())),
-        },
-        code: RawCode::native(NativeTodo),
-        ..Default::default()
-    };
-
-    let mut string_concat_factory = RawClass::new(
-        access!(public native),
-        "java/lang/invoke/StringConcatFactory".into(),
-        java_lang_object.clone(),
-    );
-    string_concat_factory.register_method(make_concat_with_constants, method_area);
-
     let sqrt_double = RawMethod {
         access_flags: access!(public static native),
         name: "sqrt".into(),
@@ -630,7 +599,6 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         random,
         system,
         printstream,
-        string_concat_factory,
         math,
     ]);
     drop((java_lang_object, java_lang_string));

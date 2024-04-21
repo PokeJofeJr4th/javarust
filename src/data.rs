@@ -5,6 +5,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use itertools::Itertools;
+
 use crate::{
     class::{Class, FieldType, Method, MethodDescriptor},
     class_loader::{RawClass, RawMethod},
@@ -362,14 +364,20 @@ fn hash_method(class: &str, name: &str, signature: &MethodDescriptor) -> MethodH
     MethodHash(state.finish())
 }
 
-fn custom_hash(class: &str, name: &str, signature: &MethodDescriptor) -> MethodHash {
+fn _u64_bytes(i: impl Iterator<Item = u8>) -> impl Iterator<Item = u64> {
+    i.tuples()
+        .map(|tup @ (_, _, _, _, _, _, _, _)| u64::from_ne_bytes(<[u8; 8]>::from(tup)))
+}
+
+fn _hash_method(class: &str, name: &str, signature: &MethodDescriptor) -> MethodHash {
     let mut state: u64 = 0xCAFE_BABE;
-    for c in class.bytes().rev().take(5) {
-        state = state.rotate_left(17) ^ c as u64;
+    for val in _u64_bytes(class.bytes()) {
+        state = state.rotate_left(17) ^ val;
     }
-    for c in name.bytes().rev().take(5) {
-        state = state.rotate_left(15) ^ c as u64;
+    for val in _u64_bytes(name.bytes()) {
+        state = state.rotate_left(15) ^ val;
     }
+
     for p in signature.parameters.iter().chain(&signature.return_type) {
         state = state.rotate_left(9) ^ p.idx();
         match p {
@@ -377,8 +385,8 @@ fn custom_hash(class: &str, name: &str, signature: &MethodDescriptor) -> MethodH
                 state = state.rotate_left(11) ^ arr.idx();
             }
             FieldType::Object(obj) => {
-                for c in obj.bytes().rev().take(5) {
-                    state = state.rotate_right(19) ^ c as u64;
+                for val in _u64_bytes(obj.bytes()) {
+                    state = state.rotate_right(19) ^ val;
                 }
             }
             _ => {}

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{
     access,
     class::{
-        code::{NativeMethod, NativeSingleMethod, NativeStringMethod, NativeVoid},
+        code::{NativeMethod, NativeSingleMethod, NativeVoid},
         Field, MethodDescriptor, MethodHandle,
     },
     class_loader::{RawClass, RawCode, RawMethod},
@@ -734,12 +734,9 @@ pub(super) fn add_native_methods(
     // TODO: orElseThrow
     // TODO: stream
     let to_string_descriptor = method!(() -> Object(java_lang_string.clone()));
-    let opt_to_string = RawMethod {
-        name: "toString".into(),
-        access_flags: access!(public native),
-        descriptor: method!(() -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeStringMethod(
-            move |thread: &mut Thread, [this]: [u32; 1], verbose| match thread.pc_register {
+    let opt_to_string =
+        RawMethod::to_string(move |thread: &mut Thread, [this]: [u32; 1], verbose| {
+            match thread.pc_register {
                 0 => {
                     let value = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
                     if value == u32::MAX {
@@ -763,10 +760,8 @@ pub(super) fn add_native_methods(
                     |s| Some(format!("Some({s})").into()),
                 ),
                 _ => unreachable!(),
-            },
-        )),
-        ..Default::default()
-    };
+            }
+        });
     optional.register_methods(
         [
             opt_empty,

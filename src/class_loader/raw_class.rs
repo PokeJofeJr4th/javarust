@@ -1,15 +1,18 @@
 use std::{
     fmt::Debug,
-    sync::{Arc, Mutex, Once},
+    sync::{Arc, Mutex, Once, OnceLock},
 };
 
 use crate::{
+    access,
     class::{
-        code::{ByteCode, NativeMethod, NativeTodo},
+        code::{ByteCode, NativeMethod, NativeReturn, NativeStringMethod, NativeTodo},
         AccessFlags, Attribute, BootstrapMethod, Class, ClassVersion, Code, Constant, Field,
         FieldType, InnerClass, Method, MethodDescriptor,
     },
     data::{SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
+    method,
+    virtual_machine::Thread,
 };
 
 use super::parse_code_attribute;
@@ -215,6 +218,22 @@ pub struct RawMethod {
 }
 
 impl RawMethod {
+    pub fn to_string<const ARGS: usize>(
+        s: impl Fn(&mut Thread, [u32; ARGS], bool) -> NativeReturn<Arc<str>> + Send + Sync + 'static,
+    ) -> Self {
+        static TO_STRING: OnceLock<Arc<str>> = OnceLock::new();
+        static DESCRIPTOR: OnceLock<MethodDescriptor> = OnceLock::new();
+        Self {
+            access_flags: access!(public native),
+            name: TO_STRING.get_or_init(|| "toString".into()).clone(),
+            descriptor: DESCRIPTOR
+                .get_or_init(|| method!(() -> Object("java/lang/String".into())))
+                .clone(),
+            code: RawCode::native(NativeStringMethod(s)),
+            ..Default::default()
+        }
+    }
+
     #[must_use]
     pub fn name(&self, class: Arc<str>) -> MethodName {
         MethodName {
