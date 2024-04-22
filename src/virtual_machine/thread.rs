@@ -775,7 +775,58 @@ impl Thread {
                     self.rember(rember, verbose);
                 }
             }
-            Instruction::InvokeVirtual(_class, name, method_type)
+            Instruction::InvokeVirtual(Some(idx), _class, _name, method_type) => {
+                let arg_count = method_type.parameter_size;
+                let obj_pointer = *self
+                    .stackframe
+                    .operand_stack
+                    .iter()
+                    .rev()
+                    .nth(arg_count)
+                    .unwrap();
+                let this_class =
+                    AnyObj.inspect(&self.heap, obj_pointer as usize, |o| o.class.clone())?;
+                let this_class = self.class_area.search(&this_class).expect(&this_class);
+                let entry = &this_class.vtable[idx];
+                let (resolved_class, resolved_method) = entry
+                    .value
+                    .get_or_init(|| {
+                        self.method_area
+                            .search(&entry.name.class, &entry.name.name, &entry.name.descriptor)
+                            .unwrap()
+                    })
+                    .clone();
+                let args_start = self.stackframe.operand_stack.len() - arg_count - 1;
+                if verbose {
+                    println!(
+                        "Args Start: {args_start}\nStack: {:?}",
+                        self.stackframe.operand_stack
+                    );
+                }
+                let stack = &mut self.stackframe.operand_stack;
+                let mut stack_iter = core::mem::take(stack).into_iter();
+                stack.extend((&mut stack_iter).take(args_start));
+                stack.push(self.pc_register as u32);
+
+                if verbose {
+                    println!(
+                        "Invoking Method {} on {}",
+                        resolved_method.name, resolved_class.this
+                    );
+                }
+                self.invoke_method(resolved_method, resolved_class);
+
+                for (index, value) in stack_iter.enumerate() {
+                    if verbose {
+                        println!("new_locals[{index}]={value}");
+                    }
+                    self.stackframe.locals[index] = value;
+                }
+                if verbose {
+                    println!("new locals: {:?}", self.stackframe.locals);
+                }
+            }
+            Instruction::InvokeVirtual(None, _class, name, method_type)
             | Instruction::InvokeInterface(_class, name, method_type) => {
                 // invokevirtual
                 // invoke a method virtually I guess

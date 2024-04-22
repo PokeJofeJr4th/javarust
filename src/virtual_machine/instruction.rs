@@ -53,7 +53,7 @@ pub enum Instruction {
     PutStatic(Arc<str>, Arc<str>, FieldType, Arc<OnceLock<usize>>),
     GetField(Option<usize>, Arc<str>, Arc<str>, FieldType),
     PutField(Option<usize>, Arc<str>, Arc<str>, FieldType),
-    InvokeVirtual(Arc<str>, Arc<str>, MethodDescriptor),
+    InvokeVirtual(Option<usize>, Arc<str>, Arc<str>, MethodDescriptor),
     InvokeInterface(Arc<str>, Arc<str>, MethodDescriptor),
     InvokeSpecial(Arc<str>, Arc<str>, MethodDescriptor),
     InvokeStatic(
@@ -128,7 +128,7 @@ impl Debug for Instruction {
             Self::PutStatic(class, name, ty, _) => write!(f, "putstatic {ty} {class}.{name}"),
             Self::GetField(_, class, name, ty) => write!(f, "getfield {ty} {class}.{name}"),
             Self::PutField(_, class, name, ty) => write!(f, "putfield {ty} {class}.{name}"),
-            Self::InvokeVirtual(class, name, ty) => {
+            Self::InvokeVirtual(_, class, name, ty) => {
                 write!(f, "invokevirtual {ty:?} {class}.{name}")
             }
             Self::InvokeInterface(class, name, ty) => {
@@ -257,6 +257,18 @@ pub fn hydrate_code(
                 Instruction::PutField(None, class, field, ty) => {
                     let idx = concrete_field(class_area, &class, &field, &ty)?;
                     Instruction::PutField(Some(idx), class, field, ty)
+                }
+                Instruction::InvokeVirtual(None, a, b, c) => {
+                    let class_ref = class_area.search(&a).expect(&a);
+                    Instruction::InvokeVirtual(
+                        class_ref
+                            .vtable
+                            .iter()
+                            .position(|entry| entry.name.name == b && entry.name.descriptor == c),
+                        a,
+                        b,
+                        c,
+                    )
                 }
                 other => other,
             })
@@ -961,7 +973,7 @@ pub fn parse_instruction(
                 return Err(String::from("Error during InvokeVirtual"));
             };
 
-            Ok(Instruction::InvokeVirtual(class, name, method_type))
+            Ok(Instruction::InvokeVirtual(None, class, name, method_type))
         }
         0xB7 => {
             // invokespecial

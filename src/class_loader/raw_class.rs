@@ -8,7 +8,7 @@ use crate::{
     class::{
         code::{ByteCode, NativeMethod, NativeStringMethod, NativeTodo, NativeVoid},
         AccessFlags, Attribute, BootstrapMethod, Class, ClassVersion, Code, Constant, Field,
-        FieldType, InnerClass, Method, MethodDescriptor,
+        FieldType, InnerClass, Method, MethodDescriptor, VTableEntry,
     },
     data::{SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
     method,
@@ -54,8 +54,10 @@ impl RawClass {
         let mut fields = self.fields.clone();
         let mut field_size = self.field_size;
         let mut class = self.super_class.clone();
+        let mut supers = vec![self];
         while &*class != "java/lang/Object" {
             let class_ref = class_area.search(&class).expect(&class);
+            supers.push(class_ref);
             for method in &class_ref.methods {
                 if !methods
                     .iter()
@@ -70,6 +72,13 @@ impl RawClass {
             }
             class = class_ref.super_class.clone();
         }
+        if &*self.this != "java/lang/Object" {
+            supers.push(
+                class_area
+                    .search("java/lang/Object")
+                    .expect("java/lang/Object"),
+            );
+        }
         let initial_fields = self
             .fields
             .iter()
@@ -78,6 +87,21 @@ impl RawClass {
                 other => std::iter::repeat(0).take(other.get_size()),
             })
             .collect::<Vec<_>>();
+        let mut vtable: Vec<VTableEntry> = Vec::new();
+        // start at the highest level
+        for super_class in supers.into_iter().rev() {
+            for method in &super_class.methods {
+                match vtable.iter().position(|entry: &_| {
+                    entry.name.name == method.name && entry.name.descriptor == method.descriptor
+                }) {
+                    Some(i) => vtable[i].name = method.clone(),
+                    None => vtable.push(VTableEntry {
+                        name: method.clone(),
+                        value: OnceLock::new(),
+                    }),
+                }
+            }
+        }
         // get methods through superclasses
         Class {
             initialized: Once::new(),
@@ -92,7 +116,7 @@ impl RawClass {
             initial_fields,
             static_data: Mutex::new(self.static_data.clone()),
             statics: self.statics.clone(),
-            methods,
+            vtable,
             bootstrap_methods: self.bootstrap_methods.clone(),
             source_file: self.source_file.clone(),
             signature: self.signature.clone(),

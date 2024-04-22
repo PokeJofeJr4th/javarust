@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::ops::{BitAnd, BitOr};
-use std::sync::{Arc, Mutex, Once};
+use std::sync::{Arc, Mutex, Once, OnceLock};
 
 use crate::access;
 use crate::class_loader::MethodName;
@@ -11,6 +11,12 @@ pub use self::code::Code;
 use self::code::NativeTodo;
 
 pub mod code;
+
+#[derive(Debug)]
+pub struct VTableEntry {
+    pub name: MethodName,
+    pub value: OnceLock<(Arc<Class>, Arc<Method>)>,
+}
 
 pub struct Class {
     /// tracks if the <clinit> function has been run
@@ -36,8 +42,8 @@ pub struct Class {
     pub static_data: Mutex<Vec<u32>>,
     /// static field descriptors
     pub statics: Vec<(Field, usize)>,
-    /// names of all methods
-    pub methods: Vec<MethodName>,
+    /// content of all methods in the class
+    pub vtable: Vec<VTableEntry>,
     pub bootstrap_methods: Vec<BootstrapMethod>,
     pub source_file: Option<Arc<str>>,
     /// signature including generics
@@ -61,7 +67,7 @@ impl Default for Class {
             initial_fields: Vec::new(),
             static_data: Mutex::new(Vec::new()),
             statics: Vec::new(),
-            methods: Vec::new(),
+            vtable: Vec::new(),
             bootstrap_methods: Vec::new(),
             source_file: None,
             signature: None,
@@ -91,7 +97,7 @@ impl Debug for Class {
             .field("fields", &self.fields)
             .field("static_data", &self.static_data.lock().unwrap())
             .field("statics", &self.statics)
-            .field("methods", &self.methods)
+            .field("vtable", &self.vtable)
             .field("bootstrap_methods", &self.bootstrap_methods);
         if !self.inner_classes.is_empty() {
             s.field("inner_classes", &self.inner_classes);
