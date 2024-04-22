@@ -38,7 +38,9 @@ struct Args {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    println!("{args:?}");
+    if args.verbose {
+        println!("{args:?}");
+    }
     let mut firstclass = None;
     let (mut method_area, mut class_area) = class_loader::load_environment();
     let mut filenames = args.filenames;

@@ -100,7 +100,7 @@ impl Thread {
                 self.stackframe.operand_stack.pop();
             }
             Instruction::Dup => {
-                stack!(self.stackframe.operand_stack => [a] => [a,a]);
+                stack!(self.stackframe.operand_stack => [a] => [a, a]);
             }
             Instruction::Dupx1 => {
                 stack!(self.stackframe.operand_stack => [x, y] => [y, x, y]);
@@ -923,19 +923,17 @@ impl Thread {
                     verbose,
                 )?;
             }
-            Instruction::New(class) => {
+            Instruction::New(class, class_lock) => {
                 // make a new object instance
-                let Some(class) = self.class_area.search(&class) else {
-                    return Err(error::Error::class_resolution(&class));
-                };
-                if self.maybe_initialize_class(&class) {
+                let class = class_lock.get_or_init(|| self.class_area.search(&class).unwrap());
+                if self.maybe_initialize_class(class) {
                     return Ok(());
                 }
                 let objectref = self
                     .heap
                     .lock()
                     .unwrap()
-                    .allocate(Object::from_class(&class));
+                    .allocate(Object::from_class(class));
                 self.stackframe.operand_stack.push(objectref);
                 self.rember_temp(objectref, verbose);
             }
@@ -1034,13 +1032,11 @@ impl Thread {
             Instruction::CheckedCast(ty) => {
                 let objref = *self.stackframe.operand_stack.last().unwrap();
                 if objref != NULL {
-                    // get the fields of the given class; if it works, we have a subclass
-                    let class_name = &self.class_area.search(&ty).unwrap().this;
                     let obj_works = AnyObj
                         .inspect(&self.heap, objref as usize, |o| {
-                            o.isinstance(&self.class_area, class_name, verbose)
+                            o.isinstance(&self.class_area, &ty, verbose)
                         })
-                        .is_ok();
+                        .is_ok_and(|x| x);
                     if !obj_works {
                         let obj_type =
                             AnyObj.inspect(&self.heap, objref as usize, |o| o.this_class())?;

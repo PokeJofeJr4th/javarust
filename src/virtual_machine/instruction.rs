@@ -49,8 +49,8 @@ pub enum Instruction {
     Return0,
     Return1,
     Return2,
-    GetStatic(Arc<str>, Arc<str>, FieldType, OnceLock<usize>),
-    PutStatic(Arc<str>, Arc<str>, FieldType, OnceLock<usize>),
+    GetStatic(Arc<str>, Arc<str>, FieldType, Arc<OnceLock<usize>>),
+    PutStatic(Arc<str>, Arc<str>, FieldType, Arc<OnceLock<usize>>),
     GetField(Option<usize>, Arc<str>, Arc<str>, FieldType),
     PutField(Option<usize>, Arc<str>, Arc<str>, FieldType),
     InvokeVirtual(Arc<str>, Arc<str>, MethodDescriptor),
@@ -60,10 +60,10 @@ pub enum Instruction {
         Arc<str>,
         Arc<str>,
         MethodDescriptor,
-        OnceLock<(Arc<Class>, Arc<Method>)>,
+        Arc<OnceLock<(Arc<Class>, Arc<Method>)>>,
     ),
     InvokeDynamic(u16, Arc<str>, MethodDescriptor),
-    New(Arc<str>),
+    New(Arc<str>, Arc<OnceLock<Arc<Class>>>),
     NewArray1(FieldType),
     NewArray2(FieldType),
     NewMultiArray(u8, FieldType),
@@ -143,7 +143,7 @@ impl Debug for Instruction {
             Self::InvokeDynamic(num, name, ty) => {
                 write!(f, "invokedynamic #{num} {ty:?} {name}")
             }
-            Self::New(ty) => write!(f, "new {ty}"),
+            Self::New(ty, _) => write!(f, "new {ty}"),
             Self::NewArray1(ty) | Self::NewArray2(ty) => write!(f, "newarray {ty}"),
             Self::NewMultiArray(b, c) => write!(f, "multinewarray[{b}] {c}"),
             Self::ArrayLength => write!(f, "arraylength"),
@@ -875,7 +875,7 @@ pub fn parse_instruction(
                 class,
                 name,
                 field_type,
-                OnceLock::new(),
+                Arc::new(OnceLock::new()),
             ))
         }
         0xB3 => {
@@ -899,7 +899,7 @@ pub fn parse_instruction(
                 class,
                 name,
                 field_type,
-                OnceLock::new(),
+                Arc::new(OnceLock::new()),
             ))
         }
         0xB4 => {
@@ -1000,7 +1000,7 @@ pub fn parse_instruction(
                 class,
                 name,
                 method_type,
-                OnceLock::new(),
+                Arc::new(OnceLock::new()),
             ))
         }
         0xB9 => {
@@ -1074,7 +1074,7 @@ pub fn parse_instruction(
                 todo!("Throw some sort of error")
             };
 
-            Ok(Instruction::New(class))
+            Ok(Instruction::New(class, Arc::new(OnceLock::new())))
         }
         0xBC => {
             // make a new array

@@ -2,7 +2,7 @@ use std::{
     any::Any,
     collections::{HashMap, HashSet},
     marker::PhantomData,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 use rand::rngs::StdRng;
@@ -502,4 +502,39 @@ impl ObjectFinder for Array2 {
         };
         Ok(func(ArrayFields { arr_type, contents }))
     }
+}
+
+pub trait ClassIdentifier {
+    fn this() -> &'static str;
+
+    fn lock() -> &'static OnceLock<Arc<Class>>;
+
+    #[must_use]
+    fn get(class_area: &SharedClassArea) -> Arc<Class> {
+        Self::lock()
+            .get_or_init(|| class_area.search(Self::this()).unwrap())
+            .clone()
+    }
+}
+
+macro_rules! class {
+    ($($id:ident: $name:literal),*$(,)?) => {
+        $(
+            pub struct $id;
+            impl $crate::virtual_machine::object::ClassIdentifier for $id {
+                fn this() -> &'static str {
+                    $name
+                }
+
+                fn lock() -> &'static OnceLock<Arc<Class>> {
+                    static LOCK: OnceLock<Arc<Class>> = OnceLock::new();
+                    &LOCK
+                }
+            }
+        )*
+    };
+}
+
+class! {
+    ArithmeticException: "java/util/ArithmeticException"
 }
