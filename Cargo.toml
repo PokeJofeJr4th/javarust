@@ -9,3 +9,4 @@ edition = "2021"
 clap = { version = "4.4.7", features = ["derive"] }
 itertools = "0.12.1"
 rand = "0.8.5"
+jvmrs-lib = {git = "https://github.com/PokeJofeJr4th/jvmrs-lib"}

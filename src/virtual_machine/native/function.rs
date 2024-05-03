@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use jvmrs_lib::access;
+
 use crate::{
-    access,
     class::{
         code::{NativeMethod, NativeSingleMethod},
         Field, MethodDescriptor, MethodHandle,

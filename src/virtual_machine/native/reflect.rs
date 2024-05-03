@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use jvmrs_lib::access;
+
 use crate::{
-    access,
     class::code::{native_property, NativeStringMethod},
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},

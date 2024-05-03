@@ -3,12 +3,13 @@ use std::{
     sync::{Arc, Mutex, Once, OnceLock},
 };
 
+use jvmrs_lib::{access, AccessFlags};
+
 use crate::{
-    access,
     class::{
         code::{ByteCode, NativeMethod, NativeStringMethod, NativeTodo, NativeVoid},
-        AccessFlags, Attribute, BootstrapMethod, Class, ClassVersion, Code, Constant, Field,
-        FieldType, InnerClass, Method, MethodDescriptor, VTableEntry,
+        Attribute, BootstrapMethod, Class, ClassVersion, Code, Constant, Field, FieldType,
+        InnerClass, Method, MethodDescriptor, VTableEntry,
     },
     data::{SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
     method,

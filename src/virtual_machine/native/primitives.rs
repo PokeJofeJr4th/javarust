@@ -1,10 +1,11 @@
 use std::{fmt::Display, sync::Arc};
 
+use jvmrs_lib::access;
+
 use crate::{
-    access,
     class::{
         code::{native_property, NativeDoubleMethod, NativeSingleMethod, NativeTodo, NativeVoid},
-        AccessFlags, Field, FieldType, MethodDescriptor,
+        Field, FieldType, MethodDescriptor,
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
@@ -109,14 +110,14 @@ fn make_primitive_class<T: Stackable<u32> + Display + 'static>(
     from_parameter: fn(u32, u32) -> T,
 ) -> RawMethod {
     let mut class = RawClass::new(
-        AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access!(public native),
         primitive_class.clone(),
         object_class,
     );
     let primitive_size = primitive.get_size();
     class.fields.push((
         Field {
-            access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+            access_flags: access!(public native),
             name: "value".into(),
             descriptor: primitive.clone(),
             constant_value: None,
@@ -128,7 +129,7 @@ fn make_primitive_class<T: Stackable<u32> + Display + 'static>(
     class.field_size += primitive_size;
 
     let init = RawMethod {
-        access_flags: AccessFlags::ACC_NATIVE | AccessFlags::ACC_PUBLIC,
+        access_flags: access!(public native),
         name: "<init>".into(),
         descriptor: MethodDescriptor {
             parameter_size: 1 + primitive_size,
@@ -150,7 +151,7 @@ fn make_primitive_class<T: Stackable<u32> + Display + 'static>(
     };
 
     let value_of = RawMethod {
-        access_flags: AccessFlags::ACC_PUBLIC | AccessFlags::ACC_STATIC | AccessFlags::ACC_NATIVE,
+        access_flags: access!(public static native),
         name: "valueOf".into(),
         descriptor: MethodDescriptor {
             parameter_size: primitive_size,

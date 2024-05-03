@@ -5,10 +5,10 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
+use jvmrs_lib::access;
 use rand::rngs::StdRng;
 
 use crate::{
-    access,
     class::{
         code::{NativeMethod, NativeVoid},
         Class, Code, FieldType, Method, MethodDescriptor, MethodHandle,
