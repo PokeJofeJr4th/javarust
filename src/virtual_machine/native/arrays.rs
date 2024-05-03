@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use jvmrs_lib::FieldType;
+
 use crate::{
-    class::{code::NativeReturn, FieldType},
+    class::code::NativeReturn,
     data::NULL,
     virtual_machine::{
         object::{Array1, Array2, ArrayFields, ArrayType, ObjectFinder},

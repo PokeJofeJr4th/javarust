@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
-use jvmrs_lib::access;
+use jvmrs_lib::{access, method, FieldType};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use crate::{
@@ -13,11 +13,10 @@ use crate::{
             native_property, NativeDoubleMethod, NativeNoop, NativeSingleMethod,
             NativeStringMethod, NativeVoid,
         },
-        Class, Field, FieldType,
+        Class, Field,
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
-    method,
 };
 
 use self::{

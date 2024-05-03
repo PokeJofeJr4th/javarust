@@ -5,17 +5,16 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
-use jvmrs_lib::access;
+use jvmrs_lib::{access, method, FieldType, MethodDescriptor};
 use rand::rngs::StdRng;
 
 use crate::{
     class::{
         code::{NativeMethod, NativeVoid},
-        Class, Code, FieldType, Method, MethodDescriptor, MethodHandle,
+        Class, Code, Method, MethodHandle,
     },
     class_loader::{RawCode, RawMethod},
     data::{BuildNonHasher, Heap, SharedClassArea, SharedMethodArea, NULL},
-    method,
 };
 
 use super::{error, native, Thread};

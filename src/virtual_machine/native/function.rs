@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
-use jvmrs_lib::access;
+use jvmrs_lib::{access, field, method, MethodDescriptor};
 
 use crate::{
     class::{
         code::{NativeMethod, NativeSingleMethod},
-        Field, MethodDescriptor, MethodHandle,
+        Field, MethodHandle,
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
-    field, method,
     virtual_machine::{
         object::{AnyObj, LambdaOverride, Object, ObjectFinder, StringObj},
         Thread,

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use jvmrs_lib::access;
+use jvmrs_lib::{access, field, method};
 
 use crate::{
     class::{
@@ -9,7 +9,6 @@ use crate::{
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea, NULL},
-    field, method,
     virtual_machine::{
         native::function::Optional,
         object::{

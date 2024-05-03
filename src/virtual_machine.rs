@@ -6,7 +6,9 @@ pub mod thread;
 
 use std::sync::Arc;
 
-use crate::class::{Class, FieldType, Method, MethodDescriptor};
+use jvmrs_lib::{FieldType, MethodDescriptor};
+
+use crate::class::{Class, Method};
 use crate::data::{SharedClassArea, SharedHeap, SharedMethodArea};
 
 pub use self::native::add_native_methods;

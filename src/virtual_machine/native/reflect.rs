@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use jvmrs_lib::access;
+use jvmrs_lib::{access, method};
 
 use crate::{
     class::code::{native_property, NativeStringMethod},
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
-    method,
     virtual_machine::object::ClassObj,
 };
 

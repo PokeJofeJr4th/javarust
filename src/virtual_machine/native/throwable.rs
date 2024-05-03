@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use jvmrs_lib::access;
+use jvmrs_lib::{access, method, FieldType};
 
 use crate::{
-    class::{code::NativeNoop, Field, FieldType},
+    class::{code::NativeNoop, Field},
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
-    method,
 };
 
 #[allow(clippy::too_many_lines)]

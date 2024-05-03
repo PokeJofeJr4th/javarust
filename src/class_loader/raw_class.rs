@@ -3,16 +3,15 @@ use std::{
     sync::{Arc, Mutex, Once, OnceLock},
 };
 
-use jvmrs_lib::{access, AccessFlags};
+use jvmrs_lib::{access, method, AccessFlags, FieldType, MethodDescriptor};
 
 use crate::{
     class::{
         code::{ByteCode, NativeMethod, NativeStringMethod, NativeTodo, NativeVoid},
-        Attribute, BootstrapMethod, Class, ClassVersion, Code, Constant, Field, FieldType,
-        InnerClass, Method, MethodDescriptor, VTableEntry,
+        Attribute, BootstrapMethod, Class, ClassVersion, Code, Constant, Field, InnerClass, Method,
+        VTableEntry,
     },
     data::{SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
-    method,
 };
 
 use super::parse_code_attribute;

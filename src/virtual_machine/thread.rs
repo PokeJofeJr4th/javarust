@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, fmt::Write, sync::Arc};
 
 use crate::{
-    class::{BootstrapMethod, Class, Constant, FieldType, Method, MethodDescriptor, MethodHandle},
+    class::{BootstrapMethod, Class, Constant, Method, MethodHandle},
     data::{Heap, SharedClassArea, SharedHeap, SharedMethodArea, NULL},
     virtual_machine::object::LambdaOverride,
 };
@@ -15,6 +15,7 @@ use super::{
 
 pub mod stacking;
 
+use jvmrs_lib::{method, FieldType, MethodDescriptor};
 use stacking::Stack;
 
 pub struct Thread {
@@ -1139,15 +1140,10 @@ impl Thread {
         }
         // mark the class as initialized
         class.initialized.call_once(|| ());
-        let Some((class, method)) = self.method_area.search(
-            &class.this,
-            "<clinit>",
-            &MethodDescriptor {
-                parameter_size: 0,
-                parameters: Vec::new(),
-                return_type: None,
-            },
-        ) else {
+        let Some((class, method)) =
+            self.method_area
+                .search(&class.this, "<clinit>", &method!(() -> void))
+        else {
             return false;
         };
         self.stackframe

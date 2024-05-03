@@ -1,5 +1,7 @@
+use jvmrs_lib::{FieldType, MethodDescriptor};
+
 use crate::{
-    class::{code::NativeReturn, FieldType, MethodDescriptor},
+    class::code::NativeReturn,
     data::NULL,
     virtual_machine::{
         object::{AnyObj, ObjectFinder, StringObj},

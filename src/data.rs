@@ -6,9 +6,10 @@ use std::{
 };
 
 use itertools::Itertools;
+use jvmrs_lib::{FieldType, MethodDescriptor};
 
 use crate::{
-    class::{Class, FieldType, Method, MethodDescriptor},
+    class::{Class, Method},
     class_loader::{RawClass, RawMethod},
     virtual_machine::object::{Array1, ArrayFields, Object, ObjectFinder, StringObj},
 };

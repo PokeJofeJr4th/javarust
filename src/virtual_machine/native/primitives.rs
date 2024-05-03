@@ -1,15 +1,14 @@
 use std::{fmt::Display, sync::Arc};
 
-use jvmrs_lib::access;
+use jvmrs_lib::{access, method, FieldType, MethodDescriptor};
 
 use crate::{
     class::{
         code::{native_property, NativeDoubleMethod, NativeSingleMethod, NativeTodo, NativeVoid},
-        Field, FieldType, MethodDescriptor,
+        Field,
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
-    method,
     virtual_machine::{
         native::character::Char,
         object::{AnyObj, Object, ObjectFinder},

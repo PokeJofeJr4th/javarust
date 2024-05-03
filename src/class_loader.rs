@@ -6,8 +6,7 @@ use crate::{
             ByteCode, ExceptionTableEntry, LineTableEntry, LocalVarEntry, LocalVarTypeEntry,
             StackMapFrame, VerificationTypeInfo,
         },
-        Attribute, BootstrapMethod, ClassVersion, Constant, Field, FieldType, InnerClass,
-        MethodDescriptor, MethodHandle,
+        Attribute, BootstrapMethod, ClassVersion, Constant, Field, InnerClass, MethodHandle,
     },
     data::{SharedClassArea, WorkingClassArea, WorkingMethodArea},
     virtual_machine::{add_native_methods, hydrate_code},
@@ -15,7 +14,7 @@ use crate::{
 
 mod raw_class;
 
-use jvmrs_lib::AccessFlags;
+use jvmrs_lib::{AccessFlags, FieldType, MethodDescriptor};
 pub use raw_class::{MethodName, RawClass, RawCode, RawMethod};
 
 // TODO: Attributes: EnclosingMethod, NestHost, NestMembers
