@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, fmt::Write, sync::Arc};
 
 use crate::{
-    class::{BootstrapMethod, Class, Constant, Method, MethodHandle},
+    class::{BootstrapMethod, Class, Method},
     data::{Heap, SharedClassArea, SharedHeap, SharedMethodArea, NULL},
     virtual_machine::object::LambdaOverride,
 };
@@ -15,7 +15,7 @@ use super::{
 
 pub mod stacking;
 
-use jvmrs_lib::{method, FieldType, MethodDescriptor};
+use jvmrs_lib::{method, Constant, FieldType, MethodDescriptor, MethodHandle};
 use stacking::Stack;
 
 pub struct Thread {

@@ -4,10 +4,10 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use jvmrs_lib::{FieldType, MethodDescriptor};
+use jvmrs_lib::{Constant, FieldType, MethodDescriptor};
 
 use crate::{
-    class::{code::ExceptionTableEntry, Class, Constant, Method},
+    class::{code::ExceptionTableEntry, Class, Method},
     class_loader::parse_field_type,
     data::{SharedClassArea, NULL},
 };
