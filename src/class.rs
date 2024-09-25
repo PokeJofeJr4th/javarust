@@ -1,7 +1,9 @@
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, Once, OnceLock};
 
-use jvmrs_lib::{access, AccessFlags, ClassVersion, Constant, FieldType, MethodDescriptor, MethodHandle};
+use jvmrs_lib::{
+    access, AccessFlags, ClassVersion, Constant, FieldType, MethodDescriptor, MethodHandle,
+};
 
 use crate::class_loader::MethodName;
 

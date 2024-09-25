@@ -55,6 +55,8 @@ pub fn to_string(
     _verbose: bool,
 ) -> NativeReturn<Arc<str>> {
     let string =
-        Arc::from(&*StringBuilder::SELF.inspect(&thread.heap, builder_ref as usize, |a| a.clone())?);
+        Arc::from(
+            &*StringBuilder::inspect(&thread.heap, builder_ref as usize, |a| a.clone())?,
+        );
     Ok(Some(string))
 }

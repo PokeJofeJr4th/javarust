@@ -25,7 +25,7 @@ struct Args {
     filenames: Vec<PathBuf>,
     #[clap(short, long)]
     /// whether to run the main method of the first resolved class
-    run: bool,
+    skip: bool,
     #[clap(short, long)]
     verbose: bool,
     /// use this option to read dependencies from a file containing one relative path per line
@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if args.verbose {
         println!("{method_area:#?}");
     }
-    if args.run {
+    if !args.skip {
         virtual_machine::start_vm(
             &class,
             method_area,

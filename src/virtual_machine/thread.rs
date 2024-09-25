@@ -1395,7 +1395,11 @@ impl Thread {
                 self.rember_temp(lambda_index, verbose);
                 self.stackframe.operand_stack.push(lambda_index);
             }
-            (n, h, d) => return Err(format!("Error during InvokeDynamic: {n}: {d:?}; {h:?}")),
+            (n, h, d) => {
+                return Err(format!(
+                    "Error during InvokeDynamic: can't resolve method: {n}: {d:?}; {h:?}"
+                ))
+            }
         }
         Ok(())
     }
