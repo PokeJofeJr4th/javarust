@@ -382,7 +382,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public native),
         name: "println".into(),
         descriptor: method!((boolean) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, [b]: [u32; 1], _| {
+        code: RawCode::native(NativeVoid(|_: &mut _, [_, b]: [u32; 2], _| {
             let bool = b != 0;
             println!("{bool}");
             Ok(Some(()))
@@ -393,7 +393,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         access_flags: access!(public native),
         name: "println".into(),
         descriptor: method!((int) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, [i]: [u32; 1], _| {
+        code: RawCode::native(NativeVoid(|_: &mut _, [_, i]: [u32; 2], _| {
             let int = i as i32;
             println!("{int}");
             Ok(Some(()))
