@@ -49,21 +49,21 @@ pub enum RawConstant {
         string_addr: u16,
     },
     FieldRef {
-        /// index in constant pool for a ClassRef value
+        /// index in constant pool for a `ClassRef` value
         class_ref_addr: u16,
-        /// index in constant pool for a NameTypeDescriptor value
+        /// index in constant pool for a `NameTypeDescriptor` value
         name_type_addr: u16,
     },
     MethodRef {
-        /// index in constant pool for a ClassRef value
+        /// index in constant pool for a `ClassRef` value
         class_ref_addr: u16,
-        /// index in constant pool for a NameTypeDescriptor value
+        /// index in constant pool for a `NameTypeDescriptor` value
         name_type_addr: u16,
     },
     InterfaceRef {
-        /// index in constant pool for a ClassRef value
+        /// index in constant pool for a `ClassRef` value
         class_ref_addr: u16,
-        /// index in constant pool for a NameTypeDescriptor value
+        /// index in constant pool for a `NameTypeDescriptor` value
         name_type_addr: u16,
     },
     NameTypeDescriptor {

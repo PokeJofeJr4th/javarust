@@ -35,6 +35,12 @@ impl Instance {
     }
 }
 
+impl Default for Instance {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug)]
 pub struct Object {
     pub fields: Vec<u32>,
