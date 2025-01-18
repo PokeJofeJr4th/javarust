@@ -1187,11 +1187,27 @@ impl Thread {
     }
 
     pub fn invoke_method(&mut self, method: Arc<Method>, class: Arc<Class>) {
+        let can_tail_optimize = match self
+            .stackframe
+            .method
+            .code
+            .as_bytecode()
+            .map(|bc| &bc.code[self.pc_register])
+        {
+            Some(Instruction::Return0) => true,
+            Some(Instruction::Return1 | Instruction::Return2) => {
+                method.descriptor.return_type.is_some()
+            }
+            _ => false,
+        };
         // create a new stackframe for the callee
         let stackframe = StackFrame::from_method(method, class);
-        // add the caller to the stack and set the callee to active
-        self.stack
-            .push(core::mem::replace(&mut self.stackframe, stackframe));
+        // Set the callee's frame to active
+        let prev_stackframe = core::mem::replace(&mut self.stackframe, stackframe);
+        if !can_tail_optimize {
+            // If the caller can't be tail-optimized, save it for later
+            self.stack.push(prev_stackframe);
+        }
         self.pc_register = 0;
     }
 

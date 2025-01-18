@@ -66,10 +66,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("Reading class from {filename:?}...");
         }
         let bytes = fs::read(filename)?;
-        // let bytes = [
-        //     0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 0, 0, 3, 1, 0, 2, 0x30, 0x30, 3, 0, 0, 0, 0xFF, 0, 0, 0,
-        //     1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        // ];
         let class =
             class_loader::load_class(&mut method_area, &mut bytes.into_iter(), args.verbose)
                 .unwrap();
