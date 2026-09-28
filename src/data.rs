@@ -24,7 +24,6 @@ pub struct Heap {
     refcounts: Vec<u32>,
     string_cache: HashMap<Arc<str>, u32>,
     string_cache_mirror: HashMap<u32, Arc<str>>,
-    class_area: SharedClassArea,
 }
 
 impl Heap {
@@ -52,13 +51,12 @@ impl Heap {
     }
 
     #[must_use]
-    pub fn new(class_area: SharedClassArea) -> Self {
+    pub fn new() -> Self {
         Self {
             contents: Vec::new(),
             refcounts: Vec::new(),
             string_cache: HashMap::new(),
             string_cache_mirror: HashMap::new(),
-            class_area,
         }
     }
 

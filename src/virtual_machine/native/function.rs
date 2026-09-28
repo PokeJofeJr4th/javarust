@@ -4,8 +4,7 @@ use jvmrs_lib::{access, field, method, MethodDescriptor, MethodHandle};
 
 use crate::{
     class::{
-        code::{NativeMethod, NativeSingleMethod},
-        Class, Field,
+        code::{NativeMethod, NativeSingleMethod}, Field,
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},

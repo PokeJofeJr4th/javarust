@@ -83,7 +83,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     let class_area = class_area.to_shared();
     let method_area = method_area.to_shared(&class_area, args.verbose)?;
-    let heap = Heap::new(class_area.clone()).make_shared();
+    let heap = Heap::new().make_shared();
     if args.verbose {
         println!("{method_area:#?}");
     }

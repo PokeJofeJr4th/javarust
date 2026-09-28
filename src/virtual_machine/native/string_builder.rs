@@ -40,7 +40,7 @@ pub fn set_char_at(
                 string_ref
                     .char_indices()
                     .nth(index)
-                    .map(|(pos, ch)| (pos..pos + ch.len_utf8()))
+                    .map(|(pos, ch)| pos..pos + ch.len_utf8() )
                     .unwrap(),
                 &String::from(character),
             );
