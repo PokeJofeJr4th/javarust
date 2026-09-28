@@ -126,7 +126,7 @@ impl RawClass {
 
     #[must_use]
     /// make a new barebones raw class
-    pub fn new(access: AccessFlags, this: Arc<str>, super_class: Arc<str>) -> Self {
+    pub const fn new(access: AccessFlags, this: Arc<str>, super_class: Arc<str>) -> Self {
         Self {
             version: ClassVersion {
                 minor_version: 0,

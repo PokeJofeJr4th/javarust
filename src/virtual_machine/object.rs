@@ -265,6 +265,7 @@ impl StringObj {
     /// # Panics
     #[must_use]
     pub fn new(str: Arc<str>) -> Object {
+        #[allow(static_mut_refs)]
         Object {
             class: unsafe { native::STRING_CLASS.as_ref().unwrap().clone() },
             fields: Vec::new(),
@@ -439,6 +440,7 @@ impl Array1 {
     #[must_use]
     /// # Panics
     pub fn from_vec(contents: Vec<u32>, arr_type: FieldType) -> Object {
+        #[allow(static_mut_refs)]
         Object {
             class: unsafe { native::ARRAY_CLASS.as_ref().unwrap().clone() },
             fields: Vec::new(),
@@ -480,6 +482,7 @@ impl Array2 {
     #[must_use]
     /// # Panics
     pub fn from_vec(contents: Vec<u64>, arr_type: FieldType) -> Object {
+        #[allow(static_mut_refs)]
         Object {
             class: unsafe { native::ARRAY_CLASS.as_ref().unwrap().clone() },
             fields: Vec::new(),
