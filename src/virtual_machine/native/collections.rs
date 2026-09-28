@@ -516,7 +516,7 @@ pub fn add_native_collections(
                     .class_area
                     .search("java/util/ArrayList$Stream")
                     .unwrap();
-                let mut stream = Object::from_class(&array_stream);
+                let mut stream = Object::from_class(array_stream);
                 stream.fields[0] = this;
                 stream.fields[2] = ArrayListObj::inspect(&thread.heap, this as usize, |arrls| {
                     arrls.len() as u32 - 1

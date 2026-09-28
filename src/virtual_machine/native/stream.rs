@@ -129,12 +129,12 @@ pub(super) fn add_native_methods(
         access_flags: access!(public static native),
         descriptor: method!(() -> Object(stream.this.clone())),
         code: RawCode::native(make_lambda_override::<0>(
-            &stream_next.name,
-            &stream_next.descriptor,
-            &stream.this,
-            &Arc::from("empty"),
-            &method!(() -> Object("java/util/Optional".into())),
-            &Arc::from("java/util/Optional"),
+            stream_next.name.clone(),
+            stream_next.descriptor.clone(),
+            stream.this.clone(),
+            Arc::from("empty"),
+            method!(() -> Object("java/util/Optional".into())),
+            Arc::from("java/util/Optional"),
         )),
         ..Default::default()
     };
@@ -203,12 +203,12 @@ pub(super) fn add_native_methods(
                 stream.this.clone()
             )),
             code: RawCode::native(make_lambda_override::<2>(
-                &stream_next.name,
-                &stream_next.descriptor,
-                &stream.this,
-                &filter_lambda.name,
-                &filter_lambda.descriptor,
-                &stream.this,
+                stream_next.name.clone(),
+                stream_next.descriptor.clone(),
+                stream.this.clone(),
+                filter_lambda.name.clone(),
+                filter_lambda.descriptor.clone(),
+                stream.this.clone(),
             )),
             ..Default::default()
         }
@@ -286,12 +286,12 @@ pub(super) fn add_native_methods(
             access_flags: access!(public static native),
             descriptor: method!(((Object("java/util/function/Supplier".into()))) -> Object(stream.this.clone())),
             code: RawCode::native(make_lambda_override::<1>(
-                &stream_next.name,
-                &stream_next.descriptor,
-                &stream.this.clone(),
-                &generate_lambda.name,
-                &generate_lambda.descriptor,
-                &stream.this.clone(),
+                stream_next.name.clone(),
+                stream_next.descriptor.clone(),
+                stream.this.clone(),
+                generate_lambda.name.clone(),
+                generate_lambda.descriptor.clone(),
+                stream.this.clone(),
             )),
             ..Default::default()
         }
@@ -345,12 +345,12 @@ pub(super) fn add_native_methods(
         access_flags: access!(public native),
         descriptor: method!(((Object("java/util/function/Function".into()))) -> Object(stream.this.clone())),
         code: RawCode::native(make_lambda_override::<1>(
-            &stream_next.name,
-            &stream_next.descriptor,
-            &stream.this,
-            &map_lambda.name,
-            &map_lambda.descriptor,
-            &stream.this,
+            stream_next.name.clone(),
+            stream_next.descriptor.clone(),
+            stream.this.clone(),
+            map_lambda.name.clone(),
+            map_lambda.descriptor.clone(),
+            stream.this.clone(),
         )),
         ..Default::default()
     };

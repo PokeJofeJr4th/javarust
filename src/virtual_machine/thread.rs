@@ -238,8 +238,7 @@ impl Thread {
                 // TODO: Check for zero division
                 if rhs == 0 {
                     let exception = Object::from_class(
-                        &self
-                            .class_area
+                        self.class_area
                             .search("java/lang/ArithmeticException")
                             .unwrap(),
                     );
@@ -753,7 +752,7 @@ impl Thread {
                     object_index as usize,
                     |object_borrow| -> Result<Option<(u32, u32)>, String> {
                         if verbose {
-                            println!("Object class: {}", object_borrow.this_class());
+                            println!("Object class: {}", object_borrow.this_class().this);
                         }
 
                         // handle memory stuff outside of the closure so we don't deadlock
@@ -787,7 +786,6 @@ impl Thread {
                     .unwrap();
                 let this_class =
                     AnyObj.inspect(&self.heap, obj_pointer as usize, |o| o.class.clone())?;
-                let this_class = self.class_area.search(&this_class).expect(&this_class);
                 let entry = &this_class.vtable[idx];
                 let (resolved_class, resolved_method) = entry
                     .value
@@ -985,7 +983,7 @@ impl Thread {
                     .heap
                     .lock()
                     .unwrap()
-                    .allocate(Object::from_class(class));
+                    .allocate(Object::from_class(class.clone()));
                 self.stackframe.operand_stack.push(objectref);
                 self.rember_temp(objectref, verbose);
             }
@@ -1093,7 +1091,8 @@ impl Thread {
                         let obj_type =
                             AnyObj.inspect(&self.heap, objref as usize, |o| o.this_class())?;
                         return Err(format!(
-                            "CheckedCast failed; expected a(n) {ty} but got a(n) {obj_type}"
+                            "CheckedCast failed; expected a(n) {ty} but got a(n) {}",
+                            obj_type.this
                         )
                         .into());
                     }
@@ -1389,6 +1388,7 @@ impl Thread {
                         "LambdaMetaFactory expects an object return; got {return_type:?}"
                     ));
                 };
+                let class = self.class_area.search(&lambda_class).unwrap();
                 let [Constant::MethodType(interface_descriptor), Constant::MethodHandle(method_handle), Constant::MethodType(_enforced_type)] =
                     &args[..]
                 else {
@@ -1405,7 +1405,7 @@ impl Thread {
                             .rev()
                             .collect(),
                     })],
-                    class: lambda_class,
+                    class,
                 };
                 let lambda_index = self.heap.lock().unwrap().allocate(lambda_object);
                 self.rember_temp(lambda_index, verbose);

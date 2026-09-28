@@ -60,7 +60,7 @@ pub fn get_class(
         return Some(ptr);
     }
     let class_class = class_area.search("java/lang/Class")?;
-    let mut class_obj = Object::from_class(&class_class);
+    let mut class_obj = Object::from_class(class_class.clone());
     class_obj.native_fields.push(Box::new(class_class));
     let ptr = heap.lock().unwrap().allocate(class_obj);
     binding.get_mut().unwrap().insert(obj_class, ptr);
@@ -92,7 +92,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 let obj_class =
                     AnyObj.inspect(&thread.heap, obj as usize, |obj| obj.class.clone())?;
                 Ok(Some(
-                    get_class(&thread.heap, &thread.class_area, obj_class).unwrap_or(NULL),
+                    get_class(&thread.heap, &thread.class_area, obj_class.this.clone()).unwrap_or(NULL),
                 ))
             },
         )),
@@ -465,7 +465,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         code: RawCode::native(NativeVoid(|thread: &mut Thread, []: [u32; 0], verbose| {
             let system_class = thread.class_area.search("java/lang/System").unwrap();
             let out_ref = thread.heap.lock().unwrap().allocate(Object::from_class(
-                &thread.class_area.search("java/io/PrintStream").unwrap(),
+                thread.class_area.search("java/io/PrintStream").unwrap(),
             ));
             system_class.static_data.lock().unwrap()[0] = out_ref;
             thread.rember(out_ref, verbose);

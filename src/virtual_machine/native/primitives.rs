@@ -189,7 +189,7 @@ fn make_primitive_class<T: Stackable<u32> + Display + 'static>(
         code: RawCode::native(NativeSingleMethod(
             move |thread: &mut Thread, [upper, lower]: [u32; 2], _verbose| {
                 let mut obj =
-                    Object::from_class(&thread.class_area.search(&primitive_class).unwrap());
+                    Object::from_class(thread.class_area.search(&primitive_class).unwrap());
                 obj.fields[0] = upper;
                 if primitive_size == 2 {
                     obj.fields[1] = lower;

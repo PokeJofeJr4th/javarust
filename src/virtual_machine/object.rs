@@ -45,15 +45,15 @@ impl Default for Instance {
 pub struct Object {
     pub fields: Vec<u32>,
     pub native_fields: Vec<Box<dyn Any + Send + Sync>>,
-    pub class: Arc<str>,
+    pub class: Arc<Class>,
 }
 
 impl Object {
-    pub fn from_class(class: &Class) -> Self {
+    pub fn from_class(class: Arc<Class>) -> Self {
         Self {
             fields: class.initial_fields.clone(),
             native_fields: Vec::new(),
-            class: class.this.clone(),
+            class,
         }
     }
 
@@ -70,7 +70,7 @@ impl Object {
         if verbose {
             println!("Resolving {descriptor:?} {method}");
         }
-        let mut current_class = class_area.search(&self.class).unwrap();
+        let mut current_class = self.class.clone();
         if let Ok(Some(lambda_override)) = LambdaObject::SELF.extract(self, |lambda_override| {
             if &*lambda_override.method_name == method
                 && &lambda_override.method_descriptor == descriptor
@@ -88,7 +88,7 @@ impl Object {
             }
             return (current_class, Arc::new(lambda_override));
         }
-        let mut class_list = vec![current_class.clone()];
+        let mut class_list: Vec<Arc<Class>> = vec![current_class.clone()];
         loop {
             if let Some(values) = method_area.search(&current_class.this, method, descriptor) {
                 return values;
@@ -117,11 +117,11 @@ impl Object {
                 }
             }
         }
-        panic!("Failed to find any implementation")
+        panic!("Failed to find any implementation");
     }
 
     #[must_use]
-    pub fn this_class(&self) -> Arc<str> {
+    pub fn this_class(&self) -> Arc<Class> {
         self.class.clone()
     }
 
@@ -266,7 +266,7 @@ impl StringObj {
     #[must_use]
     pub fn new(str: Arc<str>) -> Object {
         Object {
-            class: unsafe { native::STRING_CLASS.as_ref().unwrap().this.clone() },
+            class: unsafe { native::STRING_CLASS.as_ref().unwrap().clone() },
             fields: Vec::new(),
             native_fields: vec![Box::new(str)],
         }
@@ -300,7 +300,7 @@ impl StringBuilder {
     #[must_use]
     #[allow(clippy::new_ret_no_self)]
     pub fn new(str: String, class_area: &SharedClassArea) -> Object {
-        let mut obj = Object::from_class(&class_area.search("java/lang/StringBuilder").unwrap());
+        let mut obj = Object::from_class(class_area.search("java/lang/StringBuilder").unwrap());
         obj.native_fields.push(Box::new(str));
         obj
     }
@@ -408,7 +408,7 @@ impl LambdaOverride {
     }
 
     #[must_use]
-    pub fn as_object(self, class: Arc<str>) -> Object {
+    pub fn as_object(self, class: Arc<Class>) -> Object {
         Object {
             fields: Vec::new(),
             native_fields: vec![Box::new(self)],
@@ -440,7 +440,7 @@ impl Array1 {
     /// # Panics
     pub fn from_vec(contents: Vec<u32>, arr_type: FieldType) -> Object {
         Object {
-            class: unsafe { native::ARRAY_CLASS.as_ref().unwrap().this.clone() },
+            class: unsafe { native::ARRAY_CLASS.as_ref().unwrap().clone() },
             fields: Vec::new(),
             native_fields: vec![Box::new(arr_type), Box::new(contents)],
         }
@@ -481,7 +481,7 @@ impl Array2 {
     /// # Panics
     pub fn from_vec(contents: Vec<u64>, arr_type: FieldType) -> Object {
         Object {
-            class: unsafe { native::ARRAY_CLASS.as_ref().unwrap().this.clone() },
+            class: unsafe { native::ARRAY_CLASS.as_ref().unwrap().clone() },
             fields: Vec::new(),
             native_fields: vec![Box::new(arr_type), Box::new(contents)],
         }

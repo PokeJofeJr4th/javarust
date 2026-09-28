@@ -5,7 +5,7 @@ use jvmrs_lib::{access, field, method, MethodDescriptor, MethodHandle};
 use crate::{
     class::{
         code::{NativeMethod, NativeSingleMethod},
-        Field,
+        Class, Field,
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
@@ -19,7 +19,7 @@ pub struct Optional;
 
 impl Optional {
     pub fn make(thread: &Thread, value: u32, verbose: bool) -> u32 {
-        let mut opt = Object::from_class(&thread.class_area.search("java/util/Optional").unwrap());
+        let mut opt = Object::from_class(thread.class_area.search("java/util/Optional").unwrap());
         opt.fields[0] = value;
         if value != u32::MAX {
             thread.rember(value, verbose);
@@ -46,30 +46,31 @@ impl ObjectFinder for Optional {
 }
 
 pub fn make_lambda_override<const CAPTURES: usize>(
-    overrided_name: &Arc<str>,
-    overrided_descriptor: &MethodDescriptor,
-    instance_class: &Arc<str>,
-    invoke_name: &Arc<str>,
-    invoke_descriptor: &MethodDescriptor,
-    invoke_class: &Arc<str>,
+    overrided_name: Arc<str>,
+    overrided_descriptor: MethodDescriptor,
+    instance_class: Arc<str>,
+    invoke_name: Arc<str>,
+    invoke_descriptor: MethodDescriptor,
+    invoke_class: Arc<str>,
 ) -> impl NativeMethod {
-    let method_name = overrided_name.clone();
-    let method_descriptor = overrided_descriptor.clone();
+    let method_name = overrided_name;
+    let method_descriptor = overrided_descriptor;
     let invoke = MethodHandle::InvokeStatic {
-        class: invoke_class.clone(),
-        name: invoke_name.clone(),
-        method_type: invoke_descriptor.clone(),
+        class: invoke_class,
+        name: invoke_name,
+        method_type: invoke_descriptor,
     };
-    let instance_class = instance_class.clone();
+    let instance_class = instance_class;
     NativeSingleMethod(
         move |thread: &mut Thread, caps: [u32; CAPTURES], _verbose| {
+            let class = thread.class_area.search(&instance_class).unwrap();
             let lambda_object = LambdaOverride {
                 method_name: method_name.clone(),
                 method_descriptor: method_descriptor.clone(),
                 invoke: invoke.clone(),
                 captures: caps.to_vec(),
             }
-            .as_object(instance_class.clone());
+            .as_object(class);
             let idx = thread.heap.lock().unwrap().allocate(lambda_object);
             Ok(Some(idx))
         },
@@ -173,13 +174,14 @@ pub(super) fn add_native_methods(
             descriptor: method!(((Object(function.this.clone()))) -> Object(function.this.clone())),
             code: RawCode::native(NativeSingleMethod(
                 move |thread: &mut Thread, [this, before]: [u32; 2], _verbose| {
+                    let function_class = thread.class_area.search(&function_this).unwrap();
                     let lambda_object = LambdaOverride {
                         method_name: apply_name.clone(),
                         method_descriptor: apply_signature.clone(),
                         invoke: compose_handle.clone(),
                         captures: vec![before, this],
                     }
-                    .as_object(function_this.clone());
+                    .as_object(function_class);
                     let idx = thread.heap.lock().unwrap().allocate(lambda_object);
                     Ok(Some(idx))
                 },
@@ -192,12 +194,12 @@ pub(super) fn add_native_methods(
         access_flags: access!(public native),
         descriptor: method!(((Object(function.this.clone()))) -> Object(function.this.clone())),
         code: RawCode::native(make_lambda_override::<2>(
-            &apply.name,
-            &apply.descriptor,
-            &function.this,
-            &compose_lambda.name,
-            &compose_lambda.descriptor,
-            &function.this,
+            apply.name.clone(),
+            apply.descriptor.clone(),
+            function.this.clone(),
+            compose_lambda.name.clone(),
+            compose_lambda.descriptor.clone(),
+            function.this.clone(),
         )),
         ..Default::default()
     };
@@ -214,10 +216,11 @@ pub(super) fn add_native_methods(
             captures: Vec::new(),
         };
         RawMethod::clinit(move |thread: &mut Thread, []: [u32; 0], _verbose| {
+            let class = thread.class_area.search(&function_this).unwrap();
             let identity_lambda = Object {
                 fields: Vec::new(),
                 native_fields: vec![Box::new(identity_override.clone())],
-                class: function_this.clone(),
+                class,
             };
             let idx = thread.heap.lock().unwrap().allocate(identity_lambda);
             thread
@@ -317,12 +320,12 @@ pub(super) fn add_native_methods(
         access_flags: access!(public native),
         descriptor: method!(() -> Object(predicate.this.clone())),
         code: RawCode::native(make_lambda_override::<1>(
-            &predicate_test.name,
-            &predicate_test.descriptor,
-            &predicate.this,
-            &predicate_neg_lambda.name,
-            &predicate_neg_lambda.descriptor,
-            &predicate.this,
+            predicate_test.name.clone(),
+            predicate_test.descriptor.clone(),
+            predicate.this.clone(),
+            predicate_neg_lambda.name.clone(),
+            predicate_neg_lambda.descriptor.clone(),
+            predicate.this.clone(),
         )),
         ..Default::default()
     };
@@ -331,12 +334,12 @@ pub(super) fn add_native_methods(
         access_flags: access!(public static native),
         descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
         code: RawCode::native(make_lambda_override::<1>(
-            &predicate_test.name,
-            &predicate_test.descriptor,
-            &predicate.this,
-            &predicate_neg_lambda.name,
-            &predicate_neg_lambda.descriptor,
-            &predicate.this,
+            predicate_test.name.clone(),
+            predicate_test.descriptor.clone(),
+            predicate.this.clone(),
+            predicate_neg_lambda.name.clone(),
+            predicate_neg_lambda.descriptor.clone(),
+            predicate.this.clone(),
         )),
         ..Default::default()
     };
@@ -355,13 +358,14 @@ pub(super) fn add_native_methods(
             descriptor: method!(((Object(java_lang_object.clone()))) -> Object(predicate.this.clone())),
             code: RawCode::native(NativeSingleMethod(
                 move |thread: &mut Thread, [target_ref]: [u32; 1], _verbose| {
+                    let predicate_class = thread.class_area.search(&predicate_name).unwrap();
                     let lambda_object = LambdaOverride {
                         method_name: test_name.clone(),
                         method_descriptor: test_signature.clone(),
                         invoke: equals_handle.clone(),
                         captures: vec![target_ref],
                     }
-                    .as_object(predicate_name.clone());
+                    .as_object(predicate_class);
                     let idx = thread.heap.lock().unwrap().allocate(lambda_object);
                     Ok(Some(idx))
                 },
@@ -444,12 +448,12 @@ pub(super) fn add_native_methods(
         access_flags: access!(public native),
         descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
         code: RawCode::native(make_lambda_override::<2>(
-            &predicate_test.name,
-            &predicate_test.descriptor,
-            &predicate.this,
-            &predicate_and_lambda.name,
-            &predicate_and_lambda.descriptor,
-            &predicate.this,
+            predicate_test.name.clone(),
+            predicate_test.descriptor.clone(),
+            predicate.this.clone(),
+            predicate_and_lambda.name.clone(),
+            predicate_and_lambda.descriptor.clone(),
+            predicate.this.clone(),
         )),
         ..Default::default()
     };
@@ -458,12 +462,12 @@ pub(super) fn add_native_methods(
         access_flags: access!(public native),
         descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
         code: RawCode::native(make_lambda_override::<2>(
-            &predicate_test.name,
-            &predicate_test.descriptor,
-            &predicate.this,
-            &predicate_or_lambda.name,
-            &predicate_or_lambda.descriptor,
-            &predicate.this,
+            predicate_test.name.clone(),
+            predicate_test.descriptor.clone(),
+            predicate.this.clone(),
+            predicate_or_lambda.name.clone(),
+            predicate_or_lambda.descriptor.clone(),
+            predicate.this.clone(),
         )),
         ..Default::default()
     };

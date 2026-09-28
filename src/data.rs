@@ -103,8 +103,7 @@ impl Heap {
         };
         let mut obj = obj.lock().unwrap();
         // deallocate any references that object had within it
-        let obj_class = self.class_area.search(&obj.class).unwrap();
-        for (field, idx) in &obj_class.fields {
+        for (field, idx) in &obj.class.fields {
             if field.descriptor.is_reference() {
                 self.dec_ref(obj.fields[*idx]);
             }
