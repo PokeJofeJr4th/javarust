@@ -20,31 +20,13 @@ use crate::{
 use super::{error, native, Thread};
 
 #[derive(Debug)]
-pub struct Instance {
-    pub fields: Vec<u32>,
-    pub native_fields: Vec<Box<dyn Any + Send + Sync>>,
-}
-
-impl Instance {
-    #[must_use]
-    pub const fn new() -> Self {
-        Self {
-            fields: Vec::new(),
-            native_fields: Vec::new(),
-        }
-    }
-}
-
-impl Default for Instance {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Debug)]
+/// An instance of an object
 pub struct Object {
+    /// The words of the object's fields in java
     pub fields: Vec<u32>,
+    /// Fields used in native types internally in the JVM
     pub native_fields: Vec<Box<dyn Any + Send + Sync>>,
+    /// Reference to the object's class
     pub class: Arc<Class>,
 }
 
@@ -57,6 +39,7 @@ impl Object {
         }
     }
 
+    /// Find a method on this object
     /// # Panics
     #[must_use]
     pub fn resolve_method(
@@ -121,11 +104,7 @@ impl Object {
     }
 
     #[must_use]
-    pub fn this_class(&self) -> Arc<Class> {
-        self.class.clone()
-    }
-
-    #[must_use]
+    /// Check if this object is an instance of the given class
     /// # Panics
     pub fn isinstance(&self, class_area: &SharedClassArea, class: &str, verbose: bool) -> bool {
         let mut current = class_area.search(class).unwrap();

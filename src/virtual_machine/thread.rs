@@ -18,12 +18,19 @@ pub mod stacking;
 use jvmrs_lib::{method, Constant, FieldType, MethodDescriptor, MethodHandle};
 use stacking::Stack;
 
+/// A single thread with a stack and various operations
 pub struct Thread {
+    /// Instruction pointer
     pub pc_register: usize,
+    /// Dormant stack frames
     pub stack: Vec<StackFrame>,
+    /// Currently Executing Stackframes
     pub stackframe: StackFrame,
+    /// Methods that can be looked up
     pub method_area: SharedMethodArea,
+    /// Classes that can be looked up
     pub class_area: SharedClassArea,
+    /// Heap allocations, including certain caches
     pub heap: SharedHeap,
 }
 
@@ -38,6 +45,7 @@ macro_rules! stack {
 
 impl Thread {
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+    /// Execute a single native method or instruction
     /// # Panics
     /// # Errors
     pub fn tick(&mut self, verbose: bool) -> super::error::Result<()> {
@@ -752,7 +760,7 @@ impl Thread {
                     object_index as usize,
                     |object_borrow| -> Result<Option<(u32, u32)>, String> {
                         if verbose {
-                            println!("Object class: {}", object_borrow.this_class().this);
+                            println!("Object class: {}", object_borrow.class.this);
                         }
 
                         // handle memory stuff outside of the closure so we don't deadlock
@@ -1089,7 +1097,7 @@ impl Thread {
                         .is_ok_and(|x| x);
                     if !obj_works {
                         let obj_type =
-                            AnyObj.inspect(&self.heap, objref as usize, |o| o.this_class())?;
+                            AnyObj.inspect(&self.heap, objref as usize, |o| o.class.clone())?;
                         return Err(format!(
                             "CheckedCast failed; expected a(n) {ty} but got a(n) {}",
                             obj_type.this
@@ -1107,6 +1115,7 @@ impl Thread {
         Ok(())
     }
 
+    /// Prevent a value from being garbage collected until the end of the stackframe
     /// # Panics
     pub fn rember_temp(&mut self, value: u32, verbose: bool) {
         self.heap.lock().unwrap().inc_ref(value);
@@ -1116,6 +1125,7 @@ impl Thread {
         }
     }
 
+    /// Prevent a value from being garbage collected until further notice
     /// # Panics
     pub fn rember(&self, value: u32, verbose: bool) {
         self.heap.lock().unwrap().inc_ref(value);
@@ -1124,6 +1134,7 @@ impl Thread {
         }
     }
 
+    /// Allow a value to be garbage collected
     /// # Panics
     pub fn forgor(&self, value: u32, verbose: bool) {
         self.heap.lock().unwrap().dec_ref(value);
@@ -1132,6 +1143,7 @@ impl Thread {
         }
     }
 
+    /// Run a class initializer unless it has already completed.
     /// # Panics
     pub fn maybe_initialize_class(&mut self, class: &Class) -> bool {
         if class.initialized.is_completed() {
@@ -1152,10 +1164,12 @@ impl Thread {
         true
     }
 
+    /// Get the instruction for a certain offset
     fn get_code(&self, idx: usize) -> Instruction {
         self.stackframe.method.code.as_bytecode().unwrap().code[idx].clone()
     }
 
+    /// Get the current opcode and increment the pc register
     fn get_pc_byte(&mut self) -> Instruction {
         let b = self.get_code(self.pc_register);
         self.pc_register += 1;
@@ -1185,6 +1199,7 @@ impl Thread {
         Ok(())
     }
 
+    /// Create a new stackframe for the specific method
     pub fn invoke_method(&mut self, method: Arc<Method>, class: Arc<Class>) {
         let can_tail_optimize = match self
             .stackframe
@@ -1210,11 +1225,13 @@ impl Thread {
         self.pc_register = 0;
     }
 
+    /// Throw an exception by object
     fn throw_obj(&mut self, exception: Object, verbose: bool) -> Result<(), String> {
         let idx = self.heap.lock().unwrap().allocate(exception);
         self.throw(idx, verbose)
     }
 
+    /// Throw an exception by reference
     fn throw(&mut self, exception_ptr: u32, verbose: bool) -> Result<(), String> {
         loop {
             for entry in &self
@@ -1260,6 +1277,7 @@ impl Thread {
     }
 
     #[allow(clippy::too_many_lines)]
+    /// Invoke a dynamic method
     fn invoke_dynamic(
         &mut self,
         method_name: &str,
@@ -1312,7 +1330,7 @@ impl Thread {
                     if field_type.get_size() == 2 {
                         let value = args_iter.popd::<u64>().unwrap();
                         // since the stack is reversed, this stuff is goofy
-                        let value = value >> 32 | value << 32;
+                        let value = value.rotate_left(32);
                         match field_type {
                             FieldType::Long => {
                                 write!(output, "{}", value as i64)
@@ -1441,6 +1459,7 @@ impl Thread {
         Ok(())
     }
 
+    /// Return a single-word value and exit the current stackframe
     /// # Panics
     pub fn return_one(&mut self, verbose: bool) {
         // outer_stackframe is the calling method and self.stackframe is the method that was called
@@ -1481,6 +1500,7 @@ impl Thread {
         }
     }
 
+    /// Return a double-word value and exit the current stackframe
     /// # Panics
     pub fn return_two(&mut self, verbose: bool) {
         let outer_stackframe = self.stack.pop().unwrap();
