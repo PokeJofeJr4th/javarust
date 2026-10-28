@@ -1,4 +1,4 @@
-use crate::test_utils::{test, test_fail};
+use super::{test, test_fail};
 
 #[test]
 fn test_one_plus_one() {
