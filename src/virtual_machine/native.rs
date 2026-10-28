@@ -5,7 +5,7 @@ use std::{
 };
 
 use jvmrs_lib::{access, method, FieldType};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::RngExt;
 
 use crate::{
     class::{
@@ -356,7 +356,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     );
     string_builder.register_methods([builder_init, set_char_at, to_string], method_area);
 
-    let random_init = Random::make_init(StdRng::from_entropy);
+    let random_init = Random::make_init(rand::make_rng);
     let next_int = RawMethod {
         access_flags: access!(public native),
         name: "nextInt".into(),
@@ -368,7 +368,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                     println!("java/util/Random.nextInt(int): right_bound={right_bound}");
                 }
                 Random::inspect(&thread.heap, obj_ref as usize, |random_obj| {
-                    random_obj.gen_range(0..right_bound)
+                    random_obj.random_range(0..right_bound)
                 })
                 .map(Option::Some)
             },
