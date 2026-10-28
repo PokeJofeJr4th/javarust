@@ -717,7 +717,32 @@ pub(super) fn add_native_methods(
         )),
         ..Default::default()
     };
-    // TODO: map
+    let function_descriptor =
+        method!(((Object(java_lang_object.clone()))) -> (Object(java_lang_object.clone())));
+    let opt_map = RawMethod {
+        name: "map".into(),
+        access_flags: access!(public native),
+        descriptor: method!(((Object(function.this.clone()))) -> Object(optional.this.clone())),
+        code: RawCode::native(NativeSingleMethod(
+            move |thread: &mut Thread, [this, func]: [u32; 2], verbose| match thread.pc_register {
+                0 => {
+                    let value = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
+                    if value == u32::MAX {
+                        Ok(Some(this))
+                    } else {
+                        // push return address
+                        thread.stackframe.operand_stack.push(1);
+                        thread.resolve_and_invoke(func, "apply", &function_descriptor, verbose)?;
+                        thread.stackframe.locals[0] = value;
+                        Ok(None)
+                    }
+                }
+                1 => Ok(thread.stackframe.operand_stack.pop()),
+                _ => unreachable!(),
+            },
+        )),
+        ..Default::default()
+    };
     // TODO: orElse
     // TODO: orElseGet
     // TODO: orElseThrow
@@ -758,6 +783,7 @@ pub(super) fn add_native_methods(
             opt_of_nullable,
             is_empty,
             is_present,
+            opt_map,
             opt_to_string,
             opt_hash_code,
             opt_equals,
