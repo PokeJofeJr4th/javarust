@@ -63,7 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     filenames.insert(0, first_file);
     for filename in filenames {
         if args.verbose {
-            println!("Reading class from {filename:?}...");
+            println!("Reading class from {}...", filename.display());
         }
         let bytes = fs::read(filename)?;
         let class =

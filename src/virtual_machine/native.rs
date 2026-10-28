@@ -92,7 +92,8 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 let obj_class =
                     AnyObj.inspect(&thread.heap, obj as usize, |obj| obj.class.clone())?;
                 Ok(Some(
-                    get_class(&thread.heap, &thread.class_area, obj_class.this.clone()).unwrap_or(NULL),
+                    get_class(&thread.heap, &thread.class_area, obj_class.this.clone())
+                        .unwrap_or(NULL),
                 ))
             },
         )),
@@ -186,10 +187,31 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         java_lang_object.clone(),
     );
 
-    let arrays_to_string = RawMethod {
+    let arrays_to_string_int = RawMethod {
         access_flags: access!(public static native),
         name: "toString".into(),
         descriptor: method!((([]int)) -> Object(java_lang_string.clone())),
+        code: RawCode::native(NativeStringMethod(arrays::to_string)),
+        ..Default::default()
+    };
+    let arrays_to_string_float = RawMethod {
+        access_flags: access!(public static native),
+        name: "toString".into(),
+        descriptor: method!((([]float)) -> Object(java_lang_string.clone())),
+        code: RawCode::native(NativeStringMethod(arrays::to_string)),
+        ..Default::default()
+    };
+    let arrays_to_string_long = RawMethod {
+        access_flags: access!(public static native),
+        name: "toString".into(),
+        descriptor: method!((([]long)) -> Object(java_lang_string.clone())),
+        code: RawCode::native(NativeStringMethod(arrays::to_string)),
+        ..Default::default()
+    };
+    let arrays_to_string_double = RawMethod {
+        access_flags: access!(public static native),
+        name: "toString".into(),
+        descriptor: method!((([]double)) -> Object(java_lang_string.clone())),
         code: RawCode::native(NativeStringMethod(arrays::to_string)),
         ..Default::default()
     };
@@ -215,7 +237,14 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         java_lang_object.clone(),
     );
     arrays.register_methods(
-        [arrays_to_string, arrays_to_string_obj_arr, deep_to_string],
+        [
+            arrays_to_string_int,
+            arrays_to_string_float,
+            arrays_to_string_long,
+            arrays_to_string_double,
+            arrays_to_string_obj_arr,
+            deep_to_string,
+        ],
         method_area,
     );
     let array_methods = make_primitives(method_area, class_area, java_lang_object.clone());

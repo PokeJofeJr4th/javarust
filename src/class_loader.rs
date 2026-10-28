@@ -486,7 +486,7 @@ pub fn load_class(
                 static_data.extend(constant.bytes());
             } else {
                 // put zeroes otherwise
-                static_data.extend(std::iter::repeat(0).take(field.descriptor.get_size()));
+                static_data.extend(std::iter::repeat_n(0, field.descriptor.get_size()));
             }
             (field, field_location)
         })

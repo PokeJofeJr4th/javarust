@@ -4,7 +4,8 @@ use jvmrs_lib::{access, field, method, MethodDescriptor, MethodHandle};
 
 use crate::{
     class::{
-        code::{NativeMethod, NativeSingleMethod}, Field,
+        code::{NativeMethod, NativeSingleMethod},
+        Field,
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
@@ -59,7 +60,6 @@ pub fn make_lambda_override<const CAPTURES: usize>(
         name: invoke_name,
         method_type: invoke_descriptor,
     };
-    let instance_class = instance_class;
     NativeSingleMethod(
         move |thread: &mut Thread, caps: [u32; CAPTURES], _verbose| {
             let class = thread.class_area.search(&instance_class).unwrap();

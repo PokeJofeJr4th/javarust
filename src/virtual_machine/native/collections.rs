@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::fmt::Write;
 
 use jvmrs_lib::{access, field, method};
 
@@ -404,7 +405,7 @@ pub fn add_native_collections(
                         if index == 0 {
                             str.push_str(&string);
                         } else {
-                            str.push_str(&format!(", {string}"));
+                            write!(str, ", {string}").unwrap();
                         }
                     })?;
                     thread.stackframe.locals[2] += 1;

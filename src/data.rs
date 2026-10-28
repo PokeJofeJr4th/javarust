@@ -5,8 +5,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use itertools::Itertools;
-use jvmrs_lib::{FieldType, MethodDescriptor};
+use jvmrs_lib::MethodDescriptor;
 
 use crate::{
     class::{Class, Method},
@@ -122,6 +121,12 @@ impl Heap {
     }
 }
 
+impl Default for Heap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Debug for Heap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list()
@@ -200,7 +205,7 @@ pub struct MethodArea {
 
 impl MethodArea {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             methods: HashMap::with_hasher(BuildNonHasher),
         }
@@ -266,7 +271,7 @@ pub struct WorkingMethodArea {
 
 impl WorkingMethodArea {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             methods: HashMap::with_hasher(BuildNonHasher),
         }
@@ -360,35 +365,4 @@ fn hash_method(class: &str, name: &str, signature: &MethodDescriptor) -> MethodH
     name.hash(&mut state);
     signature.hash(&mut state);
     MethodHash(state.finish())
-}
-
-fn _u64_bytes(i: impl Iterator<Item = u8>) -> impl Iterator<Item = u64> {
-    i.tuples()
-        .map(|tup @ (_, _, _, _, _, _, _, _)| u64::from_ne_bytes(<[u8; 8]>::from(tup)))
-}
-
-fn _hash_method(class: &str, name: &str, signature: &MethodDescriptor) -> MethodHash {
-    let mut state: u64 = 0xCAFE_BABE;
-    for val in _u64_bytes(class.bytes()) {
-        state = state.rotate_left(17) ^ val;
-    }
-    for val in _u64_bytes(name.bytes()) {
-        state = state.rotate_left(15) ^ val;
-    }
-
-    for p in signature.parameters.iter().chain(&signature.return_type) {
-        state = state.rotate_left(9) ^ p.idx();
-        match p {
-            FieldType::Array(arr) => {
-                state = state.rotate_left(11) ^ arr.idx();
-            }
-            FieldType::Object(obj) => {
-                for val in _u64_bytes(obj.bytes()) {
-                    state = state.rotate_right(19) ^ val;
-                }
-            }
-            _ => {}
-        }
-    }
-    MethodHash(state)
 }

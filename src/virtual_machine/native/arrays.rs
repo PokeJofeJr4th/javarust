@@ -92,13 +92,13 @@ pub fn to_string(
                 match field_type {
                     FieldType::Double => |arr: ArrayFields<'_, u64>| {
                         format!("{:?}", unsafe {
-                            &*std::ptr::addr_of!(arr.contents).cast::<Vec<f64>>()
+                            &*std::ptr::addr_of!(arr.contents).cast::<&[f64]>()
                         })
                         .into()
                     },
                     FieldType::Long => |arr: ArrayFields<'_, u64>| {
                         format!("{:?}", unsafe {
-                            &*std::ptr::addr_of!(arr.contents).cast::<Vec<i64>>()
+                            &*std::ptr::addr_of!(arr.contents).cast::<&[i64]>()
                         })
                         .into()
                     },
@@ -120,7 +120,7 @@ pub fn to_string(
                     },
                     FieldType::Float => |arr: ArrayFields<'_, u32>| {
                         format!("{:?}", unsafe {
-                            &*std::ptr::addr_of!(arr.contents).cast::<Vec<f32>>()
+                            &*std::ptr::addr_of!(arr.contents).cast::<&[f32]>()
                         })
                         .into()
                     },
