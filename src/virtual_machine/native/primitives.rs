@@ -114,7 +114,7 @@ pub(super) fn make_primitives(
             method_area,
             class_area,
             object_class,
-            FieldType::Float,
+            FieldType::Char,
             "java/lang/Character".into(),
             "char",
             |i, _| Char(i as u16),
@@ -160,9 +160,9 @@ fn make_primitive_class<T: Stackable<u32> + Display + 'static>(
         access_flags: access!(public native),
         name: "<init>".into(),
         descriptor: MethodDescriptor {
-            parameter_size: 1 + primitive_size,
+            parameter_size: primitive_size,
             parameters: vec![primitive.clone()],
-            return_type: Some(FieldType::Object(primitive_class.clone())),
+            return_type: None,
         },
         code: RawCode::native(NativeVoid(
             move |thread: &mut Thread, [this, upper, lower]: [u32; 3], _verbose| {
@@ -215,7 +215,7 @@ fn make_primitive_class<T: Stackable<u32> + Display + 'static>(
         access_flags: access!(public native),
         name: format!("{primitive_name}Value").into(),
         descriptor: MethodDescriptor {
-            parameter_size: primitive_size,
+            parameter_size: 0,
             parameters: Vec::new(),
             return_type: Some(primitive.clone()),
         },

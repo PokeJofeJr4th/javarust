@@ -3,7 +3,7 @@ use std::sync::Arc;
 use jvmrs_lib::{access, method};
 
 use crate::{
-    class::code::{native_property, NativeStringMethod},
+    class::code::{native_property, NativeSingleMethod, NativeStringMethod},
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea},
     virtual_machine::object::ClassObj,
@@ -29,7 +29,17 @@ pub fn add_native_methods(
         }))),
         ..Default::default()
     };
-    class_class.register_method(class_name, method_area);
+    let class_assertion_status = RawMethod {
+        name: "desiredAssertionStatus".into(),
+        access_flags: access!(public native),
+        descriptor: method!(() -> boolean),
+        code: RawCode::native(NativeSingleMethod(native_property(
+            ClassObj::SELF,
+            |_cls| 1,
+        ))),
+        ..Default::default()
+    };
+    class_class.register_methods([class_name, class_assertion_status], method_area);
 
     class_area.extend([class_class]);
 }

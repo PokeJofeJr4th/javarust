@@ -73,6 +73,22 @@ impl Thread {
                 operand_stack.push(a);
                 operand_stack.push(b);
             }
+            Instruction::LoadClass(cname) => {
+                // get the class with the given name
+                let Some(class) = self.class_area.search(&cname) else {
+                    return Err(super::error::Error::ClassResolution(cname.to_string()));
+                };
+                // get the class that our object will be
+                let reflection_class = self.class_area.search("java/lang/Class").unwrap();
+                // allocate the class object
+                let obj = self.heap.lock().unwrap().allocate(Object {
+                    fields: Vec::new(),
+                    native_fields: vec![Box::new(class)],
+                    class: reflection_class,
+                });
+                // push the class object to the stack
+                self.stackframe.operand_stack.push(obj);
+            }
             Instruction::LoadString(str) => {
                 let str_ptr = self.heap.lock().unwrap().allocate_str(str);
                 // never forget a static string
@@ -983,7 +999,11 @@ impl Thread {
             }
             Instruction::New(class, class_lock) => {
                 // make a new object instance
-                let class = class_lock.get_or_init(|| self.class_area.search(&class).unwrap());
+                let class = class_lock.get_or_init(|| {
+                    self.class_area
+                        .search(&class)
+                        .unwrap_or_else(|| panic!("Failed to find class {class}"))
+                });
                 if self.maybe_initialize_class(class) {
                     return Ok(());
                 }

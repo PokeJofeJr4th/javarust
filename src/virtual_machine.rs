@@ -51,14 +51,16 @@ impl StackFrame {
 }
 
 /// # Panics
-pub fn start_vm(
+/// # Errors
+/// If the thread runs into an error
+pub fn run(
     class: &str,
     method_area: SharedMethodArea,
     class_area: SharedClassArea,
     heap: SharedHeap,
     argv: Vec<String>,
     verbose: bool,
-) {
+) -> Result<(), error::Error> {
     // set the static classes
     unsafe {
         native::ARRAY_CLASS = class_area.search("java/lang/Array");
@@ -112,10 +114,10 @@ pub fn start_vm(
         // }
         match primary_thread.tick(verbose) {
             Ok(()) => {}
-            Err(error::Error::ThreadKill) => break,
+            Err(error::Error::ThreadKill) => return Ok(()),
             Err(other) => {
                 println!("Error in main thread: {other:?}");
-                break;
+                return Err(other);
             }
         }
     }

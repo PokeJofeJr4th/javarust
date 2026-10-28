@@ -88,14 +88,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{method_area:#?}");
     }
     if !args.skip {
-        virtual_machine::start_vm(
+        virtual_machine::run(
             &class,
             method_area,
             class_area,
             heap,
             args.program_args,
             args.verbose,
-        );
+        )?;
     }
     Ok(())
 }

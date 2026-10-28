@@ -91,7 +91,7 @@ pub enum Code {
 
 impl Code {
     #[must_use]
-    pub fn as_bytecode_mut(&mut self) -> Option<&mut ByteCode> {
+    pub const fn as_bytecode_mut(&mut self) -> Option<&mut ByteCode> {
         match self {
             Self::Code(bt) => Some(bt),
             _ => None,

@@ -90,7 +90,15 @@ pub fn add_native_methods(
     let arith_to_string = RawMethod::to_string(|_: &mut _, _: [_; 0], _| {
         Ok(Some("java.lang.ArithmeticException".into()))
     });
-    arithmetic_exception.register_methods([arith_to_string, noop_init], method_area);
+    arithmetic_exception.register_methods([arith_to_string, noop_init.clone()], method_area);
+
+    let mut assertion_error = RawClass::new(
+        access!(public native),
+        "java/lang/AssertionError".into(),
+        runtime_exception.this.clone(),
+    );
+
+    assertion_error.register_method(noop_init.clone(), method_area);
 
     class_area.extend([
         throwable,
@@ -98,5 +106,6 @@ pub fn add_native_methods(
         runtime_exception,
         illegal_argument_exception,
         arithmetic_exception,
+        assertion_error,
     ]);
 }
