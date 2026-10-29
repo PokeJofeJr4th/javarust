@@ -34,6 +34,22 @@ fn test_string_concatenation() {
 }
 
 #[test]
+fn test_string_contains() {
+    test(
+        "TestStringContains",
+        r#"
+    assert "abc".contains("abc");
+    assert !"abc".contains("abcd");
+    assert "abc".contains("");
+    assert "abc".contains("b");
+    assert "abc".contains("ab");
+    assert "abc".contains("bc");
+    assert !"abc".contains("cb");
+    "#,
+    );
+}
+
+#[test]
 fn test_reflect() {
     test(
         "TestReflectClassName",

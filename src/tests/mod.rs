@@ -1,6 +1,7 @@
 mod arrays;
 mod basic;
 mod collections;
+mod exceptions;
 mod function;
 mod optional;
 

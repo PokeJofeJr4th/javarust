@@ -132,7 +132,7 @@ fn test_consumer() {
 #[test]
 fn test_consumer_reference() {
     test(
-        "TestConsumer",
+        "TestConsumerReference",
         r#"
     java.util.ArrayList<Integer> list = new java.util.ArrayList<>();
     java.util.function.Consumer<Integer> appender = list::add;
