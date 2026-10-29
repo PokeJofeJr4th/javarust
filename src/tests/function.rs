@@ -97,3 +97,16 @@ fn test_predicate_compose() {
     "#,
     );
 }
+
+#[test]
+fn test_comparator() {
+    test(
+        "TestComparator",
+        r#"
+    java.util.Comparator<Integer> comp = (a,b) -> a-b;
+    assert comp.compare(1,1) == 0;
+    assert comp.compare(17,21) == -4;
+    assert comp.compare(21,17) == 4;
+    "#,
+    );
+}
