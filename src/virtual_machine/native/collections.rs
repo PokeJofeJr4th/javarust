@@ -47,8 +47,8 @@ pub fn add_native_collections(
     let hash_map_put = RawMethod {
         access_flags: access!(public native),
         name: "put".into(),
-        descriptor: method!(((Object(java_lang_object.clone())), (Object(java_lang_object.clone())))->void),
-        code: RawCode::native(NativeVoid(
+        descriptor: method!(((Object(java_lang_object.clone())), (Object(java_lang_object.clone())))->(Object(java_lang_object.clone()))),
+        code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, [this, key, value]: [u32; 3], verbose: bool| {
                 if thread.pc_register == 0 {
                     // get the hash code for the object
@@ -56,7 +56,7 @@ pub fn add_native_collections(
                         obj.resolve_method(
                             &thread.method_area,
                             &thread.class_area,
-                            "getHashCode",
+                            "hashCode",
                             &method!(() -> int),
                             verbose,
                         )
@@ -71,7 +71,7 @@ pub fn add_native_collections(
                     HashMapObj::inspect(&thread.heap, this as usize, |map| {
                         map.insert(hash_code, value)
                     })
-                    .map(|_| Some(()))
+                    .map(|v| Some(v.unwrap_or_default()))
                 }
             },
         )),
@@ -89,7 +89,7 @@ pub fn add_native_collections(
                         obj.resolve_method(
                             &thread.method_area,
                             &thread.class_area,
-                            "getHashCode",
+                            "hashCode",
                             &method!(() -> int),
                             verbose,
                         )
@@ -133,11 +133,11 @@ pub fn add_native_collections(
         ))),
         ..Default::default()
     };
-    let hash_set_insert = RawMethod {
+    let hash_set_add = RawMethod {
         access_flags: access!(public native),
-        name: "insert".into(),
-        descriptor: method!(((Object(java_lang_object.clone())))->void),
-        code: RawCode::native(NativeVoid(
+        name: "add".into(),
+        descriptor: method!(((Object(java_lang_object.clone())))->boolean),
+        code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, [this, key]: [u32; 2], verbose: bool| {
                 if thread.pc_register == 0 {
                     // get the hash code for the object
@@ -145,7 +145,7 @@ pub fn add_native_collections(
                         obj.resolve_method(
                             &thread.method_area,
                             &thread.class_area,
-                            "getHashCode",
+                            "hashCode",
                             &method!(() -> int),
                             verbose,
                         )
@@ -157,10 +157,8 @@ pub fn add_native_collections(
                 } else {
                     let hash_code = thread.stackframe.operand_stack.pop().unwrap();
                     // add the object to the hash map
-                    HashSetObj::inspect(&thread.heap, this as usize, |set| {
-                        set.insert(hash_code);
-                    })
-                    .map(Option::Some)
+                    HashSetObj::inspect(&thread.heap, this as usize, |set| set.insert(hash_code))
+                        .map(|b| Some(u32::from(b)))
                 }
             },
         )),
@@ -178,7 +176,7 @@ pub fn add_native_collections(
                         obj.resolve_method(
                             &thread.method_area,
                             &thread.class_area,
-                            "getHashCode",
+                            "hashCode",
                             &method!(() -> int),
                             verbose,
                         )
@@ -204,7 +202,7 @@ pub fn add_native_collections(
         [
             hash_set_init,
             hash_set_contains,
-            hash_set_insert,
+            hash_set_add,
             hash_set_size,
         ],
         method_area,

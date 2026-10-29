@@ -14,7 +14,7 @@ use crate::{
         Class, Code, Method,
     },
     class_loader::{RawCode, RawMethod},
-    data::{BuildNonHasher, Heap, SharedClassArea, SharedMethodArea, NULL},
+    data::{Heap, SharedClassArea, SharedMethodArea, NULL},
 };
 
 use super::{error, native, Thread};
@@ -269,8 +269,8 @@ impl ObjectFinder for AnyObj {
 
 pub type StringBuilder = NativeFieldObj<String>;
 pub type ArrayType = NativeFieldObj<FieldType>;
-pub type HashMapObj = NativeFieldObj<HashMap<u32, u32, BuildNonHasher>>;
-pub type HashSetObj = NativeFieldObj<HashSet<u32, BuildNonHasher>>;
+pub type HashMapObj = NativeFieldObj<HashMap<u32, u32>>;
+pub type HashSetObj = NativeFieldObj<HashSet<u32>>;
 pub type ArrayListObj = NativeFieldObj<Vec<u32>>;
 pub type ClassObj = NativeFieldObj<Arc<Class>>;
 pub type Random = NativeFieldObj<StdRng>;
