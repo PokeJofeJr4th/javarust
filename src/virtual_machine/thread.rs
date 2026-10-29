@@ -1058,8 +1058,8 @@ impl Thread {
             }
             Instruction::ArrayStore2 => {
                 // store 2 values into an array
-                let index = self.stackframe.operand_stack.pop().unwrap();
                 let value = self.stackframe.operand_stack.popd::<u64>().unwrap();
+                let index = self.stackframe.operand_stack.pop().unwrap();
                 let array_ref = self.stackframe.operand_stack.pop().unwrap();
 
                 Array2.inspect(&self.heap, array_ref as usize, |arr| {
@@ -1104,7 +1104,11 @@ impl Thread {
             }
             Instruction::ArrayLength => {
                 let arr_ref = self.stackframe.operand_stack.pop().unwrap() as usize;
-                let length = Array1.inspect(&self.heap, arr_ref, |arr| arr.contents.len())? as u32;
+                // try both an array of 32-bit and an array of 64-bit values.
+                let length = Array1
+                    .inspect(&self.heap, arr_ref, |arr| arr.contents.len())
+                    .or_else(|_| Array2.inspect(&self.heap, arr_ref, |arr| arr.contents.len()))?
+                    as u32;
                 self.stackframe.operand_stack.push(length);
             }
             Instruction::CheckedCast(ty) => {
