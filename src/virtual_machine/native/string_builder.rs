@@ -40,7 +40,7 @@ pub fn set_char_at(
                 string_ref
                     .char_indices()
                     .nth(index)
-                    .map(|(pos, ch)| pos..pos + ch.len_utf8() )
+                    .map(|(pos, ch)| pos..pos + ch.len_utf8())
                     .unwrap(),
                 &String::from(character),
             );
@@ -54,9 +54,10 @@ pub fn to_string(
     [builder_ref]: [u32; 1],
     _verbose: bool,
 ) -> NativeReturn<Arc<str>> {
-    let string =
-        Arc::from(
-            &*StringBuilder::inspect(&thread.heap, builder_ref as usize, |a| a.clone())?,
-        );
+    let string = Arc::from(&*StringBuilder::inspect(
+        &thread.heap,
+        builder_ref as usize,
+        |a| a.clone(),
+    )?);
     Ok(Some(string))
 }

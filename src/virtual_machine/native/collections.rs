@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::fmt::Write;
+use std::sync::Arc;
 
 use jvmrs_lib::{access, field, method};
 

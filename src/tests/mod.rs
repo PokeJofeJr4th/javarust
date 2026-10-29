@@ -1,4 +1,6 @@
+mod arrays;
 mod basic;
+
 use std::{
     fs,
     io::{stderr, stdout, Write},
@@ -31,7 +33,7 @@ pub fn test(testname: &str, code: &str) {
     );
     assert_command(
         std::process::Command::new("cargo")
-            .args(["run", "--"])
+            .args(["run", "--", "-v"])
             .arg(format!("java_tests/{testname}.class")),
     );
 }
@@ -48,7 +50,7 @@ pub fn test_fail(testname: &str, code: &str) {
             .args(["-d", "java_tests"]),
     );
     let output = std::process::Command::new("cargo")
-        .args(["run", "--"])
+        .args(["run", "--", "-v"])
         .arg(format!("java_tests/{testname}.class"))
         .output();
     let Ok(output) = output else { return };

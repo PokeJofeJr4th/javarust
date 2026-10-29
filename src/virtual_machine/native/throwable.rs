@@ -98,7 +98,7 @@ pub fn add_native_methods(
         runtime_exception.this.clone(),
     );
 
-    assertion_error.register_method(noop_init.clone(), method_area);
+    assertion_error.register_method(noop_init, method_area);
 
     class_area.extend([
         throwable,

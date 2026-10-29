@@ -39,7 +39,7 @@ macro_rules! stack {
         $(
             let $before = $stack.pop().unwrap();
         )*
-        $stack.extend([$($after),*]);
+        $stack.extend([$($after),*].into_iter().rev());
     };
 }
 
@@ -1058,8 +1058,8 @@ impl Thread {
             }
             Instruction::ArrayStore2 => {
                 // store 2 values into an array
-                let value = self.stackframe.operand_stack.popd::<u64>().unwrap();
                 let index = self.stackframe.operand_stack.pop().unwrap();
+                let value = self.stackframe.operand_stack.popd::<u64>().unwrap();
                 let array_ref = self.stackframe.operand_stack.pop().unwrap();
 
                 Array2.inspect(&self.heap, array_ref as usize, |arr| {
@@ -1327,9 +1327,6 @@ impl Thread {
                 && &*name == "makeConcatWithConstants"
                 && &*obj == "java/lang/String" =>
             {
-                if verbose {
-                    println!("{:?}", self.heap);
-                }
                 let [Constant::String(str) | Constant::StringRef(str)] = &args[..] else {
                     return Err(format!("Expected a single template string; got {args:?}"));
                 };
@@ -1381,12 +1378,12 @@ impl Thread {
                                     .map_err(|err| format!("{err:?}"))?;
                             }
                             FieldType::Object(class) if &**class == "java/lang/String" => {
-                if verbose {
-                    println!("{value}");
-                }
-                StringObj::SELF.inspect(&self.heap, value as usize, |str| {
-                    write!(output, "{str}").map_err(|err| format!("{err:?}"))
-                }).unwrap()?;
+                                if verbose {
+                                    println!("Object field with value {value}");
+                                 }
+                                 StringObj::SELF.inspect(&self.heap, value as usize, |str| {
+                                    write!(output, "{str}").map_err(|err| format!("{err:?}"))
+                                }).unwrap()?;
                             }
                             other => return Err(format!("Unsupported item for java/lang/invoke/StringConcatFactory.makeConcatWithConstants: {other:?}")),
                         }
