@@ -10,7 +10,14 @@ fn test_one_plus_one() {
 fn test_for_loop() {
     test(
         "TestBasic2",
-        "int x=Integer.valueOf(0).intValue();for(int i=0;i<10;i++)x+=i;System.out.println(x);assert x==45;",
+        "
+        int x=Integer.valueOf(0).intValue();
+        for(int i=0;i<10;i++) {
+            x+=i;
+        }
+        System.out.println(x);
+        assert x==45;
+        ",
     );
 }
 
@@ -18,6 +25,10 @@ fn test_for_loop() {
 fn test_string_concatenation() {
     test(
         "TestBasic3",
-        "String x=\"abc123\";String y=\"abc\"+Integer.valueOf(123).intValue();assert x==y;",
+        r#"
+        String x="abc123";
+        String y="abc"+Integer.valueOf(123).intValue();
+        assert x==y;
+        "#,
     );
 }

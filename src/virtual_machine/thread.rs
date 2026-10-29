@@ -1183,7 +1183,7 @@ impl Thread {
         };
         self.stackframe
             .operand_stack
-            .push((self.pc_register - 1) as u32);
+            .push((self.pc_register.saturating_sub(1)) as u32);
         self.invoke_method(method, class);
         true
     }
@@ -1384,10 +1384,14 @@ impl Thread {
                             FieldType::Object(class) if &**class == "java/lang/String" => {
                                 if verbose {
                                     println!("Object field with value {value}");
-                                 }
-                                 StringObj::SELF.inspect(&self.heap, value as usize, |str| {
-                                    write!(output, "{str}").map_err(|err| format!("{err:?}"))
-                                }).unwrap()?;
+                                }
+                                if value == 0 {
+                                    write!(output, "null").unwrap();
+                                } else {
+                                    StringObj::SELF.inspect(&self.heap, value as usize, |str| {
+                                        write!(output, "{str}").map_err(|err| format!("{err:?}"))
+                                    }).unwrap()?;
+                                }
                             }
                             other => return Err(format!("Unsupported item for java/lang/invoke/StringConcatFactory.makeConcatWithConstants: {other:?}")),
                         }

@@ -1,6 +1,8 @@
 mod arrays;
 mod basic;
 mod collections;
+mod function;
+mod optional;
 
 use std::{
     fs,

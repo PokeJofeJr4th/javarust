@@ -1002,13 +1002,21 @@ pub fn parse_instruction(
             let ib2 = bytes.next().unwrap().1;
             let index = u16::from_be_bytes([ib1, ib2]);
 
-            let Constant::MethodRef {
+            let (Constant::MethodRef {
                 name,
                 class,
                 method_type,
-            } = constants[index as usize - 1].clone()
+            }
+            | Constant::InterfaceRef {
+                class,
+                name,
+                interface_type: method_type,
+            }) = constants[index as usize - 1].clone()
             else {
-                todo!("Error during InvokeStatic")
+                panic!(
+                    "Expected MethodRef or InterfaceMethod; got {:?}",
+                    constants[index as usize - 1]
+                );
             };
             Ok(Instruction::InvokeStatic(
                 class,

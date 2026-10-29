@@ -4,14 +4,14 @@ use super::test;
 fn test_hash_map() {
     test(
         "TestHashMap",
-        "
+        r#"
         java.util.HashMap<String, Integer> x = new java.util.HashMap<>();
         assert x.size() == 0;
-        assert x.get(\"foo\") == null;
-        x.put(\"foo\", 10);
-        assert x.get(\"foo\") != null;
+        assert x.get("foo") == null;
+        x.put("foo", 10);
+        assert x.get("foo") != null;
         assert x.size() == 1;
-        ",
+        "#,
     );
 }
 
@@ -19,14 +19,14 @@ fn test_hash_map() {
 fn test_hash_set() {
     test(
         "TestHashSet",
-        "
+        r#"
         java.util.HashSet<String> x = new java.util.HashSet<>();
         assert x.size() == 0;
-        assert !x.contains(\"shark\");
-        x.add(\"shark\");
+        assert !x.contains("shark");
+        x.add("shark");
         assert x.size() == 1;
-        assert x.contains(\"shark\");
-        ",
+        assert x.contains("shark");
+        "#,
     );
 }
 
@@ -68,6 +68,6 @@ fn test_array_list_sort() {
         assert x.size() == 10;
         System.out.println(x.toString());
         assert x.toString() == "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]";
-        "#
+        "#,
     )
 }

@@ -3,7 +3,7 @@ use super::{test, test_fail};
 #[test]
 fn test_get() {
     test("TestArrayGet", "int[] x={1,2,3};assert x[0]==1;");
-    test_fail("TestArrayGet", "int[] x={1,2,3};assert x[4]==1;");
+    test_fail("TestArrayGet", "int[] x={1,2,3};int y=x[4];");
 }
 
 #[test]

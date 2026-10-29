@@ -328,20 +328,6 @@ pub(super) fn add_native_methods(
         )),
         ..Default::default()
     };
-    let predicate_not = RawMethod {
-        name: "negate".into(),
-        access_flags: access!(public static native),
-        descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
-        code: RawCode::native(make_lambda_override::<1>(
-            predicate_test.name.clone(),
-            predicate_test.descriptor.clone(),
-            predicate.this.clone(),
-            predicate_neg_lambda.name.clone(),
-            predicate_neg_lambda.descriptor.clone(),
-            predicate.this.clone(),
-        )),
-        ..Default::default()
-    };
     let is_equal = {
         let equals_handle = MethodHandle::InvokeStatic {
             class: "java/util/Objects".into(),
@@ -474,7 +460,6 @@ pub(super) fn add_native_methods(
         [
             predicate_test,
             predicate_neg_lambda,
-            predicate_not,
             is_equal,
             predicate_negate,
             predicate_and_lambda,
@@ -733,11 +718,14 @@ pub(super) fn add_native_methods(
                         // push return address
                         thread.stackframe.operand_stack.push(1);
                         thread.resolve_and_invoke(func, "apply", &function_descriptor, verbose)?;
-                        thread.stackframe.locals[0] = value;
+                        thread.stackframe.locals[1] = value;
                         Ok(None)
                     }
                 }
-                1 => Ok(thread.stackframe.operand_stack.pop()),
+                1 => {
+                    let inner_value = thread.stackframe.operand_stack.pop().unwrap();
+                    Ok(Some(Optional::make(thread, inner_value, verbose)))
+                }
                 _ => unreachable!(),
             },
         )),
@@ -771,7 +759,7 @@ pub(super) fn add_native_methods(
                 1 => StringObj::inspect(
                     &thread.heap,
                     thread.stackframe.operand_stack.pop().unwrap() as usize,
-                    |s| Some(format!("Some({s})").into()),
+                    |s| Some(format!("Optional[{s}]").into()),
                 ),
                 _ => unreachable!(),
             }
