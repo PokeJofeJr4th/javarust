@@ -21,6 +21,7 @@ jobs:
     - name: Setup Java JDK
       uses: actions/setup-java@v6.1.0
       with:
+        distribution: oracle
         java-version: latest
     - name: Run tests
       run: cargo test --verbose
