@@ -32,3 +32,16 @@ fn test_string_concatenation() {
         "#,
     );
 }
+
+#[test]
+fn test_reflect() {
+    test(
+        "TestReflectClassName",
+        r#"
+        java.lang.Class cls = new TestReflectClassName().getClass();
+        System.out.println("cls="+cls);
+        System.out.println("cls.getName()="+cls.getName());
+        assert cls.getName() == "TestReflectClassName";
+        "#,
+    );
+}

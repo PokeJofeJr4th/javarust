@@ -51,19 +51,20 @@ pub static mut RANDOM_CLASS: Option<Arc<Class>> = None;
 pub fn get_class(
     heap: &Mutex<Heap>,
     class_area: &SharedClassArea,
-    obj_class: Arc<str>,
+    obj_class: Arc<Class>,
 ) -> Option<u32> {
     static CLASS_CACHE: Mutex<OnceLock<HashMap<Arc<str>, u32>>> = Mutex::new(OnceLock::new());
     let mut binding = CLASS_CACHE.lock().unwrap();
     let class_cache = binding.get_or_init(HashMap::new);
-    if let Some(&ptr) = class_cache.get(&obj_class) {
+    if let Some(&ptr) = class_cache.get(&obj_class.this) {
         return Some(ptr);
     }
-    let class_class = class_area.search("java/lang/Class")?;
-    let mut class_obj = Object::from_class(class_class.clone());
-    class_obj.native_fields.push(Box::new(class_class));
+    let mut class_obj = Object::from_class(class_area.search("java/lang/Class")?);
+    // hold onto an entry so we don't have to clone obj_class
+    let entry = binding.get_mut().unwrap().entry(obj_class.this.clone());
+    class_obj.native_fields.push(Box::new(obj_class));
     let ptr = heap.lock().unwrap().allocate(class_obj);
-    binding.get_mut().unwrap().insert(obj_class, ptr);
+    entry.insert_entry(ptr);
     drop(binding);
     Some(ptr)
 }
@@ -92,8 +93,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 let obj_class =
                     AnyObj.inspect(&thread.heap, obj as usize, |obj| obj.class.clone())?;
                 Ok(Some(
-                    get_class(&thread.heap, &thread.class_area, obj_class.this.clone())
-                        .unwrap_or(NULL),
+                    get_class(&thread.heap, &thread.class_area, obj_class).unwrap_or(NULL),
                 ))
             },
         )),
