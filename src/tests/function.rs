@@ -110,3 +110,39 @@ fn test_comparator() {
     "#,
     );
 }
+
+#[test]
+fn test_consumer() {
+    test(
+        "TestConsumer",
+        r#"
+    java.util.ArrayList<Integer> list = new java.util.ArrayList<>();
+    java.util.function.Consumer<Integer> appender = (x) -> list.add(x);
+    assert list.size() == 0;
+    appender.accept(21);
+    assert list.size() == 1;
+    appender.accept(-8);
+    assert list.size() == 2;
+    System.out.println(list);
+    assert list.toString() == "[21, -8]";
+    "#,
+    );
+}
+
+#[test]
+fn test_consumer_reference() {
+    test(
+        "TestConsumer",
+        r#"
+    java.util.ArrayList<Integer> list = new java.util.ArrayList<>();
+    java.util.function.Consumer<Integer> appender = list::add;
+    assert list.size() == 0;
+    appender.accept(21);
+    assert list.size() == 1;
+    appender.accept(-8);
+    assert list.size() == 2;
+    System.out.println(list);
+    assert list.toString() == "[21, -8]";
+    "#,
+    );
+}
