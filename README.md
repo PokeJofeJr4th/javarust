@@ -1,3 +1,5 @@
+[![Tests](https://github.com/PokeJofeJr4th/javarust/actions/workflows/rust.yml/badge.svg)](https://github.com/PokeJofeJr4th/javarust/actions/workflows/rust.yml)
+
 ## Usage
 
 JVM-RS requires rust to be installed. Then use `cargo run -- -h` to display help text, or keep reading to see usage examples.
