@@ -8,7 +8,6 @@ use crate::{
     },
 };
 
-#[allow(clippy::significant_drop_tightening)]
 pub fn init(thread: &mut Thread, [obj_ref, str_ref]: [u32; 2], _verbose: bool) -> NativeReturn<()> {
     let init_string = StringObj::SELF.inspect(&thread.heap, str_ref as usize, |init_string| {
         init_string.to_string()

@@ -4,6 +4,7 @@ mod collections;
 mod exceptions;
 mod function;
 mod optional;
+mod stream;
 
 use std::{
     fs,
