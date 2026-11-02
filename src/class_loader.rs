@@ -97,7 +97,7 @@ pub enum RawConstant {
 }
 
 #[must_use]
-pub fn load_environment() -> (WorkingMethodArea, WorkingClassArea) {
+pub fn new_standard_environment() -> (WorkingMethodArea, WorkingClassArea) {
     let mut method_area = WorkingMethodArea::new();
     let mut class_area = WorkingClassArea::new();
     add_native_methods(&mut method_area, &mut class_area);
@@ -105,6 +105,7 @@ pub fn load_environment() -> (WorkingMethodArea, WorkingClassArea) {
 }
 
 #[allow(clippy::too_many_lines)]
+/// Parse an entire class file from a stream of bytes
 /// # Errors
 /// # Panics
 pub fn load_class(
@@ -227,7 +228,7 @@ pub fn load_class(
 
     let constants = raw_constants
         .iter()
-        .map(|constant| cook_constant(&raw_constants, constant))
+        .map(|constant| hydrate_constant(&raw_constants, constant))
         .collect::<Result<Vec<_>, _>>()?;
     if verbose {
         println!("{constants:?}");
@@ -236,11 +237,14 @@ pub fn load_class(
     let [access, this_class, super_class, interface_count] = get_u16_array(bytes)?;
 
     let access = AccessFlags(access);
-    let this_class = raw_class_index(&raw_constants, this_class as usize)?;
-    let super_class = raw_class_index(&raw_constants, super_class as usize)?;
+    let this_class = raw_class_by_index(&raw_constants, this_class as usize)?;
+    let super_class = raw_class_by_index(&raw_constants, super_class as usize)?;
     let mut interfaces = Vec::new();
     for _ in 0..interface_count {
-        interfaces.push(raw_class_index(&raw_constants, get_u16(bytes)? as usize)?);
+        interfaces.push(raw_class_by_index(
+            &raw_constants,
+            get_u16(bytes)? as usize,
+        )?);
     }
 
     let field_count = get_u16(bytes)?;
@@ -248,8 +252,8 @@ pub fn load_class(
     for _ in 0..field_count {
         let [access_flags, name_idx, descriptor_idx, attrs_count] = get_u16_array(bytes)?;
         let access_flags = AccessFlags(access_flags);
-        let name = raw_str_index(&raw_constants, name_idx as usize)?;
-        let descriptor = raw_str_index(&raw_constants, descriptor_idx as usize)?;
+        let name = raw_str_by_index(&raw_constants, name_idx as usize)?;
+        let descriptor = raw_str_by_index(&raw_constants, descriptor_idx as usize)?;
         let descriptor = parse_field_type(&mut descriptor.chars().peekable())?;
         let mut attributes = Vec::new();
         for _ in 0..attrs_count {
@@ -296,8 +300,8 @@ pub fn load_class(
     for _ in 0..method_count {
         let [access_flags, name_idx, descriptor_idx, attrs_count] = get_u16_array(bytes)?;
         let access_flags = AccessFlags(access_flags);
-        let name = raw_str_index(&raw_constants, name_idx as usize)?;
-        let descriptor = raw_str_index(&raw_constants, descriptor_idx as usize)?;
+        let name = raw_str_by_index(&raw_constants, name_idx as usize)?;
+        let descriptor = raw_str_by_index(&raw_constants, descriptor_idx as usize)?;
         let descriptor = parse_method_descriptor(&descriptor)?;
         let mut attributes = Vec::new();
         for _ in 0..attrs_count {
@@ -331,7 +335,7 @@ pub fn load_class(
                 (0..exc_count)
                     .map(|_| {
                         let idx = get_u16(&mut bytes)?;
-                        class_index(&constants, idx as usize)
+                        class_by_index(&constants, idx as usize)
                     })
                     .collect::<Result<Vec<_>, _>>()?
             }
@@ -398,7 +402,7 @@ pub fn load_class(
     let (source_file, attributes) = single_attribute(attributes, "SourceFile")?;
 
     let source_file = match source_file {
-        Some(source_file) => Some(str_index(
+        Some(source_file) => Some(str_by_index(
             &constants,
             get_u16(&mut source_file.into_iter())? as usize,
         )?),
@@ -439,7 +443,7 @@ pub fn load_class(
                     name: if name_idx == 0 {
                         None
                     } else {
-                        Some(str_index(&constants, name_idx)?)
+                        Some(str_by_index(&constants, name_idx)?)
                     },
                     flags,
                 })
@@ -454,7 +458,7 @@ pub fn load_class(
     let _nest_host = match nest_host {
         Some(vec) => {
             let idx = get_u16(&mut vec.into_iter())?;
-            let class = class_index(&constants, idx as usize)?;
+            let class = class_by_index(&constants, idx as usize)?;
             Some(class)
         }
         None => None,
@@ -528,24 +532,21 @@ pub fn load_class(
     Ok(class)
 }
 
+/// Split out a single attribute from the list. If the target exists, returns the target data and the list of attributes. If the target doesn't exist, returns None and the list of attributes. If there is more than one of the target attribute, returns an error.
 fn single_attribute(
     attributes: Vec<Attribute>,
-    compare: &str,
+    target: &str,
 ) -> Result<(Option<Vec<u8>>, Vec<Attribute>), String> {
-    let (mut single_attribute, attributes) = split_attributes(attributes, compare);
+    let (mut single_attribute, attributes): (Vec<Attribute>, Vec<Attribute>) = attributes
+        .into_iter()
+        .partition(|attr| &*attr.name == target);
     match &mut single_attribute[..] {
         [] => Ok((None, attributes)),
         [attr] => Ok((Some(core::mem::take(&mut attr.data)), attributes)),
         _ => Err(format!(
-            "A class should have at most one {compare} attribute"
+            "A class should have at most one {target} attribute"
         )),
     }
-}
-
-fn split_attributes(attributes: Vec<Attribute>, compare: &str) -> (Vec<Attribute>, Vec<Attribute>) {
-    attributes
-        .into_iter()
-        .partition(|attr| &*attr.name == compare)
 }
 
 fn get_signature(
@@ -574,7 +575,7 @@ fn get_attribute(
     bytes: &mut impl Iterator<Item = u8>,
 ) -> Result<Attribute, String> {
     let name_idx = get_u16(bytes)? as usize;
-    let name = str_index(constants, name_idx)
+    let name = str_by_index(constants, name_idx)
         .map_err(|err| format!("While getting attribute name: {err}"))?;
     let attr_length = get_u32(bytes)? as usize;
     Ok(Attribute {
@@ -602,7 +603,7 @@ fn parse_code_attribute(
         let catch_type = if catch_type == 0 {
             None
         } else {
-            Some(class_index(constants, catch_type as usize)?)
+            Some(class_by_index(constants, catch_type as usize)?)
         };
         exception_table.push(ExceptionTableEntry {
             start_pc,
@@ -723,8 +724,8 @@ fn parse_code_attribute(
                     Ok::<LocalVarTypeEntry, String>(LocalVarTypeEntry {
                         pc,
                         length,
-                        name: str_index(constants, name_idx as usize)?,
-                        ty: str_index(constants, ty_idx as usize)?,
+                        name: str_by_index(constants, name_idx as usize)?,
+                        ty: str_by_index(constants, ty_idx as usize)?,
                         index,
                     })
                 })
@@ -747,9 +748,9 @@ fn parse_code_attribute(
                     Ok::<LocalVarEntry, String>(LocalVarEntry {
                         pc,
                         length,
-                        name: str_index(constants, name_idx as usize)?,
+                        name: str_by_index(constants, name_idx as usize)?,
                         ty: parse_field_type(
-                            &mut str_index(constants, ty_idx as usize)?.chars().peekable(),
+                            &mut str_by_index(constants, ty_idx as usize)?.chars().peekable(),
                         )?,
                         index,
                     })
@@ -792,7 +793,7 @@ fn parse_verification_type(
         Some(6) => Ok(VerificationTypeInfo::UninitializedThis),
         Some(7) => {
             let index = get_u16(bytes)?;
-            let class_name = class_index(constants, index as usize)?;
+            let class_name = class_by_index(constants, index as usize)?;
             Ok(VerificationTypeInfo::Object { class_name })
         }
         Some(8) => {
@@ -833,7 +834,7 @@ fn get_u64(bytes: &mut impl Iterator<Item = u8>) -> Result<u64, String> {
     Ok(u64::from_be_bytes(bytes))
 }
 
-fn raw_str_index(constants: &[RawConstant], idx: usize) -> Result<Arc<str>, String> {
+fn raw_str_by_index(constants: &[RawConstant], idx: usize) -> Result<Arc<str>, String> {
     match constants.get(idx - 1) {
         Some(RawConstant::String(str)) => Ok(str.clone()),
         Some(other) => Err(format!("Expected a string; got `{other:?}`")),
@@ -841,16 +842,17 @@ fn raw_str_index(constants: &[RawConstant], idx: usize) -> Result<Arc<str>, Stri
     }
 }
 
-fn raw_class_index(constants: &[RawConstant], idx: usize) -> Result<Arc<str>, String> {
+fn raw_class_by_index(constants: &[RawConstant], idx: usize) -> Result<Arc<str>, String> {
     match constants.get(idx - 1) {
         Some(RawConstant::ClassRef { string_addr }) => {
-            raw_str_index(constants, *string_addr as usize)
+            raw_str_by_index(constants, *string_addr as usize)
         }
         Some(other) => Err(format!("Expected a class reference; got `{other:?}`")),
         None => Err(String::from("Constant index out of range")),
     }
 }
-fn str_index(constants: &[Constant], idx: usize) -> Result<Arc<str>, String> {
+
+fn str_by_index(constants: &[Constant], idx: usize) -> Result<Arc<str>, String> {
     match constants.get(idx - 1) {
         Some(Constant::String(str)) => Ok(str.clone()),
         Some(other) => Err(format!("Expected a string; got `{other:?}`")),
@@ -858,7 +860,7 @@ fn str_index(constants: &[Constant], idx: usize) -> Result<Arc<str>, String> {
     }
 }
 
-fn class_index(constants: &[Constant], idx: usize) -> Result<Arc<str>, String> {
+fn class_by_index(constants: &[Constant], idx: usize) -> Result<Arc<str>, String> {
     match constants.get(idx - 1) {
         Some(Constant::ClassRef(str)) => Ok(str.clone()),
         Some(other) => Err(format!("Expected a class reference; got `{other:?}`")),
@@ -908,10 +910,11 @@ fn parse_java_string(bytes: Vec<u8>) -> Result<String, String> {
 }
 
 #[allow(clippy::too_many_lines)]
-fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Constant, String> {
+/// Given a constant pool and a raw constant within it, return a more usable form. This verifies the integrity of any references to other constants and collapses the many levels of indirection present in the class file specification.
+fn hydrate_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Constant, String> {
     Ok(match constant {
         RawConstant::ClassRef { string_addr } => {
-            Constant::ClassRef(raw_str_index(constants, *string_addr as usize)?)
+            Constant::ClassRef(raw_str_by_index(constants, *string_addr as usize)?)
         }
         RawConstant::Double(d) => Constant::Double(*d),
         // RawConstant::Dynamic { constant } => Constant::Dynamic {
@@ -921,8 +924,9 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
             class_ref_addr,
             name_type_addr,
         } => {
-            let class = raw_class_index(constants, *class_ref_addr as usize)?;
-            let (name, field_type) = raw_name_type_index(constants, *name_type_addr as usize)?;
+            let class = raw_class_by_index(constants, *class_ref_addr as usize)?;
+            let (name, field_type) =
+                raw_name_and_type_by_index(constants, *name_type_addr as usize)?;
             let field_type = parse_field_type(&mut field_type.chars().peekable())?;
             Constant::FieldRef {
                 class,
@@ -936,8 +940,9 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
             class_ref_addr,
             name_type_addr,
         } => {
-            let class = raw_class_index(constants, *class_ref_addr as usize)?;
-            let (name, interface_type) = raw_name_type_index(constants, *name_type_addr as usize)?;
+            let class = raw_class_by_index(constants, *class_ref_addr as usize)?;
+            let (name, interface_type) =
+                raw_name_and_type_by_index(constants, *name_type_addr as usize)?;
             let interface_type = parse_method_descriptor(&interface_type)?;
             Constant::InterfaceRef {
                 class,
@@ -949,7 +954,7 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
             bootstrap_index,
             name_type_index: name,
         } => {
-            let (method_name, method_type) = raw_name_type_index(constants, name as usize)?;
+            let (method_name, method_type) = raw_name_and_type_by_index(constants, name as usize)?;
             let method_type = parse_method_descriptor(&method_type)?;
             Constant::InvokeDynamic {
                 bootstrap_index,
@@ -970,9 +975,9 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
                         name_type_addr,
                     },
                 ) => {
-                    let class = raw_class_index(constants, *class_ref_addr as usize)?;
+                    let class = raw_class_by_index(constants, *class_ref_addr as usize)?;
                     let (name, field_type) =
-                        raw_name_type_index(constants, *name_type_addr as usize)?;
+                        raw_name_and_type_by_index(constants, *name_type_addr as usize)?;
                     let field_type = parse_field_type(&mut field_type.chars().peekable())?;
                     Constant::MethodHandle(match handle_kind {
                         MethodHandleKind::GetField => MethodHandle::GetField {
@@ -1006,9 +1011,9 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
                         name_type_addr,
                     },
                 ) => {
-                    let class = raw_class_index(constants, *class_ref_addr as usize)?;
+                    let class = raw_class_by_index(constants, *class_ref_addr as usize)?;
                     let (name, method_type) =
-                        raw_name_type_index(constants, *name_type_addr as usize)?;
+                        raw_name_and_type_by_index(constants, *name_type_addr as usize)?;
                     let method_type = parse_method_descriptor(&method_type)?;
                     Constant::MethodHandle(match handle_kind {
                         MethodHandleKind::InvokeStatic => MethodHandle::InvokeStatic {
@@ -1035,8 +1040,9 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
             class_ref_addr,
             name_type_addr,
         } => {
-            let class = raw_class_index(constants, *class_ref_addr as usize)?;
-            let (name, method_type) = raw_name_type_index(constants, *name_type_addr as usize)?;
+            let class = raw_class_by_index(constants, *class_ref_addr as usize)?;
+            let (name, method_type) =
+                raw_name_and_type_by_index(constants, *name_type_addr as usize)?;
             let method_type = parse_method_descriptor(&method_type)?;
             Constant::MethodRef {
                 class,
@@ -1045,7 +1051,7 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
             }
         }
         &RawConstant::MethodType { index } => {
-            let type_descriptor = raw_str_index(constants, index as usize)?;
+            let type_descriptor = raw_str_by_index(constants, index as usize)?;
             Constant::MethodType(parse_method_descriptor(&type_descriptor)?)
         }
         // &RawConstant::Module { identity } => Constant::Module { identity },
@@ -1053,8 +1059,8 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
             name_desc_addr,
             type_addr,
         } => {
-            let name = raw_str_index(constants, *name_desc_addr as usize)?;
-            let type_descriptor = raw_str_index(constants, *type_addr as usize)?;
+            let name = raw_str_by_index(constants, *name_desc_addr as usize)?;
+            let type_descriptor = raw_str_by_index(constants, *type_addr as usize)?;
             Constant::NameTypeDescriptor {
                 name,
                 type_descriptor,
@@ -1063,14 +1069,15 @@ fn cook_constant(constants: &[RawConstant], constant: &RawConstant) -> Result<Co
         // &RawConstant::Package { identity } => Constant::Package { identity },
         RawConstant::String(string) => Constant::String(string.clone()),
         RawConstant::StringRef { string_addr } => {
-            let string = raw_str_index(constants, *string_addr as usize)?;
+            let string = raw_str_by_index(constants, *string_addr as usize)?;
             Constant::StringRef(string)
         }
         RawConstant::Placeholder => Constant::Placeholder,
     })
 }
 
-fn raw_name_type_index(
+/// Given a constant pool and an index into it, find the name and type descriptor.
+fn raw_name_and_type_by_index(
     constants: &[RawConstant],
     idx: usize,
 ) -> Result<(Arc<str>, Arc<str>), String> {
@@ -1081,11 +1088,12 @@ fn raw_name_type_index(
     else {
         return Err(String::from("Invalid NameTypeDescriptor"));
     };
-    let name = raw_str_index(constants, *name_desc_addr as usize)?;
-    let type_name = raw_str_index(constants, *type_addr as usize)?;
+    let name = raw_str_by_index(constants, *name_desc_addr as usize)?;
+    let type_name = raw_str_by_index(constants, *type_addr as usize)?;
     Ok((name, type_name))
 }
 
+/// Parse a string from a class file (e.g. `(II[U)Ljava/lang/String;`) into a method descriptor
 /// # Errors
 pub fn parse_method_descriptor(src: &str) -> Result<MethodDescriptor, String> {
     let mut chars = src.chars().peekable();
@@ -1110,7 +1118,7 @@ pub fn parse_method_descriptor(src: &str) -> Result<MethodDescriptor, String> {
     })
 }
 
-/// # Panics
+/// Parse a single field from a stream of characters.
 /// # Errors
 pub fn parse_field_type(
     chars: &mut Peekable<impl Iterator<Item = char>>,
@@ -1124,12 +1132,12 @@ pub fn parse_field_type(
         Some('J') => Ok(FieldType::Long),
         Some('L') => {
             let mut class_buf = String::new();
-            while let Some(char) = chars.peek() {
-                if char == &';' {
+            while let Some(char) = chars.next() {
+                if char == ';' {
                     chars.next();
                     break;
                 }
-                class_buf.push(chars.next().unwrap());
+                class_buf.push(char);
             }
             Ok(FieldType::Object(class_buf.into()))
         }

@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{args:?}");
     }
     let mut firstclass = None;
-    let (mut method_area, mut class_area) = class_loader::load_environment();
+    let (mut method_area, mut class_area) = class_loader::new_standard_environment();
     let mut filenames = args.filenames;
     // include any paths from a project file
     if let Some(projpath) = args.project {
