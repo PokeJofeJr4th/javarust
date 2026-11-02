@@ -124,6 +124,23 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         [noop_init, object_to_string, object_hash, object_get_class],
         method_area,
     );
+    let mut util_objects = RawClass::new(
+        access!(public native),
+        "java/util/Objects".into(),
+        java_lang_object.clone(),
+    );
+    let objects_req_non_null = RawMethod {
+        access_flags: access!(public native),
+        name: "requireNonNull".into(),
+        descriptor: method!(((Object(java_lang_object.clone()))) -> Object(java_lang_object.clone())),
+        code: RawCode::native(NativeSingleMethod(|_: &mut _, [ptr]: [u32; 1], _| {
+            // TODO: Use an exception here
+            assert!(ptr != 0);
+            Ok(Some(ptr))
+        })),
+        ..Default::default()
+    };
+    util_objects.register_method(objects_req_non_null, method_area);
 
     let mut enum_class = RawClass::new(
         access!(public abstract native),
@@ -613,6 +630,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     arrays.register_methods(array_methods, method_area);
     class_area.extend([
         object,
+        util_objects,
         enum_class,
         array,
         arrays,

@@ -313,6 +313,11 @@ impl NativeMethod for LambdaOverride {
                 class: invoke_class,
                 name: invoke_name,
                 method_type: invoke_type,
+            }
+            | MethodHandle::InvokeVirtual {
+                class: invoke_class,
+                name: invoke_name,
+                method_type: invoke_type,
             } => {
                 match thread.pc_register {
                     0 => {
