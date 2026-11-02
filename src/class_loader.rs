@@ -1004,8 +1004,10 @@ fn hydrate_constant(constants: &[RawConstant], constant: &RawConstant) -> Result
                     })
                 }
                 (
-                    handle_kind
-                    @ (MethodHandleKind::InvokeStatic | MethodHandleKind::InvokeSpecial),
+                    handle_kind @ (MethodHandleKind::InvokeStatic
+                    | MethodHandleKind::InvokeSpecial
+                    | MethodHandleKind::InvokeVirtual
+                    | MethodHandleKind::NewInvokeSpecial),
                     RawConstant::MethodRef {
                         class_ref_addr,
                         name_type_addr,
@@ -1022,6 +1024,16 @@ fn hydrate_constant(constants: &[RawConstant], constant: &RawConstant) -> Result
                             method_type,
                         },
                         MethodHandleKind::InvokeSpecial => MethodHandle::InvokeSpecial {
+                            class,
+                            name,
+                            method_type,
+                        },
+                        MethodHandleKind::InvokeVirtual => MethodHandle::InvokeVirtual {
+                            class,
+                            name,
+                            method_type,
+                        },
+                        MethodHandleKind::NewInvokeSpecial => MethodHandle::NewInvokeSpecial {
                             class,
                             name,
                             method_type,
@@ -1132,9 +1144,8 @@ pub fn parse_field_type(
         Some('J') => Ok(FieldType::Long),
         Some('L') => {
             let mut class_buf = String::new();
-            while let Some(char) = chars.next() {
+            for char in chars.by_ref() {
                 if char == ';' {
-                    chars.next();
                     break;
                 }
                 class_buf.push(char);

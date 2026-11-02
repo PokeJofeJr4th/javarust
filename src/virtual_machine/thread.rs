@@ -952,7 +952,7 @@ impl Thread {
                             .search(&class, &name, &method_type)
                             .ok_or_else(|| {
                                 format!(
-                                    "Error during InvokeStatic; {class}.{name}: {method_type:?}"
+                                    "Error during InvokeStatic: Failed to find method: {class}.{name}: {method_type:?}"
                                 )
                             })
                             .unwrap()
