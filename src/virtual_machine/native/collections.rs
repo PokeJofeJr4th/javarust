@@ -257,35 +257,19 @@ pub fn add_native_collections(
         name: "sort".into(),
         descriptor: method!(((Object("java/util/Comparator".into()))) -> void),
         code: RawCode::native(NativeVoid(
-            |thread: &mut Thread,
-             [this, cmp, partition, length, target_ptr, index]: [u32; 6],
-             verbose: bool| {
-                if verbose {
-                    println!("Partition: {partition}, Length: {length}, Index: {index}");
-                }
-                let pc = thread.pc_register;
-                thread.pc_register += 1;
-                match pc {
-                    0 => {
-                        thread.stackframe.locals[2] = 1;
-                        let length =
-                            ArrayListObj::inspect(&thread.heap, this as usize, |v| v.len())? as u32;
-                        thread.stackframe.locals[3] = length;
-                        Ok(None)
-                    }
-                    1 => {
-                        let target_ptr =
-                            ArrayListObj::inspect(&thread.heap, this as usize, |vec| {
-                                vec.get(partition as usize).copied().unwrap()
-                            })?;
-                        thread.stackframe.locals[4] = target_ptr;
-                        thread.stackframe.locals[5] = partition;
-                        Ok(None)
-                    }
-                    2 => {
-                        let next_ptr = ArrayListObj::inspect(&thread.heap, this as usize, |vec| {
-                            vec.get(index as usize - 1).copied().unwrap()
+            |thread: &mut Thread, [this, cmp]: [u32; 2], verbose: bool| {
+                let length =
+                    ArrayListObj::inspect(&thread.heap, this as usize, |arrlist| arrlist.len())?;
+                for partition in 1..length {
+                    let target = ArrayListObj::inspect(&thread.heap, this as usize, |arrlist| {
+                        arrlist[partition]
+                    })?;
+                    for index in (0..partition).rev() {
+                        let next = ArrayListObj::inspect(&thread.heap, this as usize, |arrlist| {
+                            arrlist[index]
                         })?;
+
+                        // cmp.compare(target, next)
                         let (resolved_class, resolved_method) =
                             AnyObj.inspect(&thread.heap, cmp as usize, |obj| {
                                 obj.resolve_method(
@@ -296,65 +280,31 @@ pub fn add_native_collections(
                                     verbose,
                                 )
                             })?;
-                        thread.stackframe.operand_stack.push(3);
+                        thread.stackframe.operand_stack.push(0);
+                        let old_stack_size = thread.stack.len();
                         thread.invoke_method(resolved_method, resolved_class);
                         thread.stackframe.locals[0] = cmp;
-                        thread.stackframe.locals[1] = target_ptr;
-                        thread.stackframe.locals[2] = next_ptr;
-                        Ok(None)
-                    }
-                    3 => {
-                        let cmp = thread.stackframe.operand_stack.pop().unwrap() as i32;
-                        if cmp >= 0 {
-                            thread.pc_register = 4;
-                        } else {
-                            // shift the value
-                            ArrayListObj::inspect(&thread.heap, this as usize, |vec| {
-                                vec[index as usize] = vec[index as usize - 1];
+                        thread.stackframe.locals[1] = target;
+                        thread.stackframe.locals[2] = next;
+                        while thread.stack.len() > old_stack_size {
+                            thread.tick(verbose)?;
+                        }
+
+                        let compare_value = thread.stackframe.operand_stack.pop().unwrap();
+                        if compare_value as i32 >= 0 {
+                            // target is greater than list[index]; place it and finish this partition
+                            ArrayListObj::inspect(&thread.heap, this as usize, |arrlist| {
+                                arrlist[index + 1] = target;
                             })?;
-                            // start the next loop if it's not over
-                            if partition > 0 {
-                                // start the next loop
-                                thread.pc_register = 4;
-                                thread.stackframe.locals[5] -= 1;
-                            }
+                            break;
                         }
-                        Ok(None)
-                    }
-                    4 => {
-                        // exit the loop and simulate the end
-                        ArrayListObj::inspect(&thread.heap, this as usize, |vec| {
-                            vec[index as usize] = target_ptr;
+                        // target is less than list[index]; move it left
+                        ArrayListObj::inspect(&thread.heap, this as usize, |arrlist| {
+                            arrlist[index + 1] = arrlist[index];
                         })?;
-                        // start the next outer loop or exit the function
-                        if partition + 1 >= length {
-                            // exit the function
-                            Ok(Some(()))
-                        } else {
-                            // start the next outer loop
-                            thread.pc_register = 1;
-                            // increment partition
-                            thread.stackframe.locals[2] += 1;
-                            Ok(None)
-                        }
                     }
-                    _ => Err("Impossible pc reached".to_string().into()),
                 }
-                /*
-                def insertion_sort_wo_swap(a_list):
-                    # 0
-                    for partition in range(1, len(a_list)):
-                        # 1
-                        target = a_list[partition]
-                        for index in range(partition, -1, -1):
-                            # 2
-                            if target >= a_list[index - 1]:
-                            # 3
-                                break
-                            a_list[index] = a_list[index - 1]
-                        # 4
-                        a_list[index] = target
-                */
+                Ok(Some(()))
             },
         )),
         ..Default::default()
