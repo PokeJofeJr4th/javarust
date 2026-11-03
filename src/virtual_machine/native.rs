@@ -9,24 +9,17 @@ use rand::RngExt;
 
 use crate::{
     class::{
-        code::{
-            native_property, NativeDoubleMethod, NativeNoop, NativeSingleMethod,
-            NativeStringMethod, NativeVoid,
-        },
+        code::{native_property, NativeDoubleMethod, NativeNoop, NativeSingleMethod, NativeVoid},
         Class, Field,
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
 };
 
-use self::{
-    arrays::deep_to_string,
-    primitives::make_primitives,
-    string::{native_println_object, native_string_char_at, native_string_value_of},
-};
+use self::primitives::make_primitives;
 
 use super::{
-    object::{AnyObj, Array1, Array2, ArrayType, Object, ObjectFinder, Random, StringObj},
+    object::{AnyObj, Object, ObjectFinder, Random},
     Thread,
 };
 
@@ -39,6 +32,7 @@ pub mod reflect;
 pub mod stream;
 pub mod string;
 pub mod string_builder;
+pub mod system;
 pub mod throwable;
 
 pub static mut OBJECT_CLASS: Option<Arc<Class>> = None;
@@ -210,159 +204,6 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     };
     enum_class.register_methods([enum_init, enum_to_string, enum_name], method_area);
 
-    let array = RawClass::new(
-        access!(public native),
-        "java/lang/Array".into(),
-        java_lang_object.clone(),
-    );
-
-    let arrays_to_string_int = RawMethod {
-        access_flags: access!(public static native),
-        name: "toString".into(),
-        descriptor: method!((([]int)) -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeStringMethod(arrays::to_string)),
-        ..Default::default()
-    };
-    let arrays_to_string_float = RawMethod {
-        access_flags: access!(public static native),
-        name: "toString".into(),
-        descriptor: method!((([]float)) -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeStringMethod(arrays::to_string)),
-        ..Default::default()
-    };
-    let arrays_to_string_long = RawMethod {
-        access_flags: access!(public static native),
-        name: "toString".into(),
-        descriptor: method!((([]long)) -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeStringMethod(arrays::to_string)),
-        ..Default::default()
-    };
-    let arrays_to_string_double = RawMethod {
-        access_flags: access!(public static native),
-        name: "toString".into(),
-        descriptor: method!((([]double)) -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeStringMethod(arrays::to_string)),
-        ..Default::default()
-    };
-    let arrays_to_string_obj_arr = RawMethod {
-        access_flags: access!(public static native),
-        name: "toString".into(),
-        descriptor: method!((([]Object(java_lang_object.clone()))) -> Object(java_lang_string.clone())),
-        signature: None,
-        code: RawCode::native(NativeStringMethod(arrays::to_string)),
-        attributes: Vec::new(),
-        ..Default::default()
-    };
-    let deep_to_string = RawMethod {
-        access_flags: access!(public static native),
-        name: "deepToString".into(),
-        descriptor: method!((([]Object(java_lang_object.clone()))) -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeStringMethod(deep_to_string)),
-        ..Default::default()
-    };
-    let mut arrays = RawClass::new(
-        access!(public native),
-        "java/util/Arrays".into(),
-        java_lang_object.clone(),
-    );
-    arrays.register_methods(
-        [
-            arrays_to_string_int,
-            arrays_to_string_float,
-            arrays_to_string_long,
-            arrays_to_string_double,
-            arrays_to_string_obj_arr,
-            deep_to_string,
-        ],
-        method_area,
-    );
-    let array_methods = make_primitives(method_area, class_area, java_lang_object.clone());
-    arrays.methods.extend(
-        array_methods
-            .iter()
-            .map(|method| method.name(arrays.this.clone())),
-    );
-
-    let string_length = RawMethod {
-        access_flags: access!(public native),
-        name: "length".into(),
-        descriptor: method!(() -> int),
-        code: RawCode::native(NativeSingleMethod(native_property(StringObj::SELF, |s| {
-            s.len() as u32
-        }))),
-        ..Default::default()
-    };
-    let char_at = RawMethod {
-        access_flags: access!(public native),
-        name: "charAt".into(),
-        descriptor: method!((int) -> char),
-        code: RawCode::native(NativeSingleMethod(native_string_char_at)),
-        ..Default::default()
-    };
-    let string_value_of = RawMethod {
-        access_flags: access!(public native),
-        name: "valueOf".into(),
-        descriptor: method!(((Object(java_lang_object.clone()))) -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeSingleMethod(native_string_value_of)),
-        ..Default::default()
-    };
-    let string_to_string = RawMethod {
-        access_flags: access!(public native),
-        name: "toString".into(),
-        descriptor: method!(() -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeSingleMethod(|_: &mut _, [l]: [u32; 1], _| {
-            Ok(Some(l))
-        })),
-        ..Default::default()
-    };
-    let string_compare_to = RawMethod {
-        access_flags: access!(public native),
-        name: "compareTo".into(),
-        descriptor: method!(((Object(java_lang_string.clone()))) -> int),
-        code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [this, other]: [u32; 2], _| {
-                let this_str = StringObj::inspect(&thread.heap, this as usize, |a| a.clone())?;
-                let other_str = StringObj::inspect(&thread.heap, other as usize, |a| a.clone())?;
-                Ok(Some(match this_str.cmp(&other_str) {
-                    std::cmp::Ordering::Less => u32::MAX,
-                    std::cmp::Ordering::Equal => 0,
-                    std::cmp::Ordering::Greater => 1,
-                }))
-            },
-        )),
-        ..Default::default()
-    };
-    let string_contains = RawMethod {
-        name: "contains".into(),
-        access_flags: access!(public native),
-        descriptor: method!(((Object("java/lang/CharSequence".into()))) -> boolean),
-        code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [this, seq]: [u32; 2], _verbose| {
-                let this_str = StringObj::inspect(&thread.heap, this as usize, |s| s.clone())?;
-                let seq_str = StringObj::inspect(&thread.heap, seq as usize, |s| s.clone())?;
-                let contains = this_str.contains(&*seq_str);
-                Ok(Some(u32::from(contains)))
-            },
-        )),
-        ..Default::default()
-    };
-    let mut string = RawClass::new(
-        access!(public native),
-        java_lang_string.clone(),
-        java_lang_object.clone(),
-    );
-    string.register_methods(
-        [
-            string_length,
-            char_at,
-            string_value_of,
-            string_to_string,
-            string_compare_to,
-            string_contains,
-        ],
-        method_area,
-    );
-
     let builder_init = RawMethod {
         access_flags: access!(public native),
         name: "<init>".into(),
@@ -410,186 +251,6 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         java_lang_object.clone(),
     );
     random.register_methods([random_init, next_int], method_area);
-
-    let println_string = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!(((Object(java_lang_string.clone()))) -> void),
-        code: RawCode::native(NativeVoid(native_println_object)),
-        ..Default::default()
-    };
-    let println_object = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!(((Object(java_lang_object.clone()))) -> void),
-        code: RawCode::native(NativeVoid(native_println_object)),
-        ..Default::default()
-    };
-    let println_char = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!((char) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, [_, c]: [u32; 2], _| {
-            let char = char::from_u32(c).ok_or_else(|| String::from("Invalid Character code"))?;
-            println!("{char}");
-            Ok(Some(()))
-        })),
-        ..Default::default()
-    };
-    let println_bool = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!((boolean) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, [_, b]: [u32; 2], _| {
-            let bool = b != 0;
-            println!("{bool}");
-            Ok(Some(()))
-        })),
-        ..Default::default()
-    };
-    let println_int = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!((int) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, [_, i]: [u32; 2], _| {
-            let int = i as i32;
-            println!("{int}");
-            Ok(Some(()))
-        })),
-        ..Default::default()
-    };
-    let println_long = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!((long) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, [_, left, right]: [u32; 3], _| {
-            let long = ((left as u64) << 32 | (right as u64)) as i64;
-            println!("{long}");
-            Ok(Some(()))
-        })),
-        ..Default::default()
-    };
-    let println_float = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!((float) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, [_, f]: [u32; 2], _| {
-            let float = f32::from_bits(f);
-            println!("{float}");
-            Ok(Some(()))
-        })),
-        ..Default::default()
-    };
-    let println_empty = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!(() -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, [_]: [u32; 1], _| {
-            println!();
-            Ok(Some(()))
-        })),
-        ..Default::default()
-    };
-    let mut printstream = RawClass::new(
-        access!(public native),
-        "java/io/PrintStream".into(),
-        java_lang_object.clone(),
-    );
-    printstream.register_methods(
-        [
-            println_string,
-            println_object,
-            println_empty,
-            println_float,
-            println_int,
-            println_bool,
-            println_char,
-            println_long,
-        ],
-        method_area,
-    );
-
-    // let system_out = heap.allocate(Object::from_class(class_area, &printstream));
-
-    let mut system = RawClass::new(
-        access!(public native),
-        "java/lang/System".into(),
-        java_lang_object.clone(),
-    );
-    let system_clinit = RawMethod {
-        name: "<clinit>".into(),
-        access_flags: access!(public static native),
-        descriptor: method!(() -> void),
-        code: RawCode::native(NativeVoid(|thread: &mut Thread, []: [u32; 0], verbose| {
-            let system_class = thread.class_area.search("java/lang/System").unwrap();
-            let out_ref = thread.heap.lock().unwrap().allocate(Object::from_class(
-                thread.class_area.search("java/io/PrintStream").unwrap(),
-            ));
-            system_class.static_data.lock().unwrap()[0] = out_ref;
-            thread.rember(out_ref, verbose);
-            Ok(Some(()))
-        })),
-        ..Default::default()
-    };
-    system.register_method(system_clinit, method_area);
-
-    system.static_data.push(NULL);
-    system.statics.push((
-        Field {
-            access_flags: access!(public native),
-            name: "out".into(),
-            descriptor: FieldType::Object("java/io/PrintStream".into()),
-            attributes: Vec::new(),
-            signature: None,
-            constant_value: None,
-        },
-        0,
-    ));
-
-    let arraycopy = RawMethod {
-        access_flags: access!(public native),
-        name: "arraycopy".into(),
-        descriptor: method!((
-            (Object(java_lang_object.clone())),
-            int,
-            (Object(java_lang_object.clone())),
-            int,
-            int
-        ) -> void),
-        code: RawCode::native(NativeVoid(
-            |thread: &mut Thread,
-             [src_idx, start, dest_idx, start_dest, count]: [u32; 5],
-             _verbose| {
-                let arr_size =
-                    ArrayType::inspect(&thread.heap, src_idx as usize, |f| f.get_size())?;
-                if arr_size == 1 {
-                    let copied = Array1.inspect(&thread.heap, src_idx as usize, |fields| {
-                        fields.contents[(start as usize)..(start + count) as usize].to_vec()
-                    })?;
-                    Array1
-                        .inspect(&thread.heap, dest_idx as usize, |fields| {
-                            for (i, value) in copied.into_iter().enumerate() {
-                                fields.contents[start_dest as usize + i] = value;
-                            }
-                        })
-                        .map(Option::Some)
-                } else {
-                    let copied = Array2.inspect(&thread.heap, src_idx as usize, |fields| {
-                        fields.contents[(start as usize)..(start + count) as usize].to_vec()
-                    })?;
-                    Array2
-                        .inspect(&thread.heap, dest_idx as usize, |fields| {
-                            for (i, value) in copied.into_iter().enumerate() {
-                                fields.contents[start_dest as usize + i] = value;
-                            }
-                        })
-                        .map(Option::Some)
-                }
-            },
-        )),
-        ..Default::default()
-    };
-    system.register_method(arraycopy, method_area);
 
     let sqrt_double = RawMethod {
         access_flags: access!(public static native),
@@ -639,18 +300,31 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     );
     stream::add_native_methods(method_area, class_area, &java_lang_object);
 
-    arrays.register_methods(array_methods, method_area);
+    arrays::add_native_methods(
+        class_area,
+        method_area,
+        &java_lang_object,
+        &java_lang_string,
+    );
+    string::add_native_methods(
+        class_area,
+        method_area,
+        &java_lang_object,
+        &java_lang_string,
+    );
+    system::add_native_methods(
+        class_area,
+        method_area,
+        &java_lang_object,
+        &java_lang_string,
+    );
+
     class_area.extend([
         object,
         util_objects,
         enum_class,
-        array,
-        arrays,
-        string,
         string_builder,
         random,
-        system,
-        printstream,
         math,
     ]);
     drop((java_lang_object, java_lang_string));

@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
-use jvmrs_lib::FieldType;
+use jvmrs_lib::{access, method, FieldType};
 
 use crate::{
-    class::code::NativeReturn,
-    data::NULL,
+    class::code::{NativeReturn, NativeStringMethod},
+    class_loader::{RawClass, RawCode, RawMethod},
+    data::{WorkingClassArea, WorkingMethodArea, NULL},
     virtual_machine::{
+        native::make_primitives,
         object::{Array1, Array2, ArrayFields, ArrayType, ObjectFinder},
         Thread,
     },
@@ -143,4 +145,87 @@ pub fn to_string(
             )
             .map(Option::Some)
     }
+}
+
+pub fn add_native_methods(
+    class_area: &mut WorkingClassArea,
+    method_area: &mut WorkingMethodArea,
+    java_lang_object: &Arc<str>,
+    java_lang_string: &Arc<str>,
+) {
+    let array = RawClass::new(
+        access!(public native),
+        "java/lang/Array".into(),
+        java_lang_object.clone(),
+    );
+
+    let arrays_to_string_int = RawMethod {
+        access_flags: access!(public static native),
+        name: "toString".into(),
+        descriptor: method!((([]int)) -> Object(java_lang_string.clone())),
+        code: RawCode::native(NativeStringMethod(to_string)),
+        ..Default::default()
+    };
+    let arrays_to_string_float = RawMethod {
+        access_flags: access!(public static native),
+        name: "toString".into(),
+        descriptor: method!((([]float)) -> Object(java_lang_string.clone())),
+        code: RawCode::native(NativeStringMethod(to_string)),
+        ..Default::default()
+    };
+    let arrays_to_string_long = RawMethod {
+        access_flags: access!(public static native),
+        name: "toString".into(),
+        descriptor: method!((([]long)) -> Object(java_lang_string.clone())),
+        code: RawCode::native(NativeStringMethod(to_string)),
+        ..Default::default()
+    };
+    let arrays_to_string_double = RawMethod {
+        access_flags: access!(public static native),
+        name: "toString".into(),
+        descriptor: method!((([]double)) -> Object(java_lang_string.clone())),
+        code: RawCode::native(NativeStringMethod(to_string)),
+        ..Default::default()
+    };
+    let arrays_to_string_obj_arr = RawMethod {
+        access_flags: access!(public static native),
+        name: "toString".into(),
+        descriptor: method!((([]Object(java_lang_object.clone()))) -> Object(java_lang_string.clone())),
+        signature: None,
+        code: RawCode::native(NativeStringMethod(to_string)),
+        attributes: Vec::new(),
+        ..Default::default()
+    };
+    let deep_to_string = RawMethod {
+        access_flags: access!(public static native),
+        name: "deepToString".into(),
+        descriptor: method!((([]Object(java_lang_object.clone()))) -> Object(java_lang_string.clone())),
+        code: RawCode::native(NativeStringMethod(deep_to_string)),
+        ..Default::default()
+    };
+    let mut arrays = RawClass::new(
+        access!(public native),
+        "java/util/Arrays".into(),
+        java_lang_object.clone(),
+    );
+    arrays.register_methods(
+        [
+            arrays_to_string_int,
+            arrays_to_string_float,
+            arrays_to_string_long,
+            arrays_to_string_double,
+            arrays_to_string_obj_arr,
+            deep_to_string,
+        ],
+        method_area,
+    );
+    let array_methods = make_primitives(method_area, class_area, java_lang_object.clone());
+    arrays.methods.extend(
+        array_methods
+            .iter()
+            .map(|method| method.name(arrays.this.clone())),
+    );
+    arrays.register_methods(array_methods, method_area);
+
+    class_area.extend([array, arrays]);
 }
