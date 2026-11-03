@@ -8,8 +8,10 @@ fn test_hash_map() {
         java.util.HashMap<String, Integer> x = new java.util.HashMap<>();
         assert x.size() == 0;
         assert x.get("foo") == null;
+        assert x.get("bar") == null;
         x.put("foo", 10);
         assert x.get("foo") != null;
+        assert x.get("bar") == null;
         assert x.size() == 1;
         "#,
     );
@@ -26,6 +28,7 @@ fn test_hash_set() {
         x.add("shark");
         assert x.size() == 1;
         assert x.contains("shark");
+        assert !x.contains("shonk");
         "#,
     );
 }

@@ -319,58 +319,54 @@ impl NativeMethod for LambdaOverride {
                 name: invoke_name,
                 method_type: invoke_type,
             } => {
-                match thread.pc_register {
-                    0 => {
-                        let (class_ref, method_ref) = thread
+                let (class_ref, method_ref) = thread
                         .method_area
                         .search(invoke_class, invoke_name, invoke_type)
                         .ok_or_else(|| {
                             format!("Error during Lambda Override InvokeStatic; {invoke_class}.{invoke_name}: {invoke_type:?}")
                         })?;
 
-                        if thread.maybe_initialize_class(&class_ref) {
-                            return Ok(());
-                        }
+                if thread.maybe_initialize_class(&class_ref) {
+                    native::run_until_return(thread, verbose)?;
+                }
 
-                        if verbose {
-                            println!(
-                                "Lambda Override: Invoking Static Method {} on {}",
-                                method_ref.name, class_ref.this,
-                            );
-                        }
-                        let combined_args: Vec<u32> = self
-                            .captures
-                            .iter()
-                            .copied()
-                            .chain(
-                                thread
-                                    .stackframe
-                                    .locals
-                                    .iter()
-                                    .skip(1)
-                                    .take(self.method_descriptor.parameter_size)
-                                    .copied(),
-                            )
-                            .collect();
-                        // push the return address
-                        thread.stackframe.operand_stack.push(1);
-                        thread.invoke_method(method_ref, class_ref);
+                if verbose {
+                    println!(
+                        "Lambda Override: Invoking Static Method {} on {}",
+                        method_ref.name, class_ref.this,
+                    );
+                }
+                let combined_args: Vec<u32> = self
+                    .captures
+                    .iter()
+                    .copied()
+                    .chain(
                         thread
                             .stackframe
                             .locals
-                            .iter_mut()
-                            .zip(combined_args)
-                            .for_each(|(l, a)| *l = a);
-                        if verbose {
-                            println!("new locals: {:?}", thread.stackframe.locals);
-                        }
-                    }
-                    1 => match &self.method_descriptor.return_type {
-                        None => thread.return_void()?,
-                        Some(t) if t.get_size() == 1 => thread.return_one(verbose),
-                        _ => thread.return_two(verbose),
-                    },
-                    o => return Err(format!("Invalid opcode in Lambda Override: {o}").into()),
+                            .iter()
+                            .skip(1)
+                            .take(self.method_descriptor.parameter_size)
+                            .copied(),
+                    )
+                    .collect();
+                // push the return address
+                thread.stackframe.operand_stack.push(1);
+                thread.invoke_method(method_ref, class_ref);
+                thread
+                    .stackframe
+                    .locals
+                    .iter_mut()
+                    .zip(combined_args)
+                    .for_each(|(l, a)| *l = a);
+                if verbose {
+                    println!("new locals: {:?}", thread.stackframe.locals);
+                }
+                native::run_until_return(thread, verbose)?;
+                match &self.method_descriptor.return_type {
+                    None => thread.return_void()?,
+                    Some(t) if t.get_size() == 1 => thread.return_one(verbose),
+                    _ => thread.return_two(verbose),
                 }
                 Ok(())
             }

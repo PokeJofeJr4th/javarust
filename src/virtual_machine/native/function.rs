@@ -46,15 +46,15 @@ impl ObjectFinder for Optional {
 }
 
 pub fn make_lambda_override<const CAPTURES: usize>(
-    overrided_name: Arc<str>,
-    overrided_descriptor: MethodDescriptor,
+    overriden_name: Arc<str>,
+    overriden_descriptor: MethodDescriptor,
     instance_class: Arc<str>,
     invoke_name: Arc<str>,
     invoke_descriptor: MethodDescriptor,
     invoke_class: Arc<str>,
 ) -> impl NativeMethod {
-    let method_name = overrided_name;
-    let method_descriptor = overrided_descriptor;
+    let method_name = overriden_name;
+    let method_descriptor = overriden_descriptor;
     let invoke = MethodHandle::InvokeStatic {
         class: invoke_class,
         name: invoke_name,
@@ -118,41 +118,24 @@ pub(super) fn add_native_methods(
                 move |thread: &mut Thread,
                       [first_fn_ptr, second_fn_ptr, arg]: [u32; 3],
                       verbose| {
-                    match thread.pc_register {
-                        0 => {
-                            // push the return address
-                            thread.stackframe.operand_stack.push(1);
-                            thread.resolve_and_invoke(
-                                first_fn_ptr,
-                                "apply",
-                                &apply_signature,
-                                verbose,
-                            )?;
-                            thread.stackframe.locals[0] = first_fn_ptr;
-                            thread.stackframe.locals[1] = arg;
-                            Ok(None)
-                        }
-                        1 => {
-                            // get the first value returned
-                            let first_return = thread.stackframe.operand_stack.pop().unwrap();
-                            // push the return address
-                            thread.stackframe.operand_stack.push(2);
-                            thread.resolve_and_invoke(
-                                second_fn_ptr,
-                                "apply",
-                                &apply_signature,
-                                verbose,
-                            )?;
-                            thread.stackframe.locals[0] = second_fn_ptr;
-                            thread.stackframe.locals[1] = first_return;
-                            Ok(None)
-                        }
-                        2 => {
-                            // return the result
-                            Ok(Some(thread.stackframe.operand_stack.pop().unwrap()))
-                        }
-                        pc => Err(format!("Invalid PC: {pc}").into()),
-                    }
+                    // Run the first function
+                    thread.stackframe.operand_stack.push(0);
+                    thread.resolve_and_invoke(first_fn_ptr, "apply", &apply_signature, verbose)?;
+                    thread.stackframe.locals[0] = first_fn_ptr;
+                    thread.stackframe.locals[1] = arg;
+                    super::run_until_return(thread, verbose)?;
+                    // get the first value returned
+                    let first_return = thread.stackframe.operand_stack.pop().unwrap();
+
+                    // Run the second function
+                    thread.stackframe.operand_stack.push(2);
+                    thread.resolve_and_invoke(second_fn_ptr, "apply", &apply_signature, verbose)?;
+                    thread.stackframe.locals[0] = second_fn_ptr;
+                    thread.stackframe.locals[1] = first_return;
+                    super::run_until_return(thread, verbose)?;
+
+                    // Return the result
+                    Ok(Some(thread.stackframe.operand_stack.pop().unwrap()))
                 },
             )),
             ..Default::default()
@@ -555,38 +538,37 @@ pub(super) fn add_native_methods(
         access_flags: access!(public native),
         descriptor: method!(((Object(java_lang_object.clone()))) -> boolean),
         code: RawCode::native(NativeSingleMethod(
-            move |thread: &mut Thread, [this, other]: [u32; 2], verbose| match thread.pc_register {
-                0 => {
-                    let Some(other_inner) = AnyObj.inspect(&thread.heap, other as usize, |o| {
-                        if o.isinstance(&thread.class_area, "java/util/Optional", verbose) {
-                            Some(o.fields[0])
-                        } else {
-                            None
-                        }
-                    })?
-                    else {
-                        // if it's not an Optional, return false
-                        return Ok(Some(0));
-                    };
-                    let this_inner =
-                        AnyObj.inspect(&thread.heap, this as usize, |o| o.fields[0])?;
-                    // if they're both None, they're equal
-                    if this_inner == u32::MAX && other_inner == u32::MAX {
-                        return Ok(Some(1));
+            move |thread: &mut Thread, [this, other]: [u32; 2], verbose| {
+                let Some(other_inner) = AnyObj.inspect(&thread.heap, other as usize, |o| {
+                    if o.isinstance(&thread.class_area, "java/util/Optional", verbose) {
+                        Some(o.fields[0])
+                    } else {
+                        None
                     }
-                    // if one's None but the other isn't, they're not equal
-                    if this_inner == u32::MAX || other_inner == u32::MAX {
-                        return Ok(Some(0));
-                    }
-                    thread.stackframe.operand_stack.push(1);
-                    thread.resolve_and_invoke(this_inner, "equals", &equals_descriptor, verbose)?;
-                    thread.stackframe.locals[0] = this_inner;
-                    thread.stackframe.locals[1] = other_inner;
-                    Ok(None)
+                })?
+                else {
+                    // if it's not an Optional, return false
+                    return Ok(Some(0));
+                };
+                let this_inner = AnyObj.inspect(&thread.heap, this as usize, |o| o.fields[0])?;
+
+                // if they're both None, they're equal
+                if this_inner == u32::MAX && other_inner == u32::MAX {
+                    return Ok(Some(1));
                 }
-                // re-return the value from Object.equals
-                1 => Ok(Some(thread.stackframe.operand_stack.pop().unwrap())),
-                _ => unreachable!(),
+                // if one's None but the other isn't, they're not equal
+                if this_inner == u32::MAX || other_inner == u32::MAX {
+                    return Ok(Some(0));
+                }
+
+                // Call this.equals(other)
+                thread.stackframe.operand_stack.push(1);
+                thread.resolve_and_invoke(this_inner, "equals", &equals_descriptor, verbose)?;
+                thread.stackframe.locals[0] = this_inner;
+                thread.stackframe.locals[1] = other_inner;
+                super::run_until_return(thread, verbose)?;
+
+                Ok(Some(thread.stackframe.operand_stack.pop().unwrap()))
             },
         )),
         ..Default::default()
@@ -598,42 +580,38 @@ pub(super) fn add_native_methods(
             access_flags: access!(public native),
             descriptor: method!(((Object(predicate.this.clone()))) -> Object(optional.this.clone())),
             code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [this, predicate]: [u32; 2], verbose| match thread
-                    .pc_register
-                {
-                    0 => {
-                        let this_value =
-                            AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
+                move |thread: &mut Thread, [this, predicate]: [u32; 2], verbose| {
+                    let this_value =
+                        AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
 
-                        if this_value == u32::MAX {
-                            let optional = thread.class_area.search("java/util/Optional").unwrap();
-                            if thread.maybe_initialize_class(&optional) {
-                                return Ok(None);
-                            }
-                            let null = optional.static_data.lock().unwrap()[0];
-                            return Ok(Some(null));
+                    // if we're already empty, return empty
+                    if this_value == u32::MAX {
+                        let optional = thread.class_area.search("java/util/Optional").unwrap();
+                        if thread.maybe_initialize_class(&optional) {
+                            super::run_until_return(thread, verbose)?;
                         }
-
-                        thread.stackframe.operand_stack.push(1);
-                        thread.resolve_and_invoke(predicate, "test", &test_signature, verbose)?;
-                        thread.stackframe.locals[0] = predicate;
-                        thread.stackframe.locals[1] = this_value;
-                        Ok(None)
+                        let null = optional.static_data.lock().unwrap()[0];
+                        return Ok(Some(null));
                     }
-                    1 => {
-                        let result = *thread.stackframe.operand_stack.last().unwrap();
 
-                        if result == 0 {
-                            let optional = thread.class_area.search("java/util/Optional").unwrap();
-                            if thread.maybe_initialize_class(&optional) {
-                                return Ok(None);
-                            }
-                            let null = optional.static_data.lock().unwrap()[0];
-                            return Ok(Some(null));
+                    // Call the predicate
+                    thread.stackframe.operand_stack.push(1);
+                    thread.resolve_and_invoke(predicate, "test", &test_signature, verbose)?;
+                    thread.stackframe.locals[0] = predicate;
+                    thread.stackframe.locals[1] = this_value;
+                    super::run_until_return(thread, verbose)?;
+
+                    // If the predicate was false, return empty
+                    let result = *thread.stackframe.operand_stack.last().unwrap();
+                    if result == 0 {
+                        let optional = thread.class_area.search("java/util/Optional").unwrap();
+                        if thread.maybe_initialize_class(&optional) {
+                            super::run_until_return(thread, verbose)?;
                         }
-                        Ok(Some(this))
+                        let null = optional.static_data.lock().unwrap()[0];
+                        return Ok(Some(null));
                     }
-                    _ => unreachable!(),
+                    Ok(Some(this))
                 },
             )),
             ..Default::default()
@@ -648,28 +626,18 @@ pub(super) fn add_native_methods(
         descriptor: method!(() -> int),
         code: RawCode::native(NativeSingleMethod(
             move |thread: &mut Thread, [this]: [u32; 1], verbose| {
-                match thread.pc_register {
-                    0 => {
-                        let value =
-                            AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
-                        if value == u32::MAX {
-                            Ok(Some(0))
-                        } else {
-                            // push return address
-                            thread.stackframe.operand_stack.push(1);
-                            thread.resolve_and_invoke(
-                                value,
-                                "hashCode",
-                                &hash_code_descriptor,
-                                verbose,
-                            )?;
-                            thread.stackframe.locals[0] = value;
-                            Ok(None)
-                        }
-                    }
-                    1 => Ok(Some(thread.stackframe.operand_stack.pop().unwrap())),
-                    _ => unreachable!(),
+                let value = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
+                // If we're empty, return 0
+                if value == u32::MAX {
+                    return Ok(Some(0));
                 }
+                // Call inner.hashCode
+                thread.stackframe.operand_stack.push(1);
+                thread.resolve_and_invoke(value, "hashCode", &hash_code_descriptor, verbose)?;
+                thread.stackframe.locals[0] = value;
+                super::run_until_return(thread, verbose)?;
+
+                Ok(Some(thread.stackframe.operand_stack.pop().unwrap()))
             },
         )),
         ..Default::default()
@@ -711,24 +679,22 @@ pub(super) fn add_native_methods(
         access_flags: access!(public native),
         descriptor: method!(((Object(function.this.clone()))) -> Object(optional.this.clone())),
         code: RawCode::native(NativeSingleMethod(
-            move |thread: &mut Thread, [this, func]: [u32; 2], verbose| match thread.pc_register {
-                0 => {
-                    let value = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
-                    if value == u32::MAX {
-                        Ok(Some(this))
-                    } else {
-                        // push return address
-                        thread.stackframe.operand_stack.push(1);
-                        thread.resolve_and_invoke(func, "apply", &function_descriptor, verbose)?;
-                        thread.stackframe.locals[1] = value;
-                        Ok(None)
-                    }
+            move |thread: &mut Thread, [this, func]: [u32; 2], verbose| {
+                let value = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
+                // if we're empty, return empty
+                if value == u32::MAX {
+                    return Ok(Some(this));
                 }
-                1 => {
-                    let inner_value = thread.stackframe.operand_stack.pop().unwrap();
-                    Ok(Some(Optional::make(thread, inner_value, verbose)))
-                }
-                _ => unreachable!(),
+
+                // Call func.apply
+                thread.stackframe.operand_stack.push(0);
+                thread.resolve_and_invoke(func, "apply", &function_descriptor, verbose)?;
+                thread.stackframe.locals[1] = value;
+                super::run_until_return(thread, verbose)?;
+
+                // Make a new optional with the result
+                let inner_value = thread.stackframe.operand_stack.pop().unwrap();
+                Ok(Some(Optional::make(thread, inner_value, verbose)))
             },
         )),
         ..Default::default()
@@ -740,31 +706,24 @@ pub(super) fn add_native_methods(
     let to_string_descriptor = method!(() -> Object(java_lang_string.clone()));
     let opt_to_string =
         RawMethod::to_string(move |thread: &mut Thread, [this]: [u32; 1], verbose| {
-            match thread.pc_register {
-                0 => {
-                    let value = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
-                    if value == u32::MAX {
-                        Ok(Some("None".into()))
-                    } else {
-                        // push return address
-                        thread.stackframe.operand_stack.push(1);
-                        thread.resolve_and_invoke(
-                            value,
-                            "toString",
-                            &to_string_descriptor,
-                            verbose,
-                        )?;
-                        thread.stackframe.locals[0] = value;
-                        Ok(None)
-                    }
-                }
-                1 => StringObj::inspect(
-                    &thread.heap,
-                    thread.stackframe.operand_stack.pop().unwrap() as usize,
-                    |s| Some(format!("Optional[{s}]").into()),
-                ),
-                _ => unreachable!(),
+            let value = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
+            // If we're empty, return nothing
+            if value == u32::MAX {
+                return Ok(Some("None".into()));
             }
+
+            // call inner.toString
+            thread.stackframe.operand_stack.push(0);
+            thread.resolve_and_invoke(value, "toString", &to_string_descriptor, verbose)?;
+            thread.stackframe.locals[0] = value;
+            super::run_until_return(thread, verbose)?;
+
+            // Format the string result
+            StringObj::inspect(
+                &thread.heap,
+                thread.stackframe.operand_stack.pop().unwrap() as usize,
+                |s| Some(format!("Optional[{s}]").into()),
+            )
         });
     optional.register_methods(
         [

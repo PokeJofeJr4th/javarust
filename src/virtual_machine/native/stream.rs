@@ -256,15 +256,13 @@ pub(super) fn add_native_methods(
             access_flags: access!(public static native),
             descriptor: method!(((Object("java/util/function/Supplier".into()))) -> Object(java_lang_object.clone())),
             code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [supplier]: [u32; 1], verbose| match thread.pc_register {
-                    0 => {
-                        thread.stackframe.operand_stack.push(1);
-                        thread.resolve_and_invoke(supplier, "get", &get_descriptor, verbose)?;
-                        thread.stackframe.locals[0] = supplier;
-                        Ok(None)
-                    }
-                    1 => Ok(Some(thread.stackframe.operand_stack.pop().unwrap())),
-                    _ => unreachable!(),
+                move |thread: &mut Thread, [supplier]: [u32; 1], verbose| {
+                    // Call supplier.get()
+                    thread.stackframe.operand_stack.push(0);
+                    thread.resolve_and_invoke(supplier, "get", &get_descriptor, verbose)?;
+                    thread.stackframe.locals[0] = supplier;
+                    // Return the result from the supplier
+                    Ok(Some(thread.stackframe.operand_stack.pop().unwrap()))
                 },
             )),
             ..Default::default()
@@ -298,33 +296,32 @@ pub(super) fn add_native_methods(
             access_flags: access!(public static native),
             descriptor: method!(((Object(stream.this.clone())), (Object("java/util/function/Function".into()))) -> Object(java_lang_object.clone())),
             code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [this, func]: [u32; 2], verbose| match thread.pc_register
-                {
-                    0 => {
-                        thread.stackframe.operand_stack.push(1);
-                        thread.resolve_and_invoke(this, "$next", &next_descriptor, verbose)?;
-                        thread.stackframe.locals[0] = this;
-                        Ok(None)
-                    }
-                    1 => {
-                        let next_idx = thread.stackframe.operand_stack.pop().unwrap();
-                        let Some(next_obj) =
-                            Optional.inspect(&thread.heap, next_idx as usize, |o| *o)?
-                        else {
-                            return Ok(Some(next_idx));
-                        };
-                        thread.stackframe.operand_stack.push(2);
-                        thread.resolve_and_invoke(func, "apply", &apply_descriptor, verbose)?;
-                        thread.stackframe.locals[0] = func;
-                        thread.stackframe.locals[1] = next_obj;
-                        Ok(None)
-                    }
-                    2 => {
-                        let func_ret = thread.stackframe.operand_stack.pop().unwrap();
-                        let opt_ret = Optional::make(thread, func_ret, verbose);
-                        Ok(Some(opt_ret))
-                    }
-                    _ => unreachable!(),
+                move |thread: &mut Thread, [this, func]: [u32; 2], verbose| {
+                    // Get the next thing from the inner iterator
+                    thread.stackframe.operand_stack.push(0);
+                    thread.resolve_and_invoke(this, "$next", &next_descriptor, verbose)?;
+                    thread.stackframe.locals[0] = this;
+                    super::run_until_return(thread, verbose)?;
+
+                    // If it's empty, return empty
+                    let next_idx = thread.stackframe.operand_stack.pop().unwrap();
+                    let Some(next_obj) =
+                        Optional.inspect(&thread.heap, next_idx as usize, |o| *o)?
+                    else {
+                        return Ok(Some(next_idx));
+                    };
+
+                    // Call func.apply(next)
+                    thread.stackframe.operand_stack.push(0);
+                    thread.resolve_and_invoke(func, "apply", &apply_descriptor, verbose)?;
+                    thread.stackframe.locals[0] = func;
+                    thread.stackframe.locals[1] = next_obj;
+                    super::run_until_return(thread, verbose)?;
+
+                    // Make a new optional for the function return
+                    let func_ret = thread.stackframe.operand_stack.pop().unwrap();
+                    let opt_ret = Optional::make(thread, func_ret, verbose);
+                    Ok(Some(opt_ret))
                 },
             )),
             ..Default::default()
