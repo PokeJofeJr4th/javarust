@@ -498,7 +498,9 @@ pub(super) fn add_native_methods(
 
     let opt_clinit = RawMethod::clinit(|thread: &mut Thread, []: [u32; 0], verbose| {
         let optional = thread.class_area.search("java/util/Optional").unwrap();
-        optional.static_data.lock().unwrap()[0] = Optional::make(thread, u32::MAX, verbose);
+        let value = Optional::make(thread, u32::MAX, verbose);
+        optional.static_data.lock().unwrap()[0] = value;
+        thread.rember(value, verbose);
         Ok(Some(()))
     });
     let opt_empty = RawMethod {

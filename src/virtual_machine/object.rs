@@ -145,7 +145,7 @@ pub trait ObjectFinder {
         let heap_borrow = heap.lock().unwrap();
         let obj = heap_borrow
             .get(index)
-            .ok_or_else(|| String::from("Null pointer exception"))?;
+            .ok_or_else(|| format!("Null pointer exception: {index}"))?;
         drop(heap_borrow);
         let x = self.extract(&mut obj.lock().unwrap(), func);
         x

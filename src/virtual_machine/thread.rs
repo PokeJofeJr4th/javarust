@@ -44,6 +44,7 @@ macro_rules! stack {
 }
 
 impl Thread {
+
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     /// Execute a single native method or instruction
     /// # Panics
@@ -771,6 +772,7 @@ impl Thread {
                 };
                 let object_index = self.stackframe.operand_stack.pop().unwrap();
 
+                // If it's a pointer field, tell the garbage collector what's up
                 let forgor_rember = AnyObj.inspect(
                     &self.heap,
                     object_index as usize,
@@ -795,8 +797,8 @@ impl Thread {
                     },
                 )??;
                 if let Some((forgor, rember)) = forgor_rember {
-                    self.forgor(forgor, verbose);
                     self.rember(rember, verbose);
+                    self.forgor(forgor, verbose);
                 }
             }
             Instruction::InvokeVirtual(Some(idx), _class, _name, method_type) => {

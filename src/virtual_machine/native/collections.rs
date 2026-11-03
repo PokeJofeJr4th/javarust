@@ -281,14 +281,11 @@ pub fn add_native_collections(
                                 )
                             })?;
                         thread.stackframe.operand_stack.push(0);
-                        let old_stack_size = thread.stack.len();
                         thread.invoke_method(resolved_method, resolved_class);
                         thread.stackframe.locals[0] = cmp;
                         thread.stackframe.locals[1] = target;
                         thread.stackframe.locals[2] = next;
-                        while thread.stack.len() > old_stack_size {
-                            thread.tick(verbose)?;
-                        }
+                        super::run_until_return(thread, verbose)?;
 
                         let compare_value = thread.stackframe.operand_stack.pop().unwrap();
                         if compare_value as i32 >= 0 {
@@ -460,16 +457,16 @@ pub fn add_native_collections(
         access_flags: access!(public native),
         descriptor: method!(() -> Object("java/util/stream/Stream".into())),
         code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [this]: [u32; 1], _verbose| {
+            |thread: &mut Thread, [this]: [u32; 1], verbose| {
                 let array_stream = thread
                     .class_area
                     .search("java/util/ArrayList$Stream")
                     .unwrap();
                 let mut stream = Object::from_class(array_stream);
                 stream.fields[0] = this;
-                stream.fields[2] = ArrayListObj::inspect(&thread.heap, this as usize, |arrls| {
-                    arrls.len() as u32 - 1
-                })?;
+                stream.fields[2] =
+                    ArrayListObj::inspect(&thread.heap, this as usize, |arrls| arrls.len() as u32)?;
+                thread.rember(this, verbose);
                 let stream_idx = thread.heap.lock().unwrap().allocate(stream);
                 Ok(Some(stream_idx))
             },

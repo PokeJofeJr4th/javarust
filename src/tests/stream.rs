@@ -37,7 +37,7 @@ fn test_stream_any() {
     System.out.println("2");
     assert arr.stream().anyMatch((i) -> i > 0);
     System.out.println("3");
-    assert arr.stream().anyMatch((i) -> i < 5);
+    assert arr.stream().anyMatch((i) -> i > 5);
     System.out.println("4");
     assert !arr.stream().anyMatch((i) -> i > 7);
     "#,

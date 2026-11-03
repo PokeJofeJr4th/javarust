@@ -28,6 +28,9 @@ pub struct Heap {
 impl Heap {
     #[must_use]
     pub fn get(&self, idx: usize) -> Option<Arc<Mutex<Object>>> {
+        if idx < HEAP_START as usize {
+            return None;
+        }
         self.contents.get(idx - HEAP_START as usize)?.clone()
     }
 

@@ -47,6 +47,18 @@ pub static mut STRING_BUILDER_CLASS: Option<Arc<Class>> = None;
 pub static mut ARRAY_CLASS: Option<Arc<Class>> = None;
 pub static mut RANDOM_CLASS: Option<Arc<Class>> = None;
 
+/// Execute instructions until the current stack frame returns
+///
+/// Should only be used within a native method body
+/// # Errors
+pub fn run_until_return(thread: &mut Thread, verbose: bool) -> super::error::Result<()> {
+    let target_stack_size = thread.stack.len() - 1;
+    while thread.stack.len() > target_stack_size {
+        thread.tick(verbose)?;
+    }
+    Ok(())
+}
+
 /// return a Class object of the given name
 pub fn get_class(
     heap: &Mutex<Heap>,
