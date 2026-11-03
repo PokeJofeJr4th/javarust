@@ -66,6 +66,17 @@ pub fn add_native_methods(
         })),
         ..Default::default()
     };
+    let println_double = RawMethod {
+        access_flags: access!(public native),
+        name: "println".into(),
+        descriptor: method!((double) -> void),
+        code: RawCode::native(NativeVoid(|_: &mut _, [_, left, right]: [u32; 3], _| {
+            let long = f64::from_bits((left as u64) << 32 | (right as u64));
+            println!("{long}");
+            Ok(Some(()))
+        })),
+        ..Default::default()
+    };
     let println_long = RawMethod {
         access_flags: access!(public native),
         name: "println".into(),
@@ -109,6 +120,7 @@ pub fn add_native_methods(
             println_object,
             println_empty,
             println_float,
+            println_double,
             println_int,
             println_bool,
             println_char,

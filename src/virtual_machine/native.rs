@@ -1,10 +1,11 @@
 use std::{
     collections::HashMap,
+    f64::consts::{E, PI, TAU},
     hash::{DefaultHasher, Hash, Hasher},
     sync::{Arc, Mutex, OnceLock},
 };
 
-use jvmrs_lib::{access, method, FieldType};
+use jvmrs_lib::{access, field, method, FieldType};
 use rand::RngExt;
 
 use crate::{
@@ -43,7 +44,7 @@ pub static mut RANDOM_CLASS: Option<Arc<Class>> = None;
 
 /// Execute instructions until the current stack frame returns
 ///
-/// Should only be used within a native method body
+/// Should mainly be used within a native method body
 /// # Errors
 pub fn run_until_return(thread: &mut Thread, verbose: bool) -> super::error::Result<()> {
     let target_stack_size = thread.stack.len() - 1;
@@ -272,6 +273,43 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         "java/lang/Math".into(),
         java_lang_object.clone(),
     );
+    math.static_data.extend([
+        E.to_bits() as u32,
+        (E.to_bits() >> 32) as u32,
+        PI.to_bits() as u32,
+        (PI.to_bits() >> 32) as u32,
+        TAU.to_bits() as u32,
+        (TAU.to_bits() >> 32) as u32,
+    ]);
+    math.statics.extend([
+        (
+            Field {
+                access_flags: access!(public static final),
+                name: "E".into(),
+                descriptor: field!(double),
+                ..Default::default()
+            },
+            0,
+        ),
+        (
+            Field {
+                access_flags: access!(public static final),
+                name: "PI".into(),
+                descriptor: field!(double),
+                ..Default::default()
+            },
+            2,
+        ),
+        (
+            Field {
+                access_flags: access!(public static final),
+                name: "TAU".into(),
+                descriptor: field!(double),
+                ..Default::default()
+            },
+            4,
+        ),
+    ]);
     math.register_method(sqrt_double, method_area);
 
     throwable::add_native_methods(

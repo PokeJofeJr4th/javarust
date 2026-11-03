@@ -3,6 +3,7 @@ mod basic;
 mod collections;
 mod exceptions;
 mod function;
+mod math;
 mod optional;
 mod stream;
 
