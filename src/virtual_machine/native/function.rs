@@ -220,13 +220,13 @@ pub(super) fn add_native_methods(
         access_flags: access!(public static native),
         descriptor: method!(() -> Object(function.this.clone())),
         code: RawCode::native(NativeSingleMethod(
-            move |thread: &mut Thread, []: [u32; 0], _verbose| {
+            move |thread: &mut Thread, []: [u32; 0], verbose| {
                 let function = thread
                     .class_area
                     .search("java/util/function/Function")
                     .unwrap();
                 if thread.maybe_initialize_class(&function) {
-                    return Ok(None);
+                    super::run_until_return(thread, verbose)?;
                 }
                 let value = function.static_data.lock().unwrap()[0];
                 Ok(Some(value))
@@ -491,10 +491,10 @@ pub(super) fn add_native_methods(
         access_flags: access!(public static native),
         descriptor: method!(() -> Object(optional.this.clone())),
         code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, []: [u32; 0], _verbose| {
+            |thread: &mut Thread, []: [u32; 0], verbose| {
                 let optional = thread.class_area.search("java/util/Optional").unwrap();
                 if thread.maybe_initialize_class(&optional) {
-                    return Ok(None);
+                    super::run_until_return(thread, verbose)?;
                 }
                 let empty = optional.static_data.lock().unwrap()[0];
                 Ok(Some(empty))
@@ -524,7 +524,7 @@ pub(super) fn add_native_methods(
                 }
                 let nullable = thread.class_area.search("java/util/Optional").unwrap();
                 if thread.maybe_initialize_class(&nullable) {
-                    return Ok(None);
+                    super::run_until_return(thread, verbose)?;
                 }
                 let null = nullable.static_data.lock().unwrap()[0];
                 Ok(Some(null))
