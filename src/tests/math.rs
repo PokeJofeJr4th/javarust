@@ -1,5 +1,3 @@
-use crate::tests::test_fail;
-
 use super::test;
 
 #[test]
