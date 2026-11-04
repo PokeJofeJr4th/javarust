@@ -13,6 +13,7 @@ use crate::{
     },
 };
 
+#[allow(clippy::too_many_lines)]
 pub fn add_native_methods(
     class_area: &mut WorkingClassArea,
     method_area: &mut WorkingMethodArea,

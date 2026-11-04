@@ -7,7 +7,7 @@ use jvmrs_lib::{access, method, AccessFlags, ClassVersion, Constant, FieldType, 
 
 use crate::{
     class::{
-        code::{ByteCode, NativeMethod, NativeStringMethod, NativeTodo, NativeVoid},
+        code::{NativeMethod, NativeStringMethod, NativeTodo, NativeVoid},
         Attribute, BootstrapMethod, Class, Code, Field, InnerClass, Method, VTableEntry,
     },
     data::{SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
@@ -215,7 +215,6 @@ impl Debug for MethodName {
 
 #[derive(Clone)]
 pub enum RawCode {
-    ByteCode(ByteCode, u16),
     Code(Vec<u8>),
     Native(Arc<Box<dyn NativeMethod>>, u16),
     Abstract,
@@ -312,7 +311,6 @@ impl RawMethod {
                     parse_code_attribute(class_area, constants, code.clone(), verbose)?;
                 (Code::Code(bytecode), max_locals)
             }
-            RawCode::ByteCode(code, locals) => (Code::Code(code.clone()), *locals),
         };
         Ok(Method {
             max_locals,
