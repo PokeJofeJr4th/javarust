@@ -171,11 +171,9 @@ impl<T: Send + Sync + 'static, const I: usize> NativeFieldObj<T, I> {
             descriptor: method!(()->void),
             code: RawCode::native(NativeVoid(
                 move |thread: &mut Thread, [obj_pointer]: [u32; 1], _verbose| {
-                    AnyObj
-                        .inspect(&thread.heap, obj_pointer as usize, |instance| {
-                            instance.native_fields.push(Box::new(func()));
-                        })
-                        .map(Option::Some)
+                    AnyObj.inspect(&thread.heap, obj_pointer as usize, |instance| {
+                        instance.native_fields.push(Box::new(func()));
+                    })
                 },
             )),
             ..Default::default()
@@ -193,11 +191,9 @@ impl<T: Send + Sync + 'static, const I: usize> NativeFieldObj<T, I> {
             name: "<init>".into(),
             descriptor: method!(()->void),
             code: RawCode::native(NativeVoid(|thread: &mut Thread, [ptr]: [u32; 1], _| {
-                AnyObj
-                    .inspect(&thread.heap, ptr as usize, |obj| {
-                        obj.native_fields.push(Box::<T>::default());
-                    })
-                    .map(Option::Some)
+                AnyObj.inspect(&thread.heap, ptr as usize, |obj| {
+                    obj.native_fields.push(Box::<T>::default());
+                })
             })),
             ..Default::default()
         }

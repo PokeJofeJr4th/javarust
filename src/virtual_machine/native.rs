@@ -115,7 +115,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     let java_lang_string: Arc<str> = Arc::from("java/lang/String");
 
     let object_to_string = RawMethod::to_string(|_: &mut _, [obj_ref]: [u32; 1], _| {
-        Ok(Some(Arc::from(format!("{obj_ref:0>8X}"))))
+        Ok(Arc::from(format!("{obj_ref:0>8X}")))
     });
 
     let mut object = native_class!(
@@ -152,7 +152,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         code: RawCode::native(NativeSingleMethod(|_: &mut _, [ptr]: [u32; 1], _| {
             // TODO: Use an exception here
             assert!(ptr != 0);
-            Ok(Some(ptr))
+            Ok(ptr)
         })),
         ..Default::default()
     };
@@ -190,11 +190,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: method!(((Object(java_lang_string.clone())), int) -> void),
         code: RawCode::native(NativeVoid(
             |thread: &mut Thread, [obj_ref, string, id]: [u32; 3], _verbose| {
-                AnyObj
-                    .inspect(&thread.heap, obj_ref as usize, |instance| {
-                        instance.fields = vec![string, id];
-                    })
-                    .map(Option::Some)
+                AnyObj.inspect(&thread.heap, obj_ref as usize, |instance| {
+                    instance.fields = vec![string, id];
+                })
             },
         )),
         ..Default::default()
@@ -250,7 +248,6 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 Random::inspect(&thread.heap, obj_ref as usize, |random_obj| {
                     random_obj.random_range(0..right_bound)
                 })
-                .map(Option::Some)
             },
         )),
         ..Default::default()
@@ -268,11 +265,9 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         descriptor: method!((double) -> double),
         code: RawCode::native(NativeDoubleMethod(
             |_: &mut _, [left, right]: [u32; 2], _| {
-                Ok(Some(
-                    f64::from_bits((left as u64) << 32 | (right as u64))
-                        .sqrt()
-                        .to_bits(),
-                ))
+                Ok(f64::from_bits((left as u64) << 32 | (right as u64))
+                    .sqrt()
+                    .to_bits())
             },
         )),
         ..Default::default()

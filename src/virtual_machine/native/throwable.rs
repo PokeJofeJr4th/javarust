@@ -73,7 +73,7 @@ pub fn add_native_methods(
         runtime_exception.this.clone(),
     );
     let illegal_argument_exception_to_string = RawMethod::to_string(|_: &mut _, _: [_; 0], _| {
-        Ok(Some("java.lang.IllegalArgumentException".into()))
+        Ok("java.lang.IllegalArgumentException".into())
     });
 
     illegal_argument_exception.register_methods(
@@ -87,9 +87,8 @@ pub fn add_native_methods(
         runtime_exception.this.clone(),
     );
 
-    let arith_to_string = RawMethod::to_string(|_: &mut _, _: [_; 0], _| {
-        Ok(Some("java.lang.ArithmeticException".into()))
-    });
+    let arith_to_string =
+        RawMethod::to_string(|_: &mut _, _: [_; 0], _| Ok("java.lang.ArithmeticException".into()));
     arithmetic_exception.register_methods([arith_to_string, noop_init.clone()], method_area);
 
     let mut assertion_error = RawClass::new(

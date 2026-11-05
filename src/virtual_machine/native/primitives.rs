@@ -172,7 +172,7 @@ fn make_primitive_class<T: Stackable<u32> + Display + 'static>(
                         obj.fields[1] = lower;
                     }
                 })?;
-                Ok(Some(()))
+                Ok(())
             },
         )),
         ..Default::default()
@@ -195,21 +195,19 @@ fn make_primitive_class<T: Stackable<u32> + Display + 'static>(
                     obj.fields[1] = lower;
                 }
                 let ptr = thread.heap.lock().unwrap().allocate(obj);
-                Ok(Some(ptr))
+                Ok(ptr)
             },
         )),
         ..Default::default()
     };
     let to_string = RawMethod::to_string(move |thread: &mut Thread, [this]: [u32; 1], _verbose| {
-        AnyObj
-            .inspect(&thread.heap, this as usize, |o| {
-                format!(
-                    "{}",
-                    from_parameter(o.fields[0], o.fields.get(1).copied().unwrap_or_default())
-                )
-                .into()
-            })
-            .map(Option::Some)
+        AnyObj.inspect(&thread.heap, this as usize, |o| {
+            format!(
+                "{}",
+                from_parameter(o.fields[0], o.fields.get(1).copied().unwrap_or_default())
+            )
+            .into()
+        })
     });
     let primitive_value = RawMethod {
         access_flags: access!(public native),
