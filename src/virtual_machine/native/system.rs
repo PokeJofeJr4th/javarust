@@ -41,7 +41,7 @@ pub fn add_native_methods(
         code: RawCode::native(NativeVoid(|_: &mut _, [_, c]: [u32; 2], _| {
             let char = char::from_u32(c).ok_or_else(|| String::from("Invalid Character code"))?;
             println!("{char}");
-            Ok(Some(()))
+            Ok(())
         })),
         ..Default::default()
     };
@@ -52,7 +52,7 @@ pub fn add_native_methods(
         code: RawCode::native(NativeVoid(|_: &mut _, [_, b]: [u32; 2], _| {
             let bool = b != 0;
             println!("{bool}");
-            Ok(Some(()))
+            Ok(())
         })),
         ..Default::default()
     };
@@ -63,7 +63,7 @@ pub fn add_native_methods(
         code: RawCode::native(NativeVoid(|_: &mut _, [_, i]: [u32; 2], _| {
             let int = i as i32;
             println!("{int}");
-            Ok(Some(()))
+            Ok(())
         })),
         ..Default::default()
     };
@@ -74,7 +74,7 @@ pub fn add_native_methods(
         code: RawCode::native(NativeVoid(|_: &mut _, [_, left, right]: [u32; 3], _| {
             let long = f64::from_bits((left as u64) << 32 | (right as u64));
             println!("{long}");
-            Ok(Some(()))
+            Ok(())
         })),
         ..Default::default()
     };
@@ -85,7 +85,7 @@ pub fn add_native_methods(
         code: RawCode::native(NativeVoid(|_: &mut _, [_, left, right]: [u32; 3], _| {
             let long = ((left as u64) << 32 | (right as u64)) as i64;
             println!("{long}");
-            Ok(Some(()))
+            Ok(())
         })),
         ..Default::default()
     };
@@ -96,7 +96,7 @@ pub fn add_native_methods(
         code: RawCode::native(NativeVoid(|_: &mut _, [_, f]: [u32; 2], _| {
             let float = f32::from_bits(f);
             println!("{float}");
-            Ok(Some(()))
+            Ok(())
         })),
         ..Default::default()
     };
@@ -106,7 +106,7 @@ pub fn add_native_methods(
         descriptor: method!(() -> void),
         code: RawCode::native(NativeVoid(|_: &mut _, [_]: [u32; 1], _| {
             println!();
-            Ok(Some(()))
+            Ok(())
         })),
         ..Default::default()
     };
@@ -148,7 +148,7 @@ pub fn add_native_methods(
             ));
             system_class.static_data.lock().unwrap()[0] = out_ref;
             thread.rember(out_ref, verbose);
-            Ok(Some(()))
+            Ok(())
         })),
         ..Default::default()
     };
@@ -187,24 +187,20 @@ pub fn add_native_methods(
                     let copied = Array1.inspect(&thread.heap, src_idx as usize, |fields| {
                         fields.contents[(start as usize)..(start + count) as usize].to_vec()
                     })?;
-                    Array1
-                        .inspect(&thread.heap, dest_idx as usize, |fields| {
-                            for (i, value) in copied.into_iter().enumerate() {
-                                fields.contents[start_dest as usize + i] = value;
-                            }
-                        })
-                        .map(Option::Some)
+                    Array1.inspect(&thread.heap, dest_idx as usize, |fields| {
+                        for (i, value) in copied.into_iter().enumerate() {
+                            fields.contents[start_dest as usize + i] = value;
+                        }
+                    })
                 } else {
                     let copied = Array2.inspect(&thread.heap, src_idx as usize, |fields| {
                         fields.contents[(start as usize)..(start + count) as usize].to_vec()
                     })?;
-                    Array2
-                        .inspect(&thread.heap, dest_idx as usize, |fields| {
-                            for (i, value) in copied.into_iter().enumerate() {
-                                fields.contents[start_dest as usize + i] = value;
-                            }
-                        })
-                        .map(Option::Some)
+                    Array2.inspect(&thread.heap, dest_idx as usize, |fields| {
+                        for (i, value) in copied.into_iter().enumerate() {
+                            fields.contents[start_dest as usize + i] = value;
+                        }
+                    })
                 }
             },
         )),

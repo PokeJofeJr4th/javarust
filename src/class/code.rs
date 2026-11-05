@@ -140,7 +140,7 @@ impl Debug for Code {
 ///  - Ok(Some(T))  The method should return
 ///  - Ok(None)     The method should yield for this tick
 ///  - Err("...")   The JVM should exit with the given error message
-pub type NativeReturn<T> = error::Result<Option<T>>;
+pub type NativeReturn<T> = error::Result<T>;
 
 /// A rust method that can interface with the JVM
 ///
@@ -167,11 +167,11 @@ pub struct NativeTodo;
 
 impl NativeMethod for NativeTodo {
     fn run(&self, thread: &mut Thread, _is_verbose: bool) -> error::Result<()> {
-        let method = thread.stackframe.method.clone();
-        let class = thread.stackframe.class.clone();
         Err(format!(
             "Unimplemented Native Method {:?} {}.{}",
-            method.descriptor, class.this, method.name
+            thread.stackframe.method.descriptor,
+            thread.stackframe.class.this,
+            thread.stackframe.method.name
         )
         .into())
     }
@@ -200,10 +200,10 @@ impl<
         let Ok(values) = <[u32; N]>::try_from(thread.stackframe.locals[..N].to_vec()) else {
             panic!("Function does not have enough local variables for its signature");
         };
-        if let Some(single) = self.0(thread, values, is_verbose)? {
-            thread.stackframe.operand_stack.push(single);
-            thread.return_one(is_verbose);
-        }
+        let single = self.0(thread, values, is_verbose)?;
+        thread.stackframe.operand_stack.push(single);
+        thread.return_one(is_verbose);
+
         Ok(())
     }
 
@@ -231,10 +231,9 @@ impl<
         let Ok(values) = <[u32; N]>::try_from(thread.stackframe.locals[..N].to_vec()) else {
             panic!("Function does not have enough local variables for its signature");
         };
-        if let Some(double) = self.0(thread, values, is_verbose)? {
-            thread.stackframe.operand_stack.pushd(double);
-            thread.return_two(is_verbose);
-        }
+        let double = self.0(thread, values, is_verbose)?;
+        thread.stackframe.operand_stack.pushd(double);
+        thread.return_two(is_verbose);
         Ok(())
     }
 
@@ -262,11 +261,10 @@ impl<
         let Ok(values) = <[u32; N]>::try_from(thread.stackframe.locals[..N].to_vec()) else {
             panic!("Function does not have enough local variables for its signature");
         };
-        if let Some(str) = self.0(thread, values, is_verbose)? {
-            let heap_allocation = thread.heap.lock().unwrap().allocate_str(str);
-            thread.stackframe.operand_stack.push(heap_allocation);
-            thread.return_one(is_verbose);
-        }
+        let str = self.0(thread, values, is_verbose)?;
+        let heap_allocation = thread.heap.lock().unwrap().allocate_str(str);
+        thread.stackframe.operand_stack.push(heap_allocation);
+        thread.return_one(is_verbose);
         Ok(())
     }
 
@@ -294,11 +292,8 @@ impl<
         let Ok(values) = <[u32; ARGS]>::try_from(thread.stackframe.locals[..ARGS].to_vec()) else {
             panic!("Function does not have enough local variables for its signature");
         };
-        if self.0(thread, values, is_verbose)?.is_some() {
-            thread.return_void()
-        } else {
-            Ok(())
-        }
+        self.0(thread, values, is_verbose)?;
+        thread.return_void()
     }
 
     fn args(&self) -> u16 {
@@ -330,9 +325,7 @@ pub fn native_property<F: ObjectFinder, O>(
     func: impl Fn(F::Target<'_>) -> O,
 ) -> impl Fn(&mut Thread, [u32; 1], bool) -> NativeReturn<O> {
     move |thread: &mut Thread, [ptr]: [u32; 1], _| {
-        finder
-            .inspect(&thread.heap, ptr as usize, |obj: F::Target<'_>| func(obj))
-            .map(Option::Some)
+        finder.inspect(&thread.heap, ptr as usize, |obj: F::Target<'_>| func(obj))
     }
 }
 

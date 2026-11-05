@@ -13,8 +13,7 @@ use crate::{
     virtual_machine::{
         native::function::Optional,
         object::{
-            AnyObj, ArrayListObj, HashMapObj, HashSetObj, Object, ObjectFinder, StringBuilder,
-            StringObj,
+            AnyObj, ArrayListObj, HashMapObj, HashSetObj, Object, ObjectFinder as _, StringObj,
         },
         Thread,
     },
@@ -50,29 +49,25 @@ pub fn add_native_collections(
         descriptor: method!(((Object(java_lang_object.clone())), (Object(java_lang_object.clone())))->(Object(java_lang_object.clone()))),
         code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, [this, key, value]: [u32; 3], verbose: bool| {
-                if thread.pc_register == 0 {
-                    // get the hash code for the object
-                    let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
-                        obj.resolve_method(
-                            &thread.method_area,
-                            &thread.class_area,
-                            "hashCode",
-                            &method!(() -> int),
-                            verbose,
-                        )
-                    })?;
-                    thread.stackframe.operand_stack.push(1);
-                    thread.invoke_method(method, class);
-                    thread.stackframe.locals[0] = key;
-                    Ok(None)
-                } else {
-                    let hash_code = thread.stackframe.operand_stack.pop().unwrap();
-                    // add the object to the hash map
-                    HashMapObj::inspect(&thread.heap, this as usize, |map| {
-                        map.insert(hash_code, value)
-                    })
-                    .map(|v| Some(v.unwrap_or_default()))
-                }
+                let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
+                    obj.resolve_method(
+                        &thread.method_area,
+                        &thread.class_area,
+                        "hashCode",
+                        &method!(() -> int),
+                        verbose,
+                    )
+                })?;
+                thread.stackframe.operand_stack.push(1);
+                thread.invoke_method(method, class);
+                thread.stackframe.locals[0] = key;
+                super::run_until_return(thread, verbose)?;
+                let hash_code = thread.stackframe.operand_stack.pop().unwrap();
+                // add the object to the hash map
+                HashMapObj::inspect(&thread.heap, this as usize, |map| {
+                    map.insert(hash_code, value)
+                })
+                .map(Option::unwrap_or_default)
             },
         )),
         ..Default::default()
@@ -83,30 +78,25 @@ pub fn add_native_collections(
         descriptor: method!(((Object(java_lang_object.clone()))) -> Object(java_lang_object.clone())),
         code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, [this, key]: [u32; 2], verbose| {
-                if thread.pc_register == 0 {
-                    // get the hash code for the object
-                    let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
-                        obj.resolve_method(
-                            &thread.method_area,
-                            &thread.class_area,
-                            "hashCode",
-                            &method!(() -> int),
-                            verbose,
-                        )
-                    })?;
-                    thread.stackframe.operand_stack.push(1);
-                    thread.invoke_method(method, class);
-                    thread.stackframe.locals[0] = key;
-                    Ok(None)
-                } else {
-                    let hash_code = thread.stackframe.operand_stack.pop().unwrap();
-                    // add the object to the hash map
-                    HashMapObj::inspect(&thread.heap, this as usize, |map| {
-                        map.get(&hash_code).copied()
-                    })
-                    .map(|opt| opt.unwrap_or(NULL))
-                    .map(Option::Some)
-                }
+                let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
+                    obj.resolve_method(
+                        &thread.method_area,
+                        &thread.class_area,
+                        "hashCode",
+                        &method!(() -> int),
+                        verbose,
+                    )
+                })?;
+                thread.stackframe.operand_stack.push(1);
+                thread.invoke_method(method, class);
+                thread.stackframe.locals[0] = key;
+                super::run_until_return(thread, verbose)?;
+                let hash_code = thread.stackframe.operand_stack.pop().unwrap();
+                // add the object to the hash map
+                HashMapObj::inspect(&thread.heap, this as usize, |map| {
+                    map.get(&hash_code).copied()
+                })
+                .map(|opt| opt.unwrap_or(NULL))
             },
         )),
         ..Default::default()
@@ -139,27 +129,23 @@ pub fn add_native_collections(
         descriptor: method!(((Object(java_lang_object.clone())))->boolean),
         code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, [this, key]: [u32; 2], verbose: bool| {
-                if thread.pc_register == 0 {
-                    // get the hash code for the object
-                    let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
-                        obj.resolve_method(
-                            &thread.method_area,
-                            &thread.class_area,
-                            "hashCode",
-                            &method!(() -> int),
-                            verbose,
-                        )
-                    })?;
-                    thread.stackframe.operand_stack.push(1);
-                    thread.invoke_method(method, class);
-                    thread.stackframe.locals[0] = key;
-                    Ok(None)
-                } else {
-                    let hash_code = thread.stackframe.operand_stack.pop().unwrap();
-                    // add the object to the hash map
-                    HashSetObj::inspect(&thread.heap, this as usize, |set| set.insert(hash_code))
-                        .map(|b| Some(u32::from(b)))
-                }
+                let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
+                    obj.resolve_method(
+                        &thread.method_area,
+                        &thread.class_area,
+                        "hashCode",
+                        &method!(() -> int),
+                        verbose,
+                    )
+                })?;
+                thread.stackframe.operand_stack.push(1);
+                thread.invoke_method(method, class);
+                thread.stackframe.locals[0] = key;
+                super::run_until_return(thread, verbose)?;
+                let hash_code = thread.stackframe.operand_stack.pop().unwrap();
+                // add the object to the hash map
+                HashSetObj::inspect(&thread.heap, this as usize, |set| set.insert(hash_code))
+                    .map(u32::from)
             },
         )),
         ..Default::default()
@@ -170,29 +156,24 @@ pub fn add_native_collections(
         descriptor: method!(((Object(java_lang_object.clone()))) -> boolean),
         code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, [this, key]: [u32; 2], verbose| {
-                if thread.pc_register == 0 {
-                    // get the hash code for the object
-                    let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
-                        obj.resolve_method(
-                            &thread.method_area,
-                            &thread.class_area,
-                            "hashCode",
-                            &method!(() -> int),
-                            verbose,
-                        )
-                    })?;
-                    thread.stackframe.operand_stack.push(1);
-                    thread.invoke_method(method, class);
-                    thread.stackframe.locals[0] = key;
-                    Ok(None)
-                } else {
-                    let hash_code = thread.stackframe.operand_stack.pop().unwrap();
-                    // check if the set contains the element
-                    HashSetObj::inspect(&thread.heap, this as usize, |map| {
-                        u32::from(map.contains(&hash_code))
-                    })
-                    .map(Option::Some)
-                }
+                let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
+                    obj.resolve_method(
+                        &thread.method_area,
+                        &thread.class_area,
+                        "hashCode",
+                        &method!(() -> int),
+                        verbose,
+                    )
+                })?;
+                thread.stackframe.operand_stack.push(1);
+                thread.invoke_method(method, class);
+                thread.stackframe.locals[0] = key;
+                super::run_until_return(thread, verbose)?;
+                let hash_code = thread.stackframe.operand_stack.pop().unwrap();
+                // check if the set contains the element
+                HashSetObj::inspect(&thread.heap, this as usize, |map| {
+                    u32::from(map.contains(&hash_code))
+                })
             },
         )),
         ..Default::default()
@@ -223,7 +204,6 @@ pub fn add_native_collections(
                 ArrayListObj::inspect(&thread.heap, this as usize, |arrlist| {
                     arrlist.push(ptr);
                 })
-                .map(Option::Some)
             },
         )),
         ..Default::default()
@@ -237,7 +217,7 @@ pub fn add_native_collections(
                 ArrayListObj::inspect(&thread.heap, this as usize, |arrlist| {
                     arrlist.push(ptr);
                 })
-                .map(|()| Some(1))
+                .map(|()| 1)
             },
         )),
         ..Default::default()
@@ -301,73 +281,45 @@ pub fn add_native_collections(
                         })?;
                     }
                 }
-                Ok(Some(()))
+                Ok(())
             },
         )),
         ..Default::default()
     };
     let java_lang_string = java_lang_string.clone();
     let arrlist_to_string = RawMethod::to_string(
-        move |thread: &mut Thread, [this, builder, index, length]: [u32; 4], verbose: bool| {
-            let pc = thread.pc_register;
-            thread.pc_register += 1;
-            match pc {
-                0 => {
-                    let builder = StringBuilder::new("[".to_string(), &thread.class_area);
-                    let builder_ref = thread.heap.lock().unwrap().allocate(builder);
-                    thread.rember_temp(builder_ref, verbose);
-                    let length =
-                        ArrayListObj::inspect(&thread.heap, this as usize, |vec| vec.len() as u32)?;
-                    thread.stackframe.locals[1] = builder_ref;
-                    thread.stackframe.locals[2] = 0;
-                    thread.stackframe.locals[3] = length;
-                    Ok(None)
-                }
-                1 => {
-                    let next_obj = ArrayListObj::inspect(&thread.heap, this as usize, |vec| {
-                        vec[index as usize]
+        move |thread: &mut Thread, [this]: [u32; 1], verbose: bool| {
+            let mut str = String::from("[");
+            let length =
+                ArrayListObj::inspect(&thread.heap, this as usize, |vec| vec.len() as u32)?;
+            for index in 0..length {
+                let next_obj =
+                    ArrayListObj::inspect(&thread.heap, this as usize, |vec| vec[index as usize])?;
+                let (resolved_class, resolved_method) =
+                    AnyObj.inspect(&thread.heap, next_obj as usize, |obj| {
+                        obj.resolve_method(
+                            &thread.method_area,
+                            &thread.class_area,
+                            "toString",
+                            &method!(() -> Object(java_lang_string.clone())),
+                            verbose,
+                        )
                     })?;
-                    let (resolved_class, resolved_method) =
-                        AnyObj.inspect(&thread.heap, next_obj as usize, |obj| {
-                            obj.resolve_method(
-                                &thread.method_area,
-                                &thread.class_area,
-                                "toString",
-                                &method!(() -> Object(java_lang_string.clone())),
-                                verbose,
-                            )
-                        })?;
-                    thread.stackframe.operand_stack.push(2);
-                    thread.invoke_method(resolved_method, resolved_class);
-                    thread.stackframe.locals[0] = next_obj;
-                    Ok(None)
+                thread.stackframe.operand_stack.push(2);
+                thread.invoke_method(resolved_method, resolved_class);
+                thread.stackframe.locals[0] = next_obj;
+                super::run_until_return(thread, verbose)?;
+                let str_ptr = thread.stackframe.operand_stack.pop().unwrap();
+                let string = StringObj::inspect(&thread.heap, str_ptr as usize, |arc| arc.clone())?;
+                if index == 0 {
+                    str.push_str(&string);
+                } else {
+                    write!(str, ", {string}").unwrap();
                 }
-                2 => {
-                    let str_ptr = thread.stackframe.operand_stack.pop().unwrap();
-                    let string =
-                        StringObj::inspect(&thread.heap, str_ptr as usize, |arc| arc.clone())?;
-                    StringBuilder::inspect(&thread.heap, builder as usize, |str| {
-                        if index == 0 {
-                            str.push_str(&string);
-                        } else {
-                            write!(str, ", {string}").unwrap();
-                        }
-                    })?;
-                    thread.stackframe.locals[2] += 1;
-                    if thread.stackframe.locals[2] >= length {
-                        let str =
-                            StringBuilder::inspect(&thread.heap, builder as usize, |builder| {
-                                builder.push(']');
-                                Arc::<str>::from(&**builder)
-                            })?;
-                        Ok(Some(str))
-                    } else {
-                        thread.pc_register = 1;
-                        Ok(None)
-                    }
-                }
-                _ => Err("Impossible PC reached".to_string().into()),
             }
+
+            str.push(']');
+            Ok(Arc::from(str))
         },
     );
 
@@ -427,7 +379,7 @@ pub fn add_native_collections(
                     .map(Option::Some)
                 })??;
                 let opt_idx = Optional::make(thread, next_item.unwrap_or(u32::MAX), verbose);
-                Ok(Some(opt_idx))
+                Ok(opt_idx)
             },
         )),
         ..Default::default()
@@ -441,7 +393,7 @@ pub fn add_native_collections(
                 AnyObj.inspect(&thread.heap, this as usize, |o| {
                     let difference = o.fields[2] - o.fields[1];
                     o.fields[1] = o.fields[2];
-                    Some(difference as u64)
+                    difference as u64
                 })
             },
         )),
@@ -468,7 +420,7 @@ pub fn add_native_collections(
                     ArrayListObj::inspect(&thread.heap, this as usize, |arrls| arrls.len() as u32)?;
                 thread.rember(this, verbose);
                 let stream_idx = thread.heap.lock().unwrap().allocate(stream);
-                Ok(Some(stream_idx))
+                Ok(stream_idx)
             },
         )),
         ..Default::default()

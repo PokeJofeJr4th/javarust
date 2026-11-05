@@ -20,30 +20,28 @@ pub fn native_string_value_of(
 ) -> NativeReturn<u32> {
     if obj_ref == NULL {
         let str_ref = thread.heap.lock().unwrap().allocate_str("null".into());
-        Ok(Some(str_ref))
-    } else if thread.pc_register == 0 {
-        let (to_string_class, to_string_method) =
-            AnyObj.inspect(&thread.heap, obj_ref as usize, |obj| {
-                obj.resolve_method(
-                    &thread.method_area,
-                    &thread.class_area,
-                    "toString",
-                    &MethodDescriptor {
-                        parameter_size: 0,
-                        parameters: Vec::new(),
-                        return_type: Some(FieldType::Object("java/lang/String".into())),
-                    },
-                    verbose,
-                )
-            })?;
-        // push a fake return address
-        thread.stackframe.operand_stack.push(1);
-        thread.invoke_method(to_string_method, to_string_class);
-        thread.stackframe.locals[0] = obj_ref;
-        Ok(None)
-    } else {
-        Ok(Some(thread.stackframe.operand_stack.pop().unwrap()))
+        return Ok(str_ref);
     }
+    let (to_string_class, to_string_method) =
+        AnyObj.inspect(&thread.heap, obj_ref as usize, |obj| {
+            obj.resolve_method(
+                &thread.method_area,
+                &thread.class_area,
+                "toString",
+                &MethodDescriptor {
+                    parameter_size: 0,
+                    parameters: Vec::new(),
+                    return_type: Some(FieldType::Object("java/lang/String".into())),
+                },
+                verbose,
+            )
+        })?;
+    // push a fake return address
+    thread.stackframe.operand_stack.push(0);
+    thread.invoke_method(to_string_method, to_string_class);
+    thread.stackframe.locals[0] = obj_ref;
+    super::run_until_return(thread, verbose)?;
+    Ok(thread.stackframe.operand_stack.pop().unwrap())
 }
 
 pub fn native_println_object(
@@ -51,39 +49,35 @@ pub fn native_println_object(
     [_, arg]: [u32; 2],
     verbose: bool,
 ) -> NativeReturn<()> {
-    // println!("{stackframe:?}");
-    if thread.pc_register == 0 {
-        let (to_string_class, to_string_method) =
-            AnyObj.inspect(&thread.heap, arg as usize, |obj| {
-                obj.resolve_method(
-                    &thread.method_area,
-                    &thread.class_area,
-                    "toString",
-                    &MethodDescriptor {
-                        parameter_size: 0,
-                        parameters: Vec::new(),
-                        return_type: Some(FieldType::Object("java/lang/String".into())),
-                    },
-                    verbose,
-                )
-            })?;
-        if verbose {
-            println!(
-                "Resolved java/lang/Object.toString to {}.{}",
-                to_string_class.this, to_string_method.name
-            );
-        }
-        // push a fake return address
-        thread.stackframe.operand_stack.push(1);
-        thread.invoke_method(to_string_method, to_string_class);
-        thread.stackframe.locals[0] = arg;
-        Ok(None)
-    } else {
-        let ret = thread.stackframe.operand_stack.pop().unwrap();
-        let str = StringObj::SELF.inspect(&thread.heap, ret as usize, |a| a.clone())?;
-        println!("{str}");
-        Ok(Some(()))
+    let (to_string_class, to_string_method) =
+        AnyObj.inspect(&thread.heap, arg as usize, |obj| {
+            obj.resolve_method(
+                &thread.method_area,
+                &thread.class_area,
+                "toString",
+                &MethodDescriptor {
+                    parameter_size: 0,
+                    parameters: Vec::new(),
+                    return_type: Some(FieldType::Object("java/lang/String".into())),
+                },
+                verbose,
+            )
+        })?;
+    if verbose {
+        println!(
+            "Resolved java/lang/Object.toString to {}.{}",
+            to_string_class.this, to_string_method.name
+        );
     }
+    // push a fake return address
+    thread.stackframe.operand_stack.push(1);
+    thread.invoke_method(to_string_method, to_string_class);
+    thread.stackframe.locals[0] = arg;
+    super::run_until_return(thread, verbose)?;
+    let ret = thread.stackframe.operand_stack.pop().unwrap();
+    let str = StringObj::SELF.inspect(&thread.heap, ret as usize, |a| a.clone())?;
+    println!("{str}");
+    Ok(())
 }
 
 pub fn native_string_char_at(
@@ -92,11 +86,9 @@ pub fn native_string_char_at(
     _verbose: bool,
 ) -> NativeReturn<u32> {
     let index = index as usize;
-    StringObj::SELF
-        .inspect(&thread.heap, string_ref as usize, |str| {
-            str.chars().nth(index).unwrap() as u32
-        })
-        .map(Option::Some)
+    StringObj::SELF.inspect(&thread.heap, string_ref as usize, |str| {
+        str.chars().nth(index).unwrap() as u32
+    })
 }
 
 pub fn add_native_methods(
@@ -132,9 +124,7 @@ pub fn add_native_methods(
         access_flags: access!(public native),
         name: "toString".into(),
         descriptor: method!(() -> Object(java_lang_string.clone())),
-        code: RawCode::native(NativeSingleMethod(|_: &mut _, [l]: [u32; 1], _| {
-            Ok(Some(l))
-        })),
+        code: RawCode::native(NativeSingleMethod(|_: &mut _, [l]: [u32; 1], _| Ok(l))),
         ..Default::default()
     };
     let string_compare_to = RawMethod {
@@ -145,11 +135,11 @@ pub fn add_native_methods(
             |thread: &mut Thread, [this, other]: [u32; 2], _| {
                 let this_str = StringObj::inspect(&thread.heap, this as usize, |a| a.clone())?;
                 let other_str = StringObj::inspect(&thread.heap, other as usize, |a| a.clone())?;
-                Ok(Some(match this_str.cmp(&other_str) {
+                Ok(match this_str.cmp(&other_str) {
                     std::cmp::Ordering::Less => u32::MAX,
                     std::cmp::Ordering::Equal => 0,
                     std::cmp::Ordering::Greater => 1,
-                }))
+                })
             },
         )),
         ..Default::default()
@@ -163,7 +153,7 @@ pub fn add_native_methods(
                 let this_str = StringObj::inspect(&thread.heap, this as usize, |s| s.clone())?;
                 let seq_str = StringObj::inspect(&thread.heap, seq as usize, |s| s.clone())?;
                 let contains = this_str.contains(&*seq_str);
-                Ok(Some(u32::from(contains)))
+                Ok(u32::from(contains))
             },
         )),
         ..Default::default()

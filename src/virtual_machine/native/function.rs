@@ -71,7 +71,7 @@ pub fn make_lambda_override<const CAPTURES: usize>(
             }
             .as_object(class);
             let idx = thread.heap.lock().unwrap().allocate(lambda_object);
-            Ok(Some(idx))
+            Ok(idx)
         },
     )
 }
@@ -135,7 +135,7 @@ pub(super) fn add_native_methods(
                     super::run_until_return(thread, verbose)?;
 
                     // Return the result
-                    Ok(Some(thread.stackframe.operand_stack.pop().unwrap()))
+                    Ok(thread.stackframe.operand_stack.pop().unwrap())
                 },
             )),
             ..Default::default()
@@ -165,7 +165,7 @@ pub(super) fn add_native_methods(
                     }
                     .as_object(function_class);
                     let idx = thread.heap.lock().unwrap().allocate(lambda_object);
-                    Ok(Some(idx))
+                    Ok(idx)
                 },
             )),
             ..Default::default()
@@ -212,7 +212,7 @@ pub(super) fn add_native_methods(
                 .static_data
                 .lock()
                 .unwrap()[0] = idx;
-            Ok(Some(()))
+            Ok(())
         })
     };
     let identity = RawMethod {
@@ -229,7 +229,7 @@ pub(super) fn add_native_methods(
                     super::run_until_return(thread, verbose)?;
                 }
                 let value = function.static_data.lock().unwrap()[0];
-                Ok(Some(value))
+                Ok(value)
             },
         )),
         ..Default::default()
@@ -239,7 +239,7 @@ pub(super) fn add_native_methods(
         access_flags: access!(public static native),
         descriptor: method!(((Object(java_lang_object.clone()))) -> Object(java_lang_object.clone())),
         code: RawCode::native(NativeSingleMethod(
-            |_thread: &mut Thread, [o]: [u32; 1], _verbose| Ok(Some(o)),
+            |_thread: &mut Thread, [o]: [u32; 1], _verbose| Ok(o),
         )),
         ..Default::default()
     };
@@ -276,22 +276,14 @@ pub(super) fn add_native_methods(
             access_flags: access!(public static),
             descriptor: method!(((Object(predicate.this.clone())), (Object(java_lang_object.clone()))) -> boolean),
             code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [predicate, object]: [u32; 2], verbose| match thread
-                    .pc_register
-                {
-                    0 => {
-                        thread.stackframe.operand_stack.push(1);
-                        thread.resolve_and_invoke(predicate, "test", &test_signature, verbose)?;
-                        thread.stackframe.locals[0] = predicate;
-                        thread.stackframe.locals[1] = object;
-                        Ok(None)
-                    }
-                    1 => {
-                        // reverse the output
-                        let value = thread.stackframe.operand_stack.pop().unwrap();
-                        Ok(Some(u32::from(value == 0)))
-                    }
-                    _ => unreachable!(),
+                move |thread: &mut Thread, [predicate, object]: [u32; 2], verbose| {
+                    thread.stackframe.operand_stack.push(1);
+                    thread.resolve_and_invoke(predicate, "test", &test_signature, verbose)?;
+                    thread.stackframe.locals[0] = predicate;
+                    thread.stackframe.locals[1] = object;
+                    super::run_until_return(thread, verbose)?;
+                    let value = thread.stackframe.operand_stack.pop().unwrap();
+                    Ok(u32::from(value == 0))
                 },
             )),
             ..Default::default()
@@ -335,7 +327,7 @@ pub(super) fn add_native_methods(
                     }
                     .as_object(predicate_class);
                     let idx = thread.heap.lock().unwrap().allocate(lambda_object);
-                    Ok(Some(idx))
+                    Ok(idx)
                 },
             )),
             ..Default::default()
@@ -348,29 +340,22 @@ pub(super) fn add_native_methods(
             access_flags: access!(public static native),
             descriptor: method!(((Object(predicate.this.clone())), (Object(predicate.this.clone())), (Object(java_lang_object.clone()))) -> boolean),
             code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [first, second, operand]: [u32; 3], verbose| match thread
-                    .pc_register
-                {
-                    0 => {
-                        thread.stackframe.operand_stack.push(1);
-                        thread.resolve_and_invoke(first, "test", &test_signature, verbose)?;
-                        thread.stackframe.locals[0] = first;
-                        thread.stackframe.locals[1] = operand;
-                        Ok(None)
+                move |thread: &mut Thread, [first, second, operand]: [u32; 3], verbose| {
+                    thread.stackframe.operand_stack.push(1);
+                    thread.resolve_and_invoke(first, "test", &test_signature, verbose)?;
+                    thread.stackframe.locals[0] = first;
+                    thread.stackframe.locals[1] = operand;
+                    super::run_until_return(thread, verbose)?;
+                    let ret = thread.stackframe.operand_stack.pop().unwrap();
+                    if ret == 0 {
+                        return Ok(0);
                     }
-                    1 => {
-                        let ret = thread.stackframe.operand_stack.pop().unwrap();
-                        if ret == 0 {
-                            return Ok(Some(0));
-                        }
-                        thread.stackframe.operand_stack.push(2);
-                        thread.resolve_and_invoke(second, "test", &test_signature, verbose)?;
-                        thread.stackframe.locals[0] = second;
-                        thread.stackframe.locals[1] = operand;
-                        Ok(None)
-                    }
-                    2 => Ok(Some(thread.stackframe.operand_stack.pop().unwrap())),
-                    _ => unreachable!(),
+                    thread.stackframe.operand_stack.push(2);
+                    thread.resolve_and_invoke(second, "test", &test_signature, verbose)?;
+                    thread.stackframe.locals[0] = second;
+                    thread.stackframe.locals[1] = operand;
+                    super::run_until_return(thread, verbose)?;
+                    Ok(thread.stackframe.operand_stack.pop().unwrap())
                 },
             )),
             ..Default::default()
@@ -383,29 +368,22 @@ pub(super) fn add_native_methods(
             access_flags: access!(public static native),
             descriptor: method!(((Object(predicate.this.clone())), (Object(predicate.this.clone())), (Object(java_lang_object.clone()))) -> boolean),
             code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [first, second, operand]: [u32; 3], verbose| match thread
-                    .pc_register
-                {
-                    0 => {
-                        thread.stackframe.operand_stack.push(1);
-                        thread.resolve_and_invoke(first, "test", &test_signature, verbose)?;
-                        thread.stackframe.locals[0] = first;
-                        thread.stackframe.locals[1] = operand;
-                        Ok(None)
+                move |thread: &mut Thread, [first, second, operand]: [u32; 3], verbose| {
+                    thread.stackframe.operand_stack.push(1);
+                    thread.resolve_and_invoke(first, "test", &test_signature, verbose)?;
+                    thread.stackframe.locals[0] = first;
+                    thread.stackframe.locals[1] = operand;
+                    super::run_until_return(thread, verbose)?;
+                    let ret = thread.stackframe.operand_stack.pop().unwrap();
+                    if ret == 1 {
+                        return Ok(1);
                     }
-                    1 => {
-                        let ret = thread.stackframe.operand_stack.pop().unwrap();
-                        if ret == 1 {
-                            return Ok(Some(1));
-                        }
-                        thread.stackframe.operand_stack.push(2);
-                        thread.resolve_and_invoke(second, "test", &test_signature, verbose)?;
-                        thread.stackframe.locals[0] = second;
-                        thread.stackframe.locals[1] = operand;
-                        Ok(None)
-                    }
-                    2 => Ok(Some(thread.stackframe.operand_stack.pop().unwrap())),
-                    _ => unreachable!(),
+                    thread.stackframe.operand_stack.push(2);
+                    thread.resolve_and_invoke(second, "test", &test_signature, verbose)?;
+                    thread.stackframe.locals[0] = second;
+                    thread.stackframe.locals[1] = operand;
+                    super::run_until_return(thread, verbose)?;
+                    Ok(thread.stackframe.operand_stack.pop().unwrap())
                 },
             )),
             ..Default::default()
@@ -484,7 +462,7 @@ pub(super) fn add_native_methods(
         let value = Optional::make(thread, u32::MAX, verbose);
         optional.static_data.lock().unwrap()[0] = value;
         thread.rember(value, verbose);
-        Ok(Some(()))
+        Ok(())
     });
     let opt_empty = RawMethod {
         name: "empty".into(),
@@ -497,7 +475,7 @@ pub(super) fn add_native_methods(
                     super::run_until_return(thread, verbose)?;
                 }
                 let empty = optional.static_data.lock().unwrap()[0];
-                Ok(Some(empty))
+                Ok(empty)
             },
         )),
         ..Default::default()
@@ -508,7 +486,7 @@ pub(super) fn add_native_methods(
         descriptor: method!(((Object(java_lang_object.clone()))) -> Object(optional.this.clone())),
         code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, [idx]: [u32; 1], verbose: bool| {
-                Ok(Some(Optional::make(thread, idx, verbose)))
+                Ok(Optional::make(thread, idx, verbose))
             },
         )),
         ..Default::default()
@@ -520,14 +498,14 @@ pub(super) fn add_native_methods(
         code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, [idx]: [u32; 1], verbose: bool| {
                 if idx != 0 {
-                    return Ok(Some(Optional::make(thread, idx, verbose)));
+                    return Ok(Optional::make(thread, idx, verbose));
                 }
                 let nullable = thread.class_area.search("java/util/Optional").unwrap();
                 if thread.maybe_initialize_class(&nullable) {
                     super::run_until_return(thread, verbose)?;
                 }
                 let null = nullable.static_data.lock().unwrap()[0];
-                Ok(Some(null))
+                Ok(null)
             },
         )),
         ..Default::default()
@@ -548,17 +526,17 @@ pub(super) fn add_native_methods(
                 })?
                 else {
                     // if it's not an Optional, return false
-                    return Ok(Some(0));
+                    return Ok(0);
                 };
                 let this_inner = AnyObj.inspect(&thread.heap, this as usize, |o| o.fields[0])?;
 
                 // if they're both None, they're equal
                 if this_inner == u32::MAX && other_inner == u32::MAX {
-                    return Ok(Some(1));
+                    return Ok(1);
                 }
                 // if one's None but the other isn't, they're not equal
                 if this_inner == u32::MAX || other_inner == u32::MAX {
-                    return Ok(Some(0));
+                    return Ok(0);
                 }
 
                 // Call this.equals(other)
@@ -567,8 +545,7 @@ pub(super) fn add_native_methods(
                 thread.stackframe.locals[0] = this_inner;
                 thread.stackframe.locals[1] = other_inner;
                 super::run_until_return(thread, verbose)?;
-
-                Ok(Some(thread.stackframe.operand_stack.pop().unwrap()))
+                Ok(thread.stackframe.operand_stack.pop().unwrap())
             },
         )),
         ..Default::default()
@@ -591,7 +568,7 @@ pub(super) fn add_native_methods(
                             super::run_until_return(thread, verbose)?;
                         }
                         let null = optional.static_data.lock().unwrap()[0];
-                        return Ok(Some(null));
+                        return Ok(null);
                     }
 
                     // Call the predicate
@@ -609,9 +586,9 @@ pub(super) fn add_native_methods(
                             super::run_until_return(thread, verbose)?;
                         }
                         let null = optional.static_data.lock().unwrap()[0];
-                        return Ok(Some(null));
+                        return Ok(null);
                     }
-                    Ok(Some(this))
+                    Ok(this)
                 },
             )),
             ..Default::default()
@@ -629,7 +606,7 @@ pub(super) fn add_native_methods(
                 let value = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
                 // If we're empty, return 0
                 if value == u32::MAX {
-                    return Ok(Some(0));
+                    return Ok(0);
                 }
                 // Call inner.hashCode
                 thread.stackframe.operand_stack.push(1);
@@ -637,7 +614,7 @@ pub(super) fn add_native_methods(
                 thread.stackframe.locals[0] = value;
                 super::run_until_return(thread, verbose)?;
 
-                Ok(Some(thread.stackframe.operand_stack.pop().unwrap()))
+                Ok(thread.stackframe.operand_stack.pop().unwrap())
             },
         )),
         ..Default::default()
@@ -650,10 +627,10 @@ pub(super) fn add_native_methods(
         descriptor: method!(() -> boolean),
         code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, [this]: [u32; 1], _verbose| {
-                Ok(Some(
+                Ok(
                     AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0] == u32::MAX)?
                         as u32,
-                ))
+                )
             },
         )),
         ..Default::default()
@@ -664,10 +641,10 @@ pub(super) fn add_native_methods(
         descriptor: method!(() -> boolean),
         code: RawCode::native(NativeSingleMethod(
             |thread: &mut Thread, [this]: [u32; 1], _verbose| {
-                Ok(Some(
+                Ok(
                     AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0] != u32::MAX)?
                         as u32,
-                ))
+                )
             },
         )),
         ..Default::default()
@@ -683,7 +660,7 @@ pub(super) fn add_native_methods(
                 let value = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
                 // if we're empty, return empty
                 if value == u32::MAX {
-                    return Ok(Some(this));
+                    return Ok(this);
                 }
 
                 // Call func.apply
@@ -694,7 +671,7 @@ pub(super) fn add_native_methods(
 
                 // Make a new optional with the result
                 let inner_value = thread.stackframe.operand_stack.pop().unwrap();
-                Ok(Some(Optional::make(thread, inner_value, verbose)))
+                Ok(Optional::make(thread, inner_value, verbose))
             },
         )),
         ..Default::default()
@@ -709,7 +686,7 @@ pub(super) fn add_native_methods(
             let value = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
             // If we're empty, return nothing
             if value == u32::MAX {
-                return Ok(Some("None".into()));
+                return Ok("None".into());
             }
 
             // call inner.toString
@@ -722,7 +699,7 @@ pub(super) fn add_native_methods(
             StringObj::inspect(
                 &thread.heap,
                 thread.stackframe.operand_stack.pop().unwrap() as usize,
-                |s| Some(format!("Optional[{s}]").into()),
+                |s| format!("Optional[{s}]").into(),
             )
         });
     optional.register_methods(

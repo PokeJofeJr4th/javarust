@@ -50,7 +50,7 @@ pub(super) fn add_native_methods(
                         let Some(ret) = Optional.inspect(&thread.heap, ret_opt as usize, |o| *o)?
                         else {
                             println!("Stream is over, goobbye");
-                            return Ok(Some(1));
+                            return Ok(1);
                         };
                         // execute .test()
                         thread.stackframe.operand_stack.push(0);
@@ -61,7 +61,7 @@ pub(super) fn add_native_methods(
                         // If test returned false, we return false
                         let predicate_ret = thread.stackframe.operand_stack.pop().unwrap();
                         if predicate_ret == 0 {
-                            return Ok(Some(0));
+                            return Ok(0);
                         }
                     }
                 },
@@ -89,7 +89,7 @@ pub(super) fn add_native_methods(
                         let ret_opt = thread.stackframe.operand_stack.pop().unwrap();
                         let Some(ret) = Optional.inspect(&thread.heap, ret_opt as usize, |o| *o)?
                         else {
-                            return Ok(Some(0));
+                            return Ok(0);
                         };
                         // execute .test()
                         thread.stackframe.operand_stack.push(0);
@@ -100,7 +100,7 @@ pub(super) fn add_native_methods(
                         // If test returned true, we return true
                         let predicate_ret = thread.stackframe.operand_stack.pop().unwrap();
                         if predicate_ret > 0 {
-                            return Ok(Some(1));
+                            return Ok(1);
                         }
                     }
                 },
@@ -136,16 +136,12 @@ pub(super) fn add_native_methods(
             access_flags: access!(private native static),
             descriptor: method!(((Object(stream.this.clone())), (Object("java/util/function/Predicate".into()))) -> Object("java/util/Optional".into())),
             code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [stream, predicate]: [u32; 2], verbose| match thread
-                    .pc_register
-                {
-                    0 => {
-                        thread.stackframe.operand_stack.push(1);
+                move |thread: &mut Thread, [stream, predicate]: [u32; 2], verbose| {
+                    loop {
+                        thread.stackframe.operand_stack.push(0);
                         thread.resolve_and_invoke(stream, "$next", &next_descriptor, verbose)?;
                         thread.stackframe.locals[0] = stream;
-                        Ok(None)
-                    }
-                    1 => {
+                        super::run_until_return(thread, verbose)?;
                         let returned_opt = thread.stackframe.operand_stack.pop().unwrap();
                         let Some(returned_obj) =
                             Optional.inspect(&thread.heap, returned_opt as usize, |o| *o)?
@@ -153,31 +149,23 @@ pub(super) fn add_native_methods(
                             if verbose {
                                 println!("Stream end - returning None");
                             }
-                            return Ok(Some(returned_opt));
+                            return Ok(returned_opt);
                         };
                         thread.stackframe.operand_stack.push(returned_opt);
-                        thread.stackframe.operand_stack.push(2);
+                        thread.stackframe.operand_stack.push(0);
                         thread.resolve_and_invoke(predicate, "test", &test_descriptor, verbose)?;
                         thread.stackframe.locals[0] = predicate;
                         thread.stackframe.locals[1] = returned_obj;
-                        Ok(None)
-                    }
-                    2 => {
+                        super::run_until_return(thread, verbose)?;
                         let test_result = thread.stackframe.operand_stack.pop().unwrap();
-                        if test_result == 0 {
-                            if verbose {
-                                println!("Predicate failed - continuing to next option");
-                            }
-                            thread.stackframe.operand_stack.pop();
-                            thread.pc_register = 0;
-                            return Ok(None);
+                        if test_result > 0 {
+                            break;
                         }
-                        if verbose {
-                            println!("Predicate succeeded - returning the tested object");
-                        }
-                        Ok(Some(thread.stackframe.operand_stack.pop().unwrap()))
                     }
-                    _ => unreachable!(),
+                    if verbose {
+                        println!("Predicate succeeded - returning the tested object");
+                    }
+                    Ok(thread.stackframe.operand_stack.pop().unwrap())
                 },
             )),
             ..Default::default()
@@ -214,21 +202,17 @@ pub(super) fn add_native_methods(
             access_flags: access!(public native),
             descriptor: method!(((Object("java/util/function/Consumer".into()))) -> void),
             code: RawCode::native(NativeVoid(
-                move |thread: &mut Thread, [this, consumer]: [u32; 2], verbose| match thread
-                    .pc_register
-                {
-                    0 => {
+                move |thread: &mut Thread, [this, consumer]: [u32; 2], verbose| {
+                    loop {
                         thread.stackframe.operand_stack.push(1);
                         thread.resolve_and_invoke(this, "$next", &next_signature, verbose)?;
                         thread.stackframe.locals[0] = this;
-                        Ok(None)
-                    }
-                    1 => {
+                        super::run_until_return(thread, verbose)?;
                         let next_value = thread.stackframe.operand_stack.pop().unwrap();
                         let next_value =
                             Optional.inspect(&thread.heap, next_value as usize, |o| *o)?;
                         let Some(next_value) = next_value else {
-                            return Ok(Some(()));
+                            return Ok(());
                         };
                         // invoke the consumer
                         thread.stackframe.operand_stack.push(0);
@@ -240,9 +224,8 @@ pub(super) fn add_native_methods(
                         )?;
                         thread.stackframe.locals[0] = consumer;
                         thread.stackframe.locals[1] = next_value;
-                        Ok(None)
+                        super::run_until_return(thread, verbose)?;
                     }
-                    _ => unreachable!(),
                 },
             )),
             ..Default::default()
@@ -262,7 +245,7 @@ pub(super) fn add_native_methods(
                     thread.resolve_and_invoke(supplier, "get", &get_descriptor, verbose)?;
                     thread.stackframe.locals[0] = supplier;
                     // Return the result from the supplier
-                    Ok(Some(thread.stackframe.operand_stack.pop().unwrap()))
+                    Ok(thread.stackframe.operand_stack.pop().unwrap())
                 },
             )),
             ..Default::default()
@@ -308,7 +291,7 @@ pub(super) fn add_native_methods(
                     let Some(next_obj) =
                         Optional.inspect(&thread.heap, next_idx as usize, |o| *o)?
                     else {
-                        return Ok(Some(next_idx));
+                        return Ok(next_idx);
                     };
 
                     // Call func.apply(next)
@@ -321,7 +304,7 @@ pub(super) fn add_native_methods(
                     // Make a new optional for the function return
                     let func_ret = thread.stackframe.operand_stack.pop().unwrap();
                     let opt_ret = Optional::make(thread, func_ret, verbose);
-                    Ok(Some(opt_ret))
+                    Ok(opt_ret)
                 },
             )),
             ..Default::default()
@@ -352,37 +335,25 @@ pub(super) fn add_native_methods(
             access_flags: access!(public native),
             descriptor: method!(((Object("java/util/function/Predicate".into()))) -> boolean),
             code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [this, predicate]: [u32; 2], verbose| match thread
-                    .pc_register
-                {
-                    0 => {
-                        thread.stackframe.operand_stack.push(1);
-                        thread.resolve_and_invoke(this, "$next", &next_descriptor, verbose)?;
-                        thread.stackframe.locals[0] = this;
-                        Ok(None)
+                move |thread: &mut Thread, [this, predicate]: [u32; 2], verbose| loop {
+                    thread.stackframe.operand_stack.push(1);
+                    thread.resolve_and_invoke(this, "$next", &next_descriptor, verbose)?;
+                    thread.stackframe.locals[0] = this;
+                    super::run_until_return(thread, verbose)?;
+                    let ret_opt = thread.stackframe.operand_stack.pop().unwrap();
+                    let Some(ret) = Optional.inspect(&thread.heap, ret_opt as usize, |o| *o)?
+                    else {
+                        return Ok(1);
+                    };
+                    thread.stackframe.operand_stack.push(2);
+                    thread.resolve_and_invoke(predicate, "test", &test_descriptor, verbose)?;
+                    thread.stackframe.locals[0] = predicate;
+                    thread.stackframe.locals[1] = ret;
+                    super::run_until_return(thread, verbose)?;
+                    let predicate_ret = thread.stackframe.operand_stack.pop().unwrap();
+                    if predicate_ret != 0 {
+                        return Ok(0);
                     }
-                    1 => {
-                        let ret_opt = thread.stackframe.operand_stack.pop().unwrap();
-                        let Some(ret) = Optional.inspect(&thread.heap, ret_opt as usize, |o| *o)?
-                        else {
-                            return Ok(Some(1));
-                        };
-                        thread.stackframe.operand_stack.push(2);
-                        thread.resolve_and_invoke(predicate, "test", &test_descriptor, verbose)?;
-                        thread.stackframe.locals[0] = predicate;
-                        thread.stackframe.locals[1] = ret;
-                        Ok(None)
-                    }
-                    2 => {
-                        let predicate_ret = thread.stackframe.operand_stack.pop().unwrap();
-                        if predicate_ret == 0 {
-                            thread.pc_register = 0;
-                            Ok(None)
-                        } else {
-                            Ok(Some(0))
-                        }
-                    }
-                    _ => unreachable!(),
                 },
             )),
             ..Default::default()
