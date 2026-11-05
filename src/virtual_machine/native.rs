@@ -42,6 +42,38 @@ pub static mut STRING_BUILDER_CLASS: Option<Arc<Class>> = None;
 pub static mut ARRAY_CLASS: Option<Arc<Class>> = None;
 pub static mut RANDOM_CLASS: Option<Arc<Class>> = None;
 
+macro_rules! native_class {
+    (
+        let method_area = $method_area:expr;
+        class $cls:literal $($supcls:literal)?{
+        $(
+            access!($($access:tt)*) method!($($method:tt)*) $name:literal =>$body:expr
+        )*
+    }) => {{
+        let mut cls = RawClass::new(
+            access!(public native),
+            $cls.into(),
+            native_class!(@super $($supcls)?)
+        );
+
+        $(
+            let method = RawMethod {
+                access_flags: access!($($access)*),
+                name: $name.into(),
+                descriptor: method!($($method)*),
+                code: RawCode::native($body),
+                ..Default::default()
+            };
+            cls.register_method(method, $method_area);
+        )*
+
+        cls
+    }};
+
+    (@super) => {"java/lang/Object".into()};
+    (@super $supcls:literal) => {$supcls.into()}
+}
+
 /// Execute instructions until the current stack frame returns
 ///
 /// Should mainly be used within a native method body
@@ -82,55 +114,32 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     let java_lang_object: Arc<str> = Arc::from("java/lang/Object");
     let java_lang_string: Arc<str> = Arc::from("java/lang/String");
 
-    let noop_init = RawMethod {
-        access_flags: access!(public native),
-        name: "<init>".into(),
-        descriptor: method!(() -> void),
-        signature: None,
-        attributes: Vec::new(),
-        code: RawCode::native(NativeNoop),
-        ..Default::default()
-    };
-    let object_get_class = RawMethod {
-        access_flags: access!(public native),
-        name: "getClass".into(),
-        descriptor: method!(() -> Object("java/lang/Class".into())),
-        code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [obj]: [u32; 1], _| {
-                let obj_class =
-                    AnyObj.inspect(&thread.heap, obj as usize, |obj| obj.class.clone())?;
-                Ok(Some(
-                    get_class(&thread.heap, &thread.class_area, obj_class).unwrap_or(NULL),
-                ))
-            },
-        )),
-        ..Default::default()
-    };
     let object_to_string = RawMethod::to_string(|_: &mut _, [obj_ref]: [u32; 1], _| {
         Ok(Some(Arc::from(format!("{obj_ref:0>8X}"))))
     });
-    let object_hash = RawMethod {
-        access_flags: access!(public native),
-        name: "hashCode".into(),
-        descriptor: method!(() -> int),
-        code: RawCode::native(NativeSingleMethod(|_: &mut _, [ptr]: [u32; 1], _| {
-            let mut hasher = DefaultHasher::new();
-            ptr.hash(&mut hasher);
-            let value = hasher.finish() as u32;
-            Ok(Some(value))
-        })),
-        ..Default::default()
-    };
 
-    let mut object = RawClass::new(
-        access!(public native),
-        java_lang_object.clone(),
-        java_lang_object.clone(),
+    let mut object = native_class!(
+        let method_area = method_area;
+        class "java/lang/Object" {
+            access!(public native) method!(() -> void) "<init>" => NativeNoop
+
+            access!(public native) method!(() -> Object("java/lang/Class".into())) "getClass" => NativeSingleMethod(
+                |thread: &mut Thread, [obj]: [u32; 1], _| {
+                    let obj_class = AnyObj.inspect(&thread.heap, obj as usize, |obj| obj.class.clone())?;
+                    Ok(Some(get_class(&thread.heap, &thread.class_area, obj_class).unwrap_or(NULL)))
+                },
+            )
+
+            access!(public native) method!(() -> int) "hashCode" => NativeSingleMethod(|_: &mut _, [ptr]: [u32; 1], _| {
+                let mut hasher = DefaultHasher::new();
+                ptr.hash(&mut hasher);
+                let value = hasher.finish() as u32;
+                Ok(Some(value))
+            })
+        }
     );
-    object.register_methods(
-        [noop_init, object_to_string, object_hash, object_get_class],
-        method_area,
-    );
+    println!("{object:?}");
+    object.register_method(object_to_string, method_area);
     let mut util_objects = RawClass::new(
         access!(public native),
         "java/util/Objects".into(),
