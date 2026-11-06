@@ -15,7 +15,10 @@ use crate::{
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
-    virtual_machine::native::field::Int,
+    virtual_machine::{
+        native::field::{Int, StringField},
+        object::StringObj,
+    },
 };
 
 use self::primitives::make_primitives;
@@ -208,20 +211,16 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     let java_lang_object: Arc<str> = Arc::from("java/lang/Object");
     let java_lang_string: Arc<str> = Arc::from("java/lang/String");
 
-    let object_to_string = RawMethod::to_string(|_: &mut _, [obj_ref]: [u32; 1], _| {
-        Ok(Arc::from(format!("{obj_ref:0>8X}")))
-    });
-
-    let class_field = ObjectField("java/lang/Class");
-    let mut object = native_class!(
+    let object = native_class!(
         let method_area;
+
         class "java/lang/Object" {
             public fn "<init>"(_this: this) => {
                 let _thread, _verbose;
                 Ok(())
             }
 
-            public fn "getClass"(this: this) class_field => {
+            public fn "getClass"(this: this) ObjectField("java/lang/Class") => {
                 let thread, _verbose;
                 let obj_class = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.class.clone())?;
                 Ok(get_class(&thread.heap, &thread.class_area, obj_class).unwrap_or(NULL))
@@ -234,10 +233,13 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 let value = hasher.finish() as i32;
                 Ok(value)
             }
+
+            public fn "toString"(this: this) StringField => {
+                let _thread, _verbose;
+                Ok(Arc::from(format!("{this:0>8X}")))
+            }
         }
     );
-    println!("{object:?}");
-    object.register_method(object_to_string, method_area);
     let mut util_objects = RawClass::new(
         access!(public native),
         "java/util/Objects".into(),

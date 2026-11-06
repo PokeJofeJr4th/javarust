@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use jvmrs_lib::{field, FieldType};
 
 use crate::{
-    class::code::{NativeMethod, NativeReturn, NativeSingleMethod, NativeVoid},
+    class::code::{NativeMethod, NativeReturn, NativeSingleMethod, NativeStringMethod, NativeVoid},
     virtual_machine::Thread,
 };
 
@@ -32,7 +34,23 @@ impl Field for Void {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct ArrayField<T>(pub T);
+
+impl<T: Field> Field for ArrayField<T> {
+    type T = u32;
+
+    fn as_field(self) -> FieldType {
+        FieldType::Array(Box::new(self.0.as_field()))
+    }
+
+    fn make_native<const U: usize>(
+        self,
+        func: impl Fn(&mut Thread, [u32; U], bool) -> NativeReturn<Self::T> + Send + Sync + 'static,
+    ) -> impl NativeMethod {
+        NativeSingleMethod(func)
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct ObjectField(pub &'static str);
@@ -68,5 +86,22 @@ impl Field for Int {
         NativeSingleMethod(move |thread: &mut Thread, args: [u32; U], verbose| {
             func(thread, args, verbose).map(|i| i as u32)
         })
+    }
+}
+
+pub struct StringField;
+
+impl Field for StringField {
+    type T = Arc<str>;
+
+    fn as_field(self) -> FieldType {
+        field!(Object("java/lang/String".into()))
+    }
+
+    fn make_native<const U: usize>(
+        self,
+        func: impl Fn(&mut Thread, [u32; U], bool) -> NativeReturn<Self::T> + Send + Sync + 'static,
+    ) -> impl NativeMethod {
+        NativeStringMethod(func)
     }
 }
