@@ -70,6 +70,25 @@ impl Field for ObjectField {
     }
 }
 
+pub struct Char;
+
+impl Field for Char {
+    type T = char;
+
+    fn as_field(self) -> FieldType {
+        field!(char)
+    }
+
+    fn make_native<const U: usize>(
+        self,
+        func: impl Fn(&mut Thread, [u32; U], bool) -> NativeReturn<Self::T> + Send + Sync + 'static,
+    ) -> impl NativeMethod {
+        NativeSingleMethod(move |thread: &mut Thread, args: [u32; U], verbose| {
+            func(thread, args, verbose).map(|c| c as u32)
+        })
+    }
+}
+
 pub struct Int;
 
 impl Field for Int {

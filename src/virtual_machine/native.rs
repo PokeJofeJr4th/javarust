@@ -6,7 +6,7 @@ use std::{
 };
 
 use jvmrs_lib::{access, field, method, FieldType, MethodDescriptor};
-use rand::RngExt;
+use rand::{rngs::StdRng, RngExt};
 
 use crate::{
     class::{
@@ -15,14 +15,15 @@ use crate::{
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
+    virtual_machine::object::{StringBuilder, StringObj},
 };
 
 use super::{
-    object::{AnyObj, Object, ObjectFinder, Random},
+    object::{AnyObj, Object, ObjectFinder},
     Thread,
 };
 
-use field::{Field as FieldTrait, Int, ObjectField, StringField, Void};
+use field::{Char, Field as FieldTrait, Int, ObjectField, StringField, Void};
 use primitives::make_primitives;
 
 pub mod arrays;
@@ -33,7 +34,6 @@ pub mod primitives;
 pub mod reflect;
 pub mod stream;
 pub mod string;
-pub mod string_builder;
 pub mod system;
 pub mod throwable;
 
@@ -230,6 +230,65 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 Ok(object)
             }
         }
+
+        class "java/lang/StringBuilder" {
+            public fn "<init>"(&this, string: StringField) => {
+                let thread, _verbose;
+                let init_string = StringObj::SELF.inspect(&thread.heap, string as usize, |init_string| {
+                    init_string.to_string()
+                })?;
+                AnyObj.inspect(&thread.heap, this as usize, |heap_obj| {
+                    heap_obj.native_fields.push(Box::new(init_string));
+                })
+            }
+
+            public fn "setCharAt"(&this, index: Int, character: Char) => {
+                let thread, verbose;
+                let this = this as usize;
+                let index = index as usize;
+                let character = char::from_u32(character).unwrap();
+                if verbose {
+                    println!("setting char at {index} to {character:?}");
+                }
+                StringBuilder::SELF.inspect(&thread.heap, this, |string_ref| {
+                    if verbose {
+                        println!("StringBuilder = {string_ref:?}");
+                    }
+                    string_ref.replace_range(
+                        string_ref
+                            .char_indices()
+                            .nth(index)
+                            .map(|(pos, ch)| pos..pos + ch.len_utf8())
+                            .unwrap(),
+                        &String::from(character),
+                    );
+                })
+            }
+
+            public fn "toString"(&this) StringField => {
+                let thread, _verbose;
+                let string = Arc::from(&*StringBuilder::inspect(
+                    &thread.heap,
+                    this as usize,
+                    |a| a.clone(),
+                )?);
+                Ok(string)
+            }
+        }
+
+        class "java/util/Random" {
+            public fn "<init>"(&this) => {
+                let thread, _verbose;
+                AnyObj.inspect(&thread.heap, this as usize, |o| {
+                    o.native_fields.push(Box::new(rand::make_rng::<StdRng>()));
+                })
+            }
+
+            public fn "nextInt"(&this, right_bound: Int) Int => {
+                let thread, _verbose;
+                AnyObj.inspect(&thread.heap, this as usize, |o| o.native_fields[0].downcast_mut::<StdRng>().unwrap().random_range(0..(right_bound as i32)))
+            }
+        }
     ));
 
     let mut enum_class = RawClass::new(
@@ -285,53 +344,6 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         ..enum_to_string.clone()
     };
     enum_class.register_methods([enum_init, enum_to_string, enum_name], method_area);
-
-    let builder_init = RawMethod {
-        access_flags: access!(public native),
-        name: "<init>".into(),
-        descriptor: method!(((Object(java_lang_string.clone()))) -> void),
-        code: RawCode::native(NativeVoid(string_builder::init)),
-        ..Default::default()
-    };
-    let set_char_at = RawMethod {
-        access_flags: access!(public native),
-        name: "setCharAt".into(),
-        descriptor: method!((int, char) -> void),
-        code: RawCode::native(NativeVoid(string_builder::set_char_at)),
-        ..Default::default()
-    };
-    let to_string = RawMethod::to_string(string_builder::to_string);
-    let mut string_builder = RawClass::new(
-        access!(public native),
-        "java/lang/StringBuilder".into(),
-        java_lang_object.clone(),
-    );
-    string_builder.register_methods([builder_init, set_char_at, to_string], method_area);
-
-    let random_init = Random::make_init(rand::make_rng);
-    let next_int = RawMethod {
-        access_flags: access!(public native),
-        name: "nextInt".into(),
-        descriptor: method!((int) -> int),
-        code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [obj_ref, right_bound]: [u32; 2], verbose: bool| {
-                if verbose {
-                    println!("java/util/Random.nextInt(int): obj_ref={obj_ref}");
-                    println!("java/util/Random.nextInt(int): right_bound={right_bound}");
-                }
-                Random::inspect(&thread.heap, obj_ref as usize, |random_obj| {
-                    random_obj.random_range(0..right_bound)
-                })
-            },
-        )),
-        ..Default::default()
-    };
-    let mut random = RawClass::new(
-        access!(public native),
-        "java/util/Random".into(),
-        java_lang_object.clone(),
-    );
-    random.register_methods([random_init, next_int], method_area);
 
     let sqrt_double = RawMethod {
         access_flags: access!(public static native),
@@ -435,6 +447,6 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         &java_lang_string,
     );
 
-    class_area.extend([enum_class, string_builder, random, math]);
+    class_area.extend([enum_class, math]);
     drop((java_lang_object, java_lang_string));
 }
