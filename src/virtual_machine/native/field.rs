@@ -88,6 +88,30 @@ impl Field for ObjectField {
 }
 
 #[derive(Clone, Copy)]
+pub struct Boolean;
+
+impl Field for Boolean {
+    type T = bool;
+
+    fn as_field(self) -> FieldType {
+        field!(boolean)
+    }
+
+    fn make_native<const U: usize>(
+        self,
+        func: impl Fn(&mut Thread, [u32; U], bool) -> NativeReturn<Self::T> + Send + Sync + 'static,
+    ) -> impl NativeMethod {
+        NativeSingleMethod(move |thread: &mut Thread, args: [u32; U], verbose| {
+            func(thread, args, verbose).map(|c| c as u32)
+        })
+    }
+
+    fn get_parameter(&self, _: &Thread, idx: usize, args: &[u32]) -> Self::T {
+        args[idx] > 0
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct Char;
 
 impl Field for Char {

@@ -1,8 +1,10 @@
-use std::fmt::Write;
+use std::collections::HashSet;
 use std::sync::Arc;
+use std::{collections::HashMap, fmt::Write};
 
 use jvmrs_lib::{access, field, method};
 
+use crate::virtual_machine::native::field::{Boolean, Int, ObjectField};
 use crate::{
     class::{
         code::{native_property, NativeDoubleMethod, NativeSingleMethod, NativeVoid},
@@ -10,6 +12,7 @@ use crate::{
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea, NULL},
+    native_class,
     virtual_machine::{
         native::function::Optional,
         object::{
@@ -26,29 +29,25 @@ pub fn add_native_collections(
     java_lang_object: &Arc<str>,
     java_lang_string: &Arc<str>,
 ) {
-    let mut hash_map = RawClass::new(
-        access!(public native),
-        "java/util/HashMap".into(),
-        java_lang_object.clone(),
-    );
+    let object_field = ObjectField("java/lang/Object");
+    class_area.extend(native_class!(
+        let method_area;
 
-    let hash_map_init = HashMapObj::default_init();
-    let hash_map_size = RawMethod {
-        access_flags: access!(public native),
-        name: "size".into(),
-        descriptor: method!(() -> int),
-        code: RawCode::native(NativeSingleMethod(native_property(
-            HashMapObj::SELF,
-            |map| map.len() as u32,
-        ))),
-        ..Default::default()
-    };
-    let hash_map_put = RawMethod {
-        access_flags: access!(public native),
-        name: "put".into(),
-        descriptor: method!(((Object(java_lang_object.clone())), (Object(java_lang_object.clone())))->(Object(java_lang_object.clone()))),
-        code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [this, key, value]: [u32; 3], verbose: bool| {
+        class "java/util/HashMap" {
+            public fn "<init>"(&this) => {
+                let thread, _verbose;
+                AnyObj.inspect(&thread.heap, this as usize, |obj| {
+                    obj.native_fields.push(Box::<HashMap<u32, u32>>::default());
+                })
+            }
+
+            public fn "size"(&this) Int => {
+                let thread, _verbose;
+                HashMapObj::inspect(&thread.heap, this as usize, |m| m.len() as i32)
+            }
+
+            public fn "put"(&this, key: object_field, value: object_field) object_field => {
+                let thread, verbose;
                 let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
                     obj.resolve_method(
                         &thread.method_area,
@@ -68,16 +67,10 @@ pub fn add_native_collections(
                     map.insert(hash_code, value)
                 })
                 .map(Option::unwrap_or_default)
-            },
-        )),
-        ..Default::default()
-    };
-    let hash_map_get = RawMethod {
-        access_flags: access!(public native),
-        name: "get".into(),
-        descriptor: method!(((Object(java_lang_object.clone()))) -> Object(java_lang_object.clone())),
-        code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [this, key]: [u32; 2], verbose| {
+            }
+
+            public fn "get"(&this, key: object_field) object_field => {
+                let thread, verbose;
                 let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
                     obj.resolve_method(
                         &thread.method_area,
@@ -97,38 +90,22 @@ pub fn add_native_collections(
                     map.get(&hash_code).copied()
                 })
                 .map(|opt| opt.unwrap_or(NULL))
-            },
-        )),
-        ..Default::default()
-    };
-    hash_map.register_methods(
-        [hash_map_init, hash_map_put, hash_map_get, hash_map_size],
-        method_area,
-    );
+            }
+        }
 
-    let mut hash_set = RawClass::new(
-        access!(public native),
-        "java/util/HashSet".into(),
-        java_lang_object.clone(),
-    );
+        class "java/util/HashSet" {
+            public fn "<init>"(&this) => {
+                let thread, _verbose;
+                AnyObj.inspect(&thread.heap, this as usize, |o| o.native_fields.push(Box::<HashSet<u32>>::default()))
+            }
 
-    let hash_set_init = HashSetObj::default_init();
-    let hash_set_size = RawMethod {
-        access_flags: access!(public native),
-        name: "size".into(),
-        descriptor: method!(() -> int),
-        code: RawCode::native(NativeSingleMethod(native_property(
-            HashSetObj::SELF,
-            |set| set.len() as u32,
-        ))),
-        ..Default::default()
-    };
-    let hash_set_add = RawMethod {
-        access_flags: access!(public native),
-        name: "add".into(),
-        descriptor: method!(((Object(java_lang_object.clone())))->boolean),
-        code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [this, key]: [u32; 2], verbose: bool| {
+            public fn "size"(&this) Int => {
+                let thread, _verbose;
+                HashSetObj::inspect(&thread.heap, this as usize, |this| this.len() as i32)
+            }
+
+            public fn "add"(&this, key: object_field) Boolean => {
+                let thread, verbose;
                 let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
                     obj.resolve_method(
                         &thread.method_area,
@@ -145,17 +122,10 @@ pub fn add_native_collections(
                 let hash_code = thread.stackframe.operand_stack.pop().unwrap();
                 // add the object to the hash map
                 HashSetObj::inspect(&thread.heap, this as usize, |set| set.insert(hash_code))
-                    .map(u32::from)
-            },
-        )),
-        ..Default::default()
-    };
-    let hash_set_contains = RawMethod {
-        access_flags: access!(public native),
-        name: "contains".into(),
-        descriptor: method!(((Object(java_lang_object.clone()))) -> boolean),
-        code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [this, key]: [u32; 2], verbose| {
+            }
+
+            public fn "contains"(&this, key: object_field) Boolean => {
+                let thread, verbose;
                 let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
                     obj.resolve_method(
                         &thread.method_area,
@@ -172,22 +142,11 @@ pub fn add_native_collections(
                 let hash_code = thread.stackframe.operand_stack.pop().unwrap();
                 // check if the set contains the element
                 HashSetObj::inspect(&thread.heap, this as usize, |map| {
-                    u32::from(map.contains(&hash_code))
+                    map.contains(&hash_code)
                 })
-            },
-        )),
-        ..Default::default()
-    };
-
-    hash_set.register_methods(
-        [
-            hash_set_init,
-            hash_set_contains,
-            hash_set_add,
-            hash_set_size,
-        ],
-        method_area,
-    );
+            }
+        }
+    ));
 
     let mut array_list = RawClass::new(
         access!(public native),
@@ -453,5 +412,5 @@ pub fn add_native_collections(
 
     comparator.register_method(compare, method_area);
 
-    class_area.extend([hash_map, hash_set, array_list, comparator, array_stream]);
+    class_area.extend([array_list, comparator, array_stream]);
 }
