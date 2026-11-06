@@ -15,7 +15,7 @@ use crate::{
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
-    virtual_machine::object::{StringBuilder, StringObj},
+    virtual_machine::object::StringBuilder,
 };
 
 use super::{
@@ -137,7 +137,18 @@ macro_rules! native_class {
                         return_type: return_type!($($ret)?),
                         parameter_size: parameter_size!($($paramty,)*),
                     },
-                    code: RawCode::native(ret!($($ret)?).make_native(|$thread: &mut Thread, [$($this,)?$($param),*]: [u32; parameter_size!($($paramty,)*) + has_this!($($this)?)], $verbose| {
+                    code: RawCode::native(ret!($($ret)?).make_native(move |$thread: &mut Thread, args: [u32; parameter_size!($($paramty,)*) + has_this!($($this)?)], $verbose| {
+                        let mut argc=0;
+                        $(
+                            let $this = args[0];
+                            argc += 1;
+                        )?
+                        $(
+                            let $param = $paramty.get_parameter($thread, argc, &args);
+                            argc += parameter_size!($paramty,);
+                        )*
+                        // shut up the compiler
+                        let _argc = argc;
                         $($body)*
                     })),
                     ..Default::default()
@@ -234,9 +245,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         class "java/lang/StringBuilder" {
             public fn "<init>"(&this, string: StringField) => {
                 let thread, _verbose;
-                let init_string = StringObj::SELF.inspect(&thread.heap, string as usize, |init_string| {
-                    init_string.to_string()
-                })?;
+                let init_string = string.to_string();
                 AnyObj.inspect(&thread.heap, this as usize, |heap_obj| {
                     heap_obj.native_fields.push(Box::new(init_string));
                 })
@@ -246,7 +255,6 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 let thread, verbose;
                 let this = this as usize;
                 let index = index as usize;
-                let character = char::from_u32(character).unwrap();
                 if verbose {
                     println!("setting char at {index} to {character:?}");
                 }

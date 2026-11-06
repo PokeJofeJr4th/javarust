@@ -4,17 +4,20 @@ use jvmrs_lib::{field, FieldType};
 
 use crate::{
     class::code::{NativeMethod, NativeReturn, NativeSingleMethod, NativeStringMethod, NativeVoid},
-    virtual_machine::Thread,
+    virtual_machine::{object::StringObj, Thread},
 };
 
 pub trait Field {
     type T;
 
     fn as_field(self) -> FieldType;
+
     fn make_native<const U: usize>(
         self,
         func: impl Fn(&mut Thread, [u32; U], bool) -> NativeReturn<Self::T> + Send + Sync + 'static,
     ) -> impl NativeMethod;
+
+    fn get_parameter(&self, thread: &Thread, idx: usize, args: &[u32]) -> Self::T;
 }
 
 pub struct Void;
@@ -32,6 +35,8 @@ impl Field for Void {
     ) -> impl NativeMethod {
         NativeVoid(func)
     }
+
+    fn get_parameter(&self, _: &Thread, _: usize, _: &[u32]) -> Self::T {}
 }
 
 #[derive(Clone, Copy)]
@@ -50,6 +55,10 @@ impl<T: Field> Field for ArrayField<T> {
     ) -> impl NativeMethod {
         NativeSingleMethod(func)
     }
+
+    fn get_parameter(&self, _: &Thread, idx: usize, args: &[u32]) -> Self::T {
+        args[idx]
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -67,6 +76,10 @@ impl Field for ObjectField {
         func: impl Fn(&mut Thread, [u32; U], bool) -> NativeReturn<Self::T> + Send + Sync + 'static,
     ) -> impl NativeMethod {
         NativeSingleMethod(func)
+    }
+
+    fn get_parameter(&self, _: &Thread, idx: usize, args: &[u32]) -> Self::T {
+        args[idx]
     }
 }
 
@@ -87,6 +100,10 @@ impl Field for Char {
             func(thread, args, verbose).map(|c| c as u32)
         })
     }
+
+    fn get_parameter(&self, _: &Thread, idx: usize, args: &[u32]) -> Self::T {
+        char::try_from(args[idx]).unwrap()
+    }
 }
 
 pub struct Int;
@@ -106,6 +123,10 @@ impl Field for Int {
             func(thread, args, verbose).map(|i| i as u32)
         })
     }
+
+    fn get_parameter(&self, _: &Thread, idx: usize, args: &[u32]) -> Self::T {
+        args[idx] as i32
+    }
 }
 
 pub struct StringField;
@@ -122,5 +143,9 @@ impl Field for StringField {
         func: impl Fn(&mut Thread, [u32; U], bool) -> NativeReturn<Self::T> + Send + Sync + 'static,
     ) -> impl NativeMethod {
         NativeStringMethod(func)
+    }
+
+    fn get_parameter(&self, thread: &Thread, idx: usize, args: &[u32]) -> Self::T {
+        StringObj::inspect(&thread.heap, args[idx] as usize, |o| o.clone()).unwrap()
     }
 }
