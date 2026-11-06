@@ -23,7 +23,7 @@ use super::{
     Thread,
 };
 
-use field::{Char, Field as FieldTrait, Int, ObjectField, StringField};
+use field::{Char, Int, ObjectField, StringField};
 use primitives::make_primitives;
 
 pub mod arrays;
@@ -45,26 +45,28 @@ pub static mut STRING_BUILDER_CLASS: Option<Arc<Class>> = None;
 pub static mut ARRAY_CLASS: Option<Arc<Class>> = None;
 pub static mut RANDOM_CLASS: Option<Arc<Class>> = None;
 
+#[macro_export]
 macro_rules! parameter_size {
     (Double, $($rest:tt,)*) => {{
-        2 + parameter_size!($($rest,)*)
+        2 + $crate::parameter_size!($($rest,)*)
     }};
 
     (Long, $($rest:tt,)*) => {{
-        2 + parameter_size!($($rest,)*)
+        2 + $crate::parameter_size!($($rest,)*)
     }};
 
     (this, $($rest:tt,)*) => {{
-        parameter_size!($($rest,)*)
+        $crate::parameter_size!($($rest,)*)
     }};
 
     ($pty:tt, $($rest:tt,)*) => {{
-        1 + parameter_size!($($rest,)*)
+        1 + $crate::parameter_size!($($rest,)*)
     }};
 
     () => {0};
 }
 
+#[macro_export]
 macro_rules! has_this {
     ($($any:tt)+) => {
         1
@@ -75,6 +77,7 @@ macro_rules! has_this {
     };
 }
 
+#[macro_export]
 macro_rules! return_type {
     () => {
         ::core::option::Option::None
@@ -87,6 +90,7 @@ macro_rules! return_type {
     };
 }
 
+#[macro_export]
 macro_rules! ret {
     ($pty:expr) => {
         $pty
@@ -96,6 +100,7 @@ macro_rules! ret {
     };
 }
 
+#[macro_export]
 macro_rules! native_class {
     (let $method_area:ident; $(class $cls:literal $($supcls:literal)?{$($clsbody:tt)*})*) => {[$({
         let mut class = $crate::class_loader::RawClass::new(access!(public native), $cls.into(), native_class!(@super $($supcls)?));
@@ -135,19 +140,19 @@ macro_rules! native_class {
                     access_flags: jvmrs_lib::access!(native $($access)*),
                     name: $fn_name.into(),
                     descriptor: jvmrs_lib::MethodDescriptor {
-                        parameters: vec![$($paramty.as_field()),*],
-                        return_type: return_type!($($ret)?),
-                        parameter_size: parameter_size!($($paramty,)*),
+                        parameters: vec![$($crate::virtual_machine::native::field::Field::as_field($paramty)),*],
+                        return_type: $crate::return_type!($($ret)?),
+                        parameter_size: $crate::parameter_size!($($paramty,)*),
                     },
-                    code: $crate::class_loader::RawCode::native(ret!($($ret)?).make_native(move |$thread: &mut $crate::virtual_machine::Thread, args: [u32; parameter_size!($($paramty,)*) + has_this!($($this)?)], $verbose| {
+                    code: $crate::class_loader::RawCode::native($crate::virtual_machine::native::field::Field::make_native($crate::ret!($($ret)?), move |$thread: &mut $crate::virtual_machine::Thread, args: [u32; $crate::parameter_size!($($paramty,)*) + $crate::has_this!($($this)?)], $verbose| {
                         let mut argc: usize = 0;
                         $(
                             let $this = args[0];
                             argc += 1;
                         )?
                         $(
-                            let $param = $paramty.get_parameter($thread, argc, &args);
-                            argc += parameter_size!($paramty,);
+                            let $param = $crate::virtual_machine::native::field::Field::get_parameter(&$paramty,$thread, argc, &args);
+                            argc += $crate::parameter_size!($paramty,);
                         )*
                         // shut up the compiler warning for unused variable
                         let _ = argc;
@@ -438,13 +443,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         &java_lang_string,
     );
     stream::add_native_methods(method_area, class_area, &java_lang_object);
-
-    arrays::add_native_methods(
-        class_area,
-        method_area,
-        &java_lang_object,
-        &java_lang_string,
-    );
+    arrays::add_native_methods(class_area, method_area, &java_lang_object);
     string::add_native_methods(
         class_area,
         method_area,
