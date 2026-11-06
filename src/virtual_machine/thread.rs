@@ -1202,29 +1202,6 @@ impl Thread {
         b
     }
 
-    /// first, resolve a concrete method for an object. Then, create a new stackframe for that method
-    /// # Errors
-    pub fn resolve_and_invoke(
-        &mut self,
-        this_index: u32,
-        method: &str,
-        descriptor: &MethodDescriptor,
-        verbose: bool,
-    ) -> error::Result<()> {
-        let (resolved_class, resolved_method) =
-            AnyObj.inspect(&self.heap, this_index as usize, |o| {
-                o.resolve_method(
-                    &self.method_area,
-                    &self.class_area,
-                    method,
-                    descriptor,
-                    verbose,
-                )
-            })?;
-        self.invoke_method(resolved_method, resolved_class);
-        Ok(())
-    }
-
     /// Create a new stackframe for the specific method
     pub fn invoke_method(&mut self, method: Arc<Method>, class: Arc<Class>) {
         let can_tail_optimize = match self

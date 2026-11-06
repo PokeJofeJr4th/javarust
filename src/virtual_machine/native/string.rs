@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use jvmrs_lib::{access, method, FieldType, MethodDescriptor};
+use jvmrs_lib::{access, method};
 
 use crate::{
     class::code::{NativeReturn, NativeSingleMethod},
@@ -8,7 +8,7 @@ use crate::{
     data::{WorkingClassArea, WorkingMethodArea, NULL},
     virtual_machine::{
         native::native_property,
-        object::{AnyObj, ObjectFinder, StringObj},
+        object::{ObjectFinder, StringObj},
         Thread,
     },
 };
@@ -22,23 +22,12 @@ pub fn native_string_value_of(
         let str_ref = thread.heap.lock().unwrap().allocate_str("null".into());
         return Ok(str_ref);
     }
-    let (to_string_class, to_string_method) =
-        AnyObj.inspect(&thread.heap, obj_ref as usize, |obj| {
-            obj.resolve_method(
-                &thread.method_area,
-                &thread.class_area,
-                "toString",
-                &MethodDescriptor {
-                    parameter_size: 0,
-                    parameters: Vec::new(),
-                    return_type: Some(FieldType::Object("java/lang/String".into())),
-                },
-                verbose,
-            )
-        })?;
-    // push a fake return address
-    thread.stackframe.operand_stack.push(0);
-    thread.invoke_method(to_string_method, to_string_class);
+    super::resolve_and_invoke(thread, 
+        obj_ref,
+        "toString",
+        &method!(() -> Object("java/lang/String".into())),
+        verbose,
+    )?;
     thread.stackframe.locals[0] = obj_ref;
     super::run_until_return(thread, verbose)?;
     Ok(thread.stackframe.operand_stack.pop().unwrap())
@@ -49,29 +38,13 @@ pub fn native_println_object(
     [_, arg]: [u32; 2],
     verbose: bool,
 ) -> NativeReturn<()> {
-    let (to_string_class, to_string_method) =
-        AnyObj.inspect(&thread.heap, arg as usize, |obj| {
-            obj.resolve_method(
-                &thread.method_area,
-                &thread.class_area,
-                "toString",
-                &MethodDescriptor {
-                    parameter_size: 0,
-                    parameters: Vec::new(),
-                    return_type: Some(FieldType::Object("java/lang/String".into())),
-                },
-                verbose,
-            )
-        })?;
-    if verbose {
-        println!(
-            "Resolved java/lang/Object.toString to {}.{}",
-            to_string_class.this, to_string_method.name
-        );
-    }
     // push a fake return address
-    thread.stackframe.operand_stack.push(1);
-    thread.invoke_method(to_string_method, to_string_class);
+    super::resolve_and_invoke(thread, 
+        arg,
+        "toString",
+        &method!(() -> Object("java/lang/String".into())),
+        verbose,
+    )?;
     thread.stackframe.locals[0] = arg;
     super::run_until_return(thread, verbose)?;
     let ret = thread.stackframe.operand_stack.pop().unwrap();

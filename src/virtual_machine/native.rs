@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
-use jvmrs_lib::{access, field, method};
+use jvmrs_lib::{access, field, method, MethodDescriptor};
 use rand::{rngs::StdRng, RngExt};
 
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
-    virtual_machine::object::StringBuilder,
+    virtual_machine::{error, object::StringBuilder},
 };
 
 use super::{
@@ -174,6 +174,31 @@ pub fn run_until_return(thread: &mut Thread, verbose: bool) -> super::error::Res
     while thread.stack.len() > target_stack_size {
         thread.tick(verbose)?;
     }
+    Ok(())
+}
+
+/// first, resolve a concrete method for an object. Then, create a new stackframe for that method
+/// # Errors
+pub fn resolve_and_invoke(
+    thread: &mut Thread,
+    this_index: u32,
+    method: &str,
+    descriptor: &MethodDescriptor,
+    verbose: bool,
+) -> error::Result<()> {
+    // Push a fake return address
+    thread.stackframe.operand_stack.push(0);
+    let (resolved_class, resolved_method) =
+        AnyObj.inspect(&thread.heap, this_index as usize, |o| {
+            o.resolve_method(
+                &thread.method_area,
+                &thread.class_area,
+                method,
+                descriptor,
+                verbose,
+            )
+        })?;
+    thread.invoke_method(resolved_method, resolved_class);
     Ok(())
 }
 

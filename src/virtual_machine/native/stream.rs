@@ -41,8 +41,7 @@ pub(super) fn add_native_methods(
                 move |thread: &mut Thread, [this, predicate]: [u32; 2], verbose| {
                     loop {
                         // execute .$next()
-                        thread.stackframe.operand_stack.push(0);
-                        thread.resolve_and_invoke(this, "$next", &next_descriptor, verbose)?;
+                        super::resolve_and_invoke(thread, this, "$next", &next_descriptor, verbose)?;
                         thread.stackframe.locals[0] = this;
                         super::run_until_return(thread, verbose)?;
                         // If we get nothing, return true
@@ -53,8 +52,7 @@ pub(super) fn add_native_methods(
                             return Ok(1);
                         };
                         // execute .test()
-                        thread.stackframe.operand_stack.push(0);
-                        thread.resolve_and_invoke(predicate, "test", &test_descriptor, verbose)?;
+                        super::resolve_and_invoke(thread, predicate, "test", &test_descriptor, verbose)?;
                         thread.stackframe.locals[0] = predicate;
                         thread.stackframe.locals[1] = ret;
                         super::run_until_return(thread, verbose)?;
@@ -81,8 +79,7 @@ pub(super) fn add_native_methods(
                 move |thread: &mut Thread, [this, predicate]: [u32; 2], verbose| {
                     loop {
                         // execute .$next()
-                        thread.stackframe.operand_stack.push(0);
-                        thread.resolve_and_invoke(this, "$next", &next_descriptor, verbose)?;
+                        super::resolve_and_invoke(thread, this, "$next", &next_descriptor, verbose)?;
                         thread.stackframe.locals[0] = this;
                         super::run_until_return(thread, verbose)?;
                         // If we get nothing, return false
@@ -92,8 +89,7 @@ pub(super) fn add_native_methods(
                             return Ok(0);
                         };
                         // execute .test()
-                        thread.stackframe.operand_stack.push(0);
-                        thread.resolve_and_invoke(predicate, "test", &test_descriptor, verbose)?;
+                        super::resolve_and_invoke(thread, predicate, "test", &test_descriptor, verbose)?;
                         thread.stackframe.locals[0] = predicate;
                         thread.stackframe.locals[1] = ret;
                         super::run_until_return(thread, verbose)?;
@@ -136,36 +132,27 @@ pub(super) fn add_native_methods(
             access_flags: access!(private native static),
             descriptor: method!(((Object(stream.this.clone())), (Object("java/util/function/Predicate".into()))) -> Object("java/util/Optional".into())),
             code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [stream, predicate]: [u32; 2], verbose| {
-                    loop {
-                        thread.stackframe.operand_stack.push(0);
-                        thread.resolve_and_invoke(stream, "$next", &next_descriptor, verbose)?;
-                        thread.stackframe.locals[0] = stream;
-                        super::run_until_return(thread, verbose)?;
-                        let returned_opt = thread.stackframe.operand_stack.pop().unwrap();
-                        let Some(returned_obj) =
-                            Optional.inspect(&thread.heap, returned_opt as usize, |o| *o)?
-                        else {
-                            if verbose {
-                                println!("Stream end - returning None");
-                            }
-                            return Ok(returned_opt);
-                        };
-                        thread.stackframe.operand_stack.push(returned_opt);
-                        thread.stackframe.operand_stack.push(0);
-                        thread.resolve_and_invoke(predicate, "test", &test_descriptor, verbose)?;
-                        thread.stackframe.locals[0] = predicate;
-                        thread.stackframe.locals[1] = returned_obj;
-                        super::run_until_return(thread, verbose)?;
-                        let test_result = thread.stackframe.operand_stack.pop().unwrap();
-                        if test_result > 0 {
-                            break;
+                move |thread: &mut Thread, [stream, predicate]: [u32; 2], verbose| loop {
+                    super::resolve_and_invoke(thread, stream, "$next", &next_descriptor, verbose)?;
+                    thread.stackframe.locals[0] = stream;
+                    super::run_until_return(thread, verbose)?;
+                    let returned_opt = thread.stackframe.operand_stack.pop().unwrap();
+                    let Some(returned_obj) =
+                        Optional.inspect(&thread.heap, returned_opt as usize, |o| *o)?
+                    else {
+                        if verbose {
+                            println!("Stream end - returning None");
                         }
+                        return Ok(returned_opt);
+                    };
+                    super::resolve_and_invoke(thread, predicate, "test", &test_descriptor, verbose)?;
+                    thread.stackframe.locals[0] = predicate;
+                    thread.stackframe.locals[1] = returned_obj;
+                    super::run_until_return(thread, verbose)?;
+                    let test_result = thread.stackframe.operand_stack.pop().unwrap();
+                    if test_result > 0 {
+                        return Ok(returned_opt);
                     }
-                    if verbose {
-                        println!("Predicate succeeded - returning the tested object");
-                    }
-                    Ok(thread.stackframe.operand_stack.pop().unwrap())
                 },
             )),
             ..Default::default()
@@ -204,8 +191,7 @@ pub(super) fn add_native_methods(
             code: RawCode::native(NativeVoid(
                 move |thread: &mut Thread, [this, consumer]: [u32; 2], verbose| {
                     loop {
-                        thread.stackframe.operand_stack.push(1);
-                        thread.resolve_and_invoke(this, "$next", &next_signature, verbose)?;
+                        super::resolve_and_invoke(thread, this, "$next", &next_signature, verbose)?;
                         thread.stackframe.locals[0] = this;
                         super::run_until_return(thread, verbose)?;
                         let next_value = thread.stackframe.operand_stack.pop().unwrap();
@@ -215,8 +201,7 @@ pub(super) fn add_native_methods(
                             return Ok(());
                         };
                         // invoke the consumer
-                        thread.stackframe.operand_stack.push(0);
-                        thread.resolve_and_invoke(
+                        super::resolve_and_invoke(thread, 
                             consumer,
                             "accept",
                             &accept_signature,
@@ -241,8 +226,7 @@ pub(super) fn add_native_methods(
             code: RawCode::native(NativeSingleMethod(
                 move |thread: &mut Thread, [supplier]: [u32; 1], verbose| {
                     // Call supplier.get()
-                    thread.stackframe.operand_stack.push(0);
-                    thread.resolve_and_invoke(supplier, "get", &get_descriptor, verbose)?;
+                    super::resolve_and_invoke(thread, supplier, "get", &get_descriptor, verbose)?;
                     thread.stackframe.locals[0] = supplier;
                     // Return the result from the supplier
                     Ok(thread.stackframe.operand_stack.pop().unwrap())
@@ -281,8 +265,7 @@ pub(super) fn add_native_methods(
             code: RawCode::native(NativeSingleMethod(
                 move |thread: &mut Thread, [this, func]: [u32; 2], verbose| {
                     // Get the next thing from the inner iterator
-                    thread.stackframe.operand_stack.push(0);
-                    thread.resolve_and_invoke(this, "$next", &next_descriptor, verbose)?;
+                    super::resolve_and_invoke(thread, this, "$next", &next_descriptor, verbose)?;
                     thread.stackframe.locals[0] = this;
                     super::run_until_return(thread, verbose)?;
 
@@ -295,8 +278,7 @@ pub(super) fn add_native_methods(
                     };
 
                     // Call func.apply(next)
-                    thread.stackframe.operand_stack.push(0);
-                    thread.resolve_and_invoke(func, "apply", &apply_descriptor, verbose)?;
+                    super::resolve_and_invoke(thread, func, "apply", &apply_descriptor, verbose)?;
                     thread.stackframe.locals[0] = func;
                     thread.stackframe.locals[1] = next_obj;
                     super::run_until_return(thread, verbose)?;
@@ -336,8 +318,7 @@ pub(super) fn add_native_methods(
             descriptor: method!(((Object("java/util/function/Predicate".into()))) -> boolean),
             code: RawCode::native(NativeSingleMethod(
                 move |thread: &mut Thread, [this, predicate]: [u32; 2], verbose| loop {
-                    thread.stackframe.operand_stack.push(1);
-                    thread.resolve_and_invoke(this, "$next", &next_descriptor, verbose)?;
+                    super::resolve_and_invoke(thread, this, "$next", &next_descriptor, verbose)?;
                     thread.stackframe.locals[0] = this;
                     super::run_until_return(thread, verbose)?;
                     let ret_opt = thread.stackframe.operand_stack.pop().unwrap();
@@ -345,8 +326,7 @@ pub(super) fn add_native_methods(
                     else {
                         return Ok(1);
                     };
-                    thread.stackframe.operand_stack.push(2);
-                    thread.resolve_and_invoke(predicate, "test", &test_descriptor, verbose)?;
+                    super::resolve_and_invoke(thread, predicate, "test", &test_descriptor, verbose)?;
                     thread.stackframe.locals[0] = predicate;
                     thread.stackframe.locals[1] = ret;
                     super::run_until_return(thread, verbose)?;

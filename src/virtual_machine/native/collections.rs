@@ -48,17 +48,7 @@ pub fn add_native_collections(
 
             fn "put"(&this, key: object_field, value: object_field) -> object_field {
                 let thread, verbose;
-                let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
-                    obj.resolve_method(
-                        &thread.method_area,
-                        &thread.class_area,
-                        "hashCode",
-                        &method!(() -> int),
-                        verbose,
-                    )
-                })?;
-                thread.stackframe.operand_stack.push(1);
-                thread.invoke_method(method, class);
+                super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
                 super::run_until_return(thread, verbose)?;
                 let hash_code = thread.stackframe.operand_stack.pop().unwrap();
@@ -71,17 +61,7 @@ pub fn add_native_collections(
 
             fn "get"(&this, key: object_field) -> object_field {
                 let thread, verbose;
-                let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
-                    obj.resolve_method(
-                        &thread.method_area,
-                        &thread.class_area,
-                        "hashCode",
-                        &method!(() -> int),
-                        verbose,
-                    )
-                })?;
-                thread.stackframe.operand_stack.push(1);
-                thread.invoke_method(method, class);
+                super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
                 super::run_until_return(thread, verbose)?;
                 let hash_code = thread.stackframe.operand_stack.pop().unwrap();
@@ -106,17 +86,7 @@ pub fn add_native_collections(
 
             fn "add"(&this, key: object_field) -> Boolean {
                 let thread, verbose;
-                let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
-                    obj.resolve_method(
-                        &thread.method_area,
-                        &thread.class_area,
-                        "hashCode",
-                        &method!(() -> int),
-                        verbose,
-                    )
-                })?;
-                thread.stackframe.operand_stack.push(0);
-                thread.invoke_method(method, class);
+                super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
                 super::run_until_return(thread, verbose)?;
                 let hash_code = thread.stackframe.operand_stack.pop().unwrap();
@@ -126,21 +96,10 @@ pub fn add_native_collections(
 
             fn "contains"(&this, key: object_field) -> Boolean {
                 let thread, verbose;
-                let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
-                    obj.resolve_method(
-                        &thread.method_area,
-                        &thread.class_area,
-                        "hashCode",
-                        &method!(() -> int),
-                        verbose,
-                    )
-                })?;
-                thread.stackframe.operand_stack.push(0);
-                thread.invoke_method(method, class);
+                super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
                 super::run_until_return(thread, verbose)?;
                 let hash_code = thread.stackframe.operand_stack.pop().unwrap();
-                // check if the set contains the element
                 HashSetObj::inspect(&thread.heap, this as usize, |map| {
                     map.contains(&hash_code)
                 })
@@ -191,12 +150,14 @@ pub fn add_native_collections(
         ))),
         ..Default::default()
     };
+    let compare_descriptor =
+        method!(((Object("java/lang/Object".into())), (Object("java/lang/Object".into()))) -> int);
     let arrlist_sort = RawMethod {
         access_flags: access!(public native),
         name: "sort".into(),
         descriptor: method!(((Object("java/util/Comparator".into()))) -> void),
         code: RawCode::native(NativeVoid(
-            |thread: &mut Thread, [this, cmp]: [u32; 2], verbose: bool| {
+            move |thread: &mut Thread, [this, cmp]: [u32; 2], verbose: bool| {
                 let length =
                     ArrayListObj::inspect(&thread.heap, this as usize, |arrlist| arrlist.len())?;
                 for partition in 1..length {
@@ -209,18 +170,7 @@ pub fn add_native_collections(
                         })?;
 
                         // cmp.compare(target, next)
-                        let (resolved_class, resolved_method) =
-                            AnyObj.inspect(&thread.heap, cmp as usize, |obj| {
-                                obj.resolve_method(
-                                    &thread.method_area,
-                                    &thread.class_area,
-                                    "compare",
-                                    &method!(((Object("java/lang/Object".into())), (Object("java/lang/Object".into()))) -> int),
-                                    verbose,
-                                )
-                            })?;
-                        thread.stackframe.operand_stack.push(0);
-                        thread.invoke_method(resolved_method, resolved_class);
+                        super::resolve_and_invoke(thread, cmp, "compare", &compare_descriptor, verbose)?;
                         thread.stackframe.locals[0] = cmp;
                         thread.stackframe.locals[1] = target;
                         thread.stackframe.locals[2] = next;
@@ -245,7 +195,7 @@ pub fn add_native_collections(
         )),
         ..Default::default()
     };
-    let java_lang_string = java_lang_string.clone();
+    let to_string_descriptor = method!(() -> Object(java_lang_string.clone()));
     let arrlist_to_string = RawMethod::to_string(
         move |thread: &mut Thread, [this]: [u32; 1], verbose: bool| {
             let mut str = String::from("[");
@@ -254,18 +204,7 @@ pub fn add_native_collections(
             for index in 0..length {
                 let next_obj =
                     ArrayListObj::inspect(&thread.heap, this as usize, |vec| vec[index as usize])?;
-                let (resolved_class, resolved_method) =
-                    AnyObj.inspect(&thread.heap, next_obj as usize, |obj| {
-                        obj.resolve_method(
-                            &thread.method_area,
-                            &thread.class_area,
-                            "toString",
-                            &method!(() -> Object(java_lang_string.clone())),
-                            verbose,
-                        )
-                    })?;
-                thread.stackframe.operand_stack.push(2);
-                thread.invoke_method(resolved_method, resolved_class);
+                super::resolve_and_invoke(thread, next_obj, "toString", &to_string_descriptor, verbose)?;
                 thread.stackframe.locals[0] = next_obj;
                 super::run_until_return(thread, verbose)?;
                 let str_ptr = thread.stackframe.operand_stack.pop().unwrap();

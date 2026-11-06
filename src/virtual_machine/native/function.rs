@@ -119,8 +119,7 @@ pub(super) fn add_native_methods(
                       [first_fn_ptr, second_fn_ptr, arg]: [u32; 3],
                       verbose| {
                     // Run the first function
-                    thread.stackframe.operand_stack.push(0);
-                    thread.resolve_and_invoke(first_fn_ptr, "apply", &apply_signature, verbose)?;
+                    super::resolve_and_invoke(thread, first_fn_ptr, "apply", &apply_signature, verbose)?;
                     thread.stackframe.locals[0] = first_fn_ptr;
                     thread.stackframe.locals[1] = arg;
                     super::run_until_return(thread, verbose)?;
@@ -128,8 +127,7 @@ pub(super) fn add_native_methods(
                     let first_return = thread.stackframe.operand_stack.pop().unwrap();
 
                     // Run the second function
-                    thread.stackframe.operand_stack.push(2);
-                    thread.resolve_and_invoke(second_fn_ptr, "apply", &apply_signature, verbose)?;
+                    super::resolve_and_invoke(thread, second_fn_ptr, "apply", &apply_signature, verbose)?;
                     thread.stackframe.locals[0] = second_fn_ptr;
                     thread.stackframe.locals[1] = first_return;
                     super::run_until_return(thread, verbose)?;
@@ -277,8 +275,7 @@ pub(super) fn add_native_methods(
             descriptor: method!(((Object(predicate.this.clone())), (Object(java_lang_object.clone()))) -> boolean),
             code: RawCode::native(NativeSingleMethod(
                 move |thread: &mut Thread, [predicate, object]: [u32; 2], verbose| {
-                    thread.stackframe.operand_stack.push(1);
-                    thread.resolve_and_invoke(predicate, "test", &test_signature, verbose)?;
+                    super::resolve_and_invoke(thread, predicate, "test", &test_signature, verbose)?;
                     thread.stackframe.locals[0] = predicate;
                     thread.stackframe.locals[1] = object;
                     super::run_until_return(thread, verbose)?;
@@ -341,8 +338,7 @@ pub(super) fn add_native_methods(
             descriptor: method!(((Object(predicate.this.clone())), (Object(predicate.this.clone())), (Object(java_lang_object.clone()))) -> boolean),
             code: RawCode::native(NativeSingleMethod(
                 move |thread: &mut Thread, [first, second, operand]: [u32; 3], verbose| {
-                    thread.stackframe.operand_stack.push(1);
-                    thread.resolve_and_invoke(first, "test", &test_signature, verbose)?;
+                    super::resolve_and_invoke(thread, first, "test", &test_signature, verbose)?;
                     thread.stackframe.locals[0] = first;
                     thread.stackframe.locals[1] = operand;
                     super::run_until_return(thread, verbose)?;
@@ -350,8 +346,7 @@ pub(super) fn add_native_methods(
                     if ret == 0 {
                         return Ok(0);
                     }
-                    thread.stackframe.operand_stack.push(2);
-                    thread.resolve_and_invoke(second, "test", &test_signature, verbose)?;
+                    super::resolve_and_invoke(thread, second, "test", &test_signature, verbose)?;
                     thread.stackframe.locals[0] = second;
                     thread.stackframe.locals[1] = operand;
                     super::run_until_return(thread, verbose)?;
@@ -369,8 +364,7 @@ pub(super) fn add_native_methods(
             descriptor: method!(((Object(predicate.this.clone())), (Object(predicate.this.clone())), (Object(java_lang_object.clone()))) -> boolean),
             code: RawCode::native(NativeSingleMethod(
                 move |thread: &mut Thread, [first, second, operand]: [u32; 3], verbose| {
-                    thread.stackframe.operand_stack.push(1);
-                    thread.resolve_and_invoke(first, "test", &test_signature, verbose)?;
+                    super::resolve_and_invoke(thread, first, "test", &test_signature, verbose)?;
                     thread.stackframe.locals[0] = first;
                     thread.stackframe.locals[1] = operand;
                     super::run_until_return(thread, verbose)?;
@@ -378,8 +372,7 @@ pub(super) fn add_native_methods(
                     if ret == 1 {
                         return Ok(1);
                     }
-                    thread.stackframe.operand_stack.push(2);
-                    thread.resolve_and_invoke(second, "test", &test_signature, verbose)?;
+                    super::resolve_and_invoke(thread, second, "test", &test_signature, verbose)?;
                     thread.stackframe.locals[0] = second;
                     thread.stackframe.locals[1] = operand;
                     super::run_until_return(thread, verbose)?;
@@ -540,8 +533,7 @@ pub(super) fn add_native_methods(
                 }
 
                 // Call this.equals(other)
-                thread.stackframe.operand_stack.push(1);
-                thread.resolve_and_invoke(this_inner, "equals", &equals_descriptor, verbose)?;
+                super::resolve_and_invoke(thread, this_inner, "equals", &equals_descriptor, verbose)?;
                 thread.stackframe.locals[0] = this_inner;
                 thread.stackframe.locals[1] = other_inner;
                 super::run_until_return(thread, verbose)?;
@@ -572,8 +564,7 @@ pub(super) fn add_native_methods(
                     }
 
                     // Call the predicate
-                    thread.stackframe.operand_stack.push(1);
-                    thread.resolve_and_invoke(predicate, "test", &test_signature, verbose)?;
+                    super::resolve_and_invoke(thread, predicate, "test", &test_signature, verbose)?;
                     thread.stackframe.locals[0] = predicate;
                     thread.stackframe.locals[1] = this_value;
                     super::run_until_return(thread, verbose)?;
@@ -609,8 +600,7 @@ pub(super) fn add_native_methods(
                     return Ok(0);
                 }
                 // Call inner.hashCode
-                thread.stackframe.operand_stack.push(1);
-                thread.resolve_and_invoke(value, "hashCode", &hash_code_descriptor, verbose)?;
+                super::resolve_and_invoke(thread, value, "hashCode", &hash_code_descriptor, verbose)?;
                 thread.stackframe.locals[0] = value;
                 super::run_until_return(thread, verbose)?;
 
@@ -664,8 +654,7 @@ pub(super) fn add_native_methods(
                 }
 
                 // Call func.apply
-                thread.stackframe.operand_stack.push(0);
-                thread.resolve_and_invoke(func, "apply", &function_descriptor, verbose)?;
+                super::resolve_and_invoke(thread, func, "apply", &function_descriptor, verbose)?;
                 thread.stackframe.locals[1] = value;
                 super::run_until_return(thread, verbose)?;
 
@@ -690,8 +679,7 @@ pub(super) fn add_native_methods(
             }
 
             // call inner.toString
-            thread.stackframe.operand_stack.push(0);
-            thread.resolve_and_invoke(value, "toString", &to_string_descriptor, verbose)?;
+            super::resolve_and_invoke(thread, value, "toString", &to_string_descriptor, verbose)?;
             thread.stackframe.locals[0] = value;
             super::run_until_return(thread, verbose)?;
 

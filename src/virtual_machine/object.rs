@@ -350,7 +350,7 @@ impl NativeMethod for LambdaOverride {
                     )
                     .collect();
                 // push the return address
-                thread.stackframe.operand_stack.push(1);
+                thread.stackframe.operand_stack.push(0);
                 thread.invoke_method(method_ref, class_ref);
                 thread
                     .stackframe
