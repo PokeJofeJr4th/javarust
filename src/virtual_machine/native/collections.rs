@@ -4,7 +4,7 @@ use std::{collections::HashMap, fmt::Write};
 
 use jvmrs_lib::{access, field, method};
 
-use crate::virtual_machine::native::field::{Boolean, Int, ObjectField};
+use crate::virtual_machine::native::field::{Boolean, Int, ObjectField, StringField};
 use crate::{
     class::{
         code::{native_property, NativeDoubleMethod, NativeSingleMethod, NativeVoid},
@@ -30,6 +30,11 @@ pub fn add_native_collections(
     java_lang_string: &Arc<str>,
 ) {
     let object_field = ObjectField("java/lang/Object");
+    let comparator_field = ObjectField("java/util/Comparator");
+    let stream_field = ObjectField("java/util/stream/Stream");
+    let compare_descriptor =
+        method!(((Object("java/lang/Object".into())), (Object("java/lang/Object".into()))) -> int);
+    let to_string_descriptor = method!(() -> Object(java_lang_string.clone()));
     class_area.extend(native_class!(
         let method_area;
 
@@ -105,59 +110,25 @@ pub fn add_native_collections(
                 })
             }
         }
-    ));
 
-    let mut array_list = RawClass::new(
-        access!(public native),
-        "java/util/ArrayList".into(),
-        java_lang_object.clone(),
-    );
-    let arrlist_init = ArrayListObj::default_init();
-    let arrlist_append = RawMethod {
-        access_flags: access!(public native),
-        name: "append".into(),
-        descriptor: method!(((Object(java_lang_object.clone()))) -> void),
-        code: RawCode::native(NativeVoid(
-            |thread: &mut Thread, [this, ptr]: [u32; 2], _| {
-                ArrayListObj::inspect(&thread.heap, this as usize, |arrlist| {
-                    arrlist.push(ptr);
-                })
-            },
-        )),
-        ..Default::default()
-    };
-    let arrlist_add = RawMethod {
-        access_flags: access!(public native),
-        name: "add".into(),
-        descriptor: method!(((Object(java_lang_object.clone()))) -> boolean),
-        code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [this, ptr]: [u32; 2], _| {
-                ArrayListObj::inspect(&thread.heap, this as usize, |arrlist| {
-                    arrlist.push(ptr);
-                })
-                .map(|()| 1)
-            },
-        )),
-        ..Default::default()
-    };
-    let arrlist_size = RawMethod {
-        access_flags: access!(public native),
-        name: "size".into(),
-        descriptor: method!(() -> int),
-        code: RawCode::native(NativeSingleMethod(native_property(
-            ArrayListObj::SELF,
-            |arrls| arrls.len() as u32,
-        ))),
-        ..Default::default()
-    };
-    let compare_descriptor =
-        method!(((Object("java/lang/Object".into())), (Object("java/lang/Object".into()))) -> int);
-    let arrlist_sort = RawMethod {
-        access_flags: access!(public native),
-        name: "sort".into(),
-        descriptor: method!(((Object("java/util/Comparator".into()))) -> void),
-        code: RawCode::native(NativeVoid(
-            move |thread: &mut Thread, [this, cmp]: [u32; 2], verbose: bool| {
+        impl "java/util/ArrayList" {
+            fn "<init>"(&this) {
+                let thread, _verbose;
+                AnyObj.inspect(&thread.heap, this as usize, |o| o.native_fields.push(Box::new(Vec::<u32>::new())))
+            }
+
+            fn add(&this, ptr: object_field) {
+                let thread, _verbose;
+                ArrayListObj::inspect(&thread.heap, this as usize, |o| o.push(ptr))
+            }
+
+            fn size(&this) -> Int {
+                let thread, _verbose;
+                ArrayListObj::inspect(&thread.heap, this as usize, |o| o.len() as i32)
+            }
+
+            fn sort(&this, cmp: comparator_field) {
+                let thread, verbose;
                 let length =
                     ArrayListObj::inspect(&thread.heap, this as usize, |arrlist| arrlist.len())?;
                 for partition in 1..length {
@@ -197,41 +168,51 @@ pub fn add_native_collections(
                     }
                 }
                 Ok(())
-            },
-        )),
-        ..Default::default()
-    };
-    let to_string_descriptor = method!(() -> Object(java_lang_string.clone()));
-    let arrlist_to_string = RawMethod::to_string(
-        move |thread: &mut Thread, [this]: [u32; 1], verbose: bool| {
-            let mut str = String::from("[");
-            let length =
-                ArrayListObj::inspect(&thread.heap, this as usize, |vec| vec.len() as u32)?;
-            for index in 0..length {
-                let next_obj =
-                    ArrayListObj::inspect(&thread.heap, this as usize, |vec| vec[index as usize])?;
-                super::resolve_and_invoke(
-                    thread,
-                    next_obj,
-                    "toString",
-                    &to_string_descriptor,
-                    verbose,
-                )?;
-                thread.stackframe.locals[0] = next_obj;
-                super::run_until_return(thread, verbose)?;
-                let str_ptr = thread.stackframe.operand_stack.pop().unwrap();
-                let string = StringObj::inspect(&thread.heap, str_ptr as usize, |arc| arc.clone())?;
-                if index == 0 {
-                    str.push_str(&string);
-                } else {
-                    write!(str, ", {string}").unwrap();
-                }
             }
 
-            str.push(']');
-            Ok(Arc::from(str))
-        },
-    );
+            fn toString(&this) -> StringField {
+                let thread, verbose;
+                let mut str = String::from("[");
+                let length = ArrayListObj::inspect(&thread.heap, this as usize, |vec| vec.len() as u32)?;
+                for index in 0..length {
+                    let next_obj = ArrayListObj::inspect(&thread.heap, this as usize, |vec| vec[index as usize])?;
+                    super::resolve_and_invoke(
+                        thread,
+                        next_obj,
+                        "toString",
+                        &to_string_descriptor,
+                        verbose,
+                    )?;
+                    thread.stackframe.locals[0] = next_obj;
+                    super::run_until_return(thread, verbose)?;
+                    let str_ptr = thread.stackframe.operand_stack.pop().unwrap();
+                    let string = StringObj::inspect(&thread.heap, str_ptr as usize, |arc| arc.clone())?;
+                    if index == 0 {
+                        str.push_str(&string);
+                    } else {
+                        write!(str, ", {string}").unwrap();
+                    }
+                }
+                str.push(']');
+                Ok(Arc::from(str))
+            }
+
+            fn stream(&this) -> stream_field {
+                let thread, verbose;
+                let array_stream = thread
+                    .class_area
+                    .search("java/util/ArrayList$Stream")
+                    .unwrap();
+                let mut stream = Object::from_class(array_stream);
+                stream.fields[0] = this;
+                stream.fields[2] =
+                    ArrayListObj::inspect(&thread.heap, this as usize, |arrls| arrls.len() as u32)?;
+                thread.rember(this, verbose);
+                let stream_idx = thread.heap.lock().unwrap().allocate(stream);
+                Ok(stream_idx)
+            }
+        }
+    ));
 
     let mut array_stream = RawClass::new(
         access!(public native),
@@ -243,7 +224,7 @@ pub fn add_native_collections(
             Field {
                 name: "array".into(),
                 access_flags: access!(private),
-                descriptor: field!(Object(array_list.this.clone())),
+                descriptor: field!(Object("java/util/ArrayList".into())),
                 ..Default::default()
             },
             0,
@@ -314,40 +295,6 @@ pub fn add_native_collections(
         .push("java/util/stream/Stream".into());
     array_stream.register_methods([arr_stream_next, arr_stream_count], method_area);
 
-    let arrlist_stream = RawMethod {
-        name: "stream".into(),
-        access_flags: access!(public native),
-        descriptor: method!(() -> Object("java/util/stream/Stream".into())),
-        code: RawCode::native(NativeSingleMethod(
-            |thread: &mut Thread, [this]: [u32; 1], verbose| {
-                let array_stream = thread
-                    .class_area
-                    .search("java/util/ArrayList$Stream")
-                    .unwrap();
-                let mut stream = Object::from_class(array_stream);
-                stream.fields[0] = this;
-                stream.fields[2] =
-                    ArrayListObj::inspect(&thread.heap, this as usize, |arrls| arrls.len() as u32)?;
-                thread.rember(this, verbose);
-                let stream_idx = thread.heap.lock().unwrap().allocate(stream);
-                Ok(stream_idx)
-            },
-        )),
-        ..Default::default()
-    };
-    array_list.register_methods(
-        [
-            arrlist_init,
-            arrlist_append,
-            arrlist_size,
-            arrlist_add,
-            arrlist_sort,
-            arrlist_to_string,
-            arrlist_stream,
-        ],
-        method_area,
-    );
-
     let mut comparator = RawClass::new(
         access!(public abstract native),
         "java/util/Comparator".into(),
@@ -363,5 +310,5 @@ pub fn add_native_collections(
 
     comparator.register_method(compare, method_area);
 
-    class_area.extend([array_list, comparator, array_stream]);
+    class_area.extend([comparator, array_stream]);
 }
