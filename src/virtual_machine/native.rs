@@ -14,7 +14,7 @@ use crate::{
         Class, Field,
     },
     class_loader::{RawClass, RawCode, RawMethod},
-    data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
+    data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea},
     virtual_machine::{error, object::StringBuilder},
 };
 
@@ -203,25 +203,28 @@ pub fn resolve_and_invoke(
 }
 
 /// return a Class object of the given name
-pub fn get_class(
-    heap: &Mutex<Heap>,
-    class_area: &SharedClassArea,
-    obj_class: Arc<Class>,
-) -> Option<u32> {
+pub fn get_class(heap: &Mutex<Heap>, class_area: &SharedClassArea, obj_class: Arc<Class>) -> u32 {
     static CLASS_CACHE: Mutex<OnceLock<HashMap<Arc<str>, u32>>> = Mutex::new(OnceLock::new());
+    static CLASS: Mutex<OnceLock<Arc<Class>>> = Mutex::new(OnceLock::new());
     let mut binding = CLASS_CACHE.lock().unwrap();
     let class_cache = binding.get_or_init(HashMap::new);
     if let Some(&ptr) = class_cache.get(&obj_class.this) {
-        return Some(ptr);
+        return ptr;
     }
-    let mut class_obj = Object::from_class(class_area.search("java/lang/Class")?);
+    let mut class_obj = Object::from_class(
+        CLASS
+            .lock()
+            .unwrap()
+            .get_or_init(|| class_area.search("java/lang/Class").unwrap())
+            .clone(),
+    );
     // hold onto an entry so we don't have to clone obj_class
     let entry = binding.get_mut().unwrap().entry(obj_class.this.clone());
     class_obj.native_fields.push(Box::new(obj_class));
     let ptr = heap.lock().unwrap().allocate(class_obj);
     entry.insert_entry(ptr);
     drop(binding);
-    Some(ptr)
+    ptr
 }
 
 #[allow(clippy::too_many_lines)]
@@ -245,7 +248,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
             fn "getClass"(&this) -> class_field {
                 let thread, _verbose;
                 let obj_class = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.class.clone())?;
-                Ok(get_class(&thread.heap, &thread.class_area, obj_class).unwrap_or(NULL))
+                Ok(get_class(&thread.heap, &thread.class_area, obj_class))
             }
 
             fn "hashCode"(&this) -> Int {
