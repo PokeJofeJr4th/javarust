@@ -72,7 +72,7 @@ pub fn deep_to_string(
 }
 
 pub fn to_string(
-    thread: &mut Thread,
+    thread: &Thread,
     [arr_ref]: [u32; 1],
     _verbose: bool,
 ) -> NativeReturn<Arc<str>> {
@@ -148,36 +148,35 @@ pub fn add_native_methods(
     let [array, mut arrays] = native_class! {
         let method_area;
 
-        class "java/lang/Array" {
-        }
+        impl "java/lang/Array" {}
 
-        class "java/util/Arrays" {
-            public static fn "toString"(this: int_arr) StringField => {
+        impl "java/util/Arrays" {
+            static fn "toString"(this: int_arr) -> StringField {
                 let thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
-            public static fn "toString"(this: long_arr) StringField => {
+            static fn "toString"(this: long_arr) -> StringField {
                 let thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
-            public static fn "toString"(this: float_arr) StringField => {
+            static fn "toString"(this: float_arr) -> StringField {
                 let thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
-            public static fn "toString"(this: double_arr) StringField => {
+            static fn "toString"(this: double_arr) -> StringField {
                 let thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
-            public static fn "toString"(this: obj_arr) StringField => {
+            static fn "toString"(this: obj_arr) -> StringField {
                 let thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
-            public static fn "deepToString"(this: obj_arr) StringField => {
+            static fn "deepToString"(this: obj_arr) -> StringField {
                 let thread, verbose;
                 deep_to_string(thread, [this], verbose)
             }

@@ -33,20 +33,20 @@ pub fn add_native_collections(
     class_area.extend(native_class!(
         let method_area;
 
-        class "java/util/HashMap" {
-            public fn "<init>"(&this) => {
+        impl "java/util/HashMap" {
+            fn "<init>"(&this) {
                 let thread, _verbose;
                 AnyObj.inspect(&thread.heap, this as usize, |obj| {
                     obj.native_fields.push(Box::<HashMap<u32, u32>>::default());
                 })
             }
 
-            public fn "size"(&this) Int => {
+            fn "size"(&this) -> Int {
                 let thread, _verbose;
                 HashMapObj::inspect(&thread.heap, this as usize, |m| m.len() as i32)
             }
 
-            public fn "put"(&this, key: object_field, value: object_field) object_field => {
+            fn "put"(&this, key: object_field, value: object_field) -> object_field {
                 let thread, verbose;
                 let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
                     obj.resolve_method(
@@ -69,7 +69,7 @@ pub fn add_native_collections(
                 .map(Option::unwrap_or_default)
             }
 
-            public fn "get"(&this, key: object_field) object_field => {
+            fn "get"(&this, key: object_field) -> object_field {
                 let thread, verbose;
                 let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
                     obj.resolve_method(
@@ -93,18 +93,18 @@ pub fn add_native_collections(
             }
         }
 
-        class "java/util/HashSet" {
-            public fn "<init>"(&this) => {
+        impl "java/util/HashSet" {
+            fn "<init>"(&this) {
                 let thread, _verbose;
                 AnyObj.inspect(&thread.heap, this as usize, |o| o.native_fields.push(Box::<HashSet<u32>>::default()))
             }
 
-            public fn "size"(&this) Int => {
+            fn "size"(&this) -> Int {
                 let thread, _verbose;
                 HashSetObj::inspect(&thread.heap, this as usize, |this| this.len() as i32)
             }
 
-            public fn "add"(&this, key: object_field) Boolean => {
+            fn "add"(&this, key: object_field) -> Boolean {
                 let thread, verbose;
                 let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
                     obj.resolve_method(
@@ -115,7 +115,7 @@ pub fn add_native_collections(
                         verbose,
                     )
                 })?;
-                thread.stackframe.operand_stack.push(1);
+                thread.stackframe.operand_stack.push(0);
                 thread.invoke_method(method, class);
                 thread.stackframe.locals[0] = key;
                 super::run_until_return(thread, verbose)?;
@@ -124,7 +124,7 @@ pub fn add_native_collections(
                 HashSetObj::inspect(&thread.heap, this as usize, |set| set.insert(hash_code))
             }
 
-            public fn "contains"(&this, key: object_field) Boolean => {
+            fn "contains"(&this, key: object_field) -> Boolean {
                 let thread, verbose;
                 let (class, method) = AnyObj.inspect(&thread.heap, key as usize, |obj| {
                     obj.resolve_method(
@@ -135,7 +135,7 @@ pub fn add_native_collections(
                         verbose,
                     )
                 })?;
-                thread.stackframe.operand_stack.push(1);
+                thread.stackframe.operand_stack.push(0);
                 thread.invoke_method(method, class);
                 thread.stackframe.locals[0] = key;
                 super::run_until_return(thread, verbose)?;
