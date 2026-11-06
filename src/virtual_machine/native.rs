@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
-use jvmrs_lib::{access, field, method, FieldType, MethodDescriptor};
+use jvmrs_lib::{access, field, method};
 use rand::{rngs::StdRng, RngExt};
 
 use crate::{
@@ -23,7 +23,7 @@ use super::{
     Thread,
 };
 
-use field::{Char, Field as FieldTrait, Int, ObjectField, StringField, Void};
+use field::{Char, Field as FieldTrait, Int, ObjectField, StringField};
 use primitives::make_primitives;
 
 pub mod arrays;
@@ -77,11 +77,13 @@ macro_rules! has_this {
 
 macro_rules! return_type {
     () => {
-        None
+        ::core::option::Option::None
     };
 
     ($pty:expr) => {
-        Some(FieldTrait::as_field($pty))
+        ::core::option::Option::Some($crate::virtual_machine::native::field::Field::as_field(
+            $pty,
+        ))
     };
 }
 
@@ -90,13 +92,13 @@ macro_rules! ret {
         $pty
     };
     () => {
-        Void
+        $crate::virtual_machine::native::field::Void
     };
 }
 
 macro_rules! native_class {
     (let $method_area:ident; $(class $cls:literal $($supcls:literal)?{$($clsbody:tt)*})*) => {[$({
-        let mut class = RawClass::new(access!(public native), $cls.into(), native_class!(@super $($supcls)?));
+        let mut class = $crate::class_loader::RawClass::new(access!(public native), $cls.into(), native_class!(@super $($supcls)?));
         class.register_methods(native_class!{
             @nonstatic {$($clsbody)*}
             access!()[]
@@ -129,16 +131,16 @@ macro_rules! native_class {
             @nonstatic {$($clsbody)*}
             access!()
             [$($prev)*
-                RawMethod {
-                    access_flags: access!(native $($access)*),
+                $crate::class_loader::RawMethod {
+                    access_flags: jvmrs_lib::access!(native $($access)*),
                     name: $fn_name.into(),
-                    descriptor: MethodDescriptor {
+                    descriptor: jvmrs_lib::MethodDescriptor {
                         parameters: vec![$($paramty.as_field()),*],
                         return_type: return_type!($($ret)?),
                         parameter_size: parameter_size!($($paramty,)*),
                     },
-                    code: RawCode::native(ret!($($ret)?).make_native(move |$thread: &mut Thread, args: [u32; parameter_size!($($paramty,)*) + has_this!($($this)?)], $verbose| {
-                        let mut argc=0;
+                    code: $crate::class_loader::RawCode::native(ret!($($ret)?).make_native(move |$thread: &mut $crate::virtual_machine::Thread, args: [u32; parameter_size!($($paramty,)*) + has_this!($($this)?)], $verbose| {
+                        let mut argc: usize = 0;
                         $(
                             let $this = args[0];
                             argc += 1;
@@ -147,11 +149,12 @@ macro_rules! native_class {
                             let $param = $paramty.get_parameter($thread, argc, &args);
                             argc += parameter_size!($paramty,);
                         )*
-                        // shut up the compiler
-                        let _argc = argc;
+                        // shut up the compiler warning for unused variable
+                        let _ = argc;
+
                         $($body)*
                     })),
-                    ..Default::default()
+                    ..::core::default::Default::default()
                 },
             ]
         }
@@ -310,7 +313,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
             Field {
                 access_flags: access!(public native),
                 name: "enum$name".into(),
-                descriptor: FieldType::Object(java_lang_string.clone()),
+                descriptor: field!(Object(java_lang_string.clone())),
                 ..Default::default()
             },
             0,
@@ -319,7 +322,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
             Field {
                 access_flags: access!(public native),
                 name: "enum$id".into(),
-                descriptor: FieldType::Int,
+                descriptor: field!(int),
                 ..Default::default()
             },
             1,
