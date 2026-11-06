@@ -15,20 +15,15 @@ use crate::{
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
-    virtual_machine::{
-        native::field::{Int, StringField},
-        object::StringObj,
-    },
 };
-
-use self::primitives::make_primitives;
 
 use super::{
     object::{AnyObj, Object, ObjectFinder, Random},
     Thread,
 };
 
-use field::{Field as FieldTrait, ObjectField, Void};
+use field::{Field as FieldTrait, Int, ObjectField, StringField, Void};
+use primitives::make_primitives;
 
 pub mod arrays;
 pub mod character;
@@ -71,12 +66,8 @@ macro_rules! parameter_size {
 }
 
 macro_rules! has_this {
-    (this, $($rest:tt,)*) => {
+    ($($any:tt)+) => {
         1
-    };
-
-    ($pty:tt, $($rest:tt,)*) => {
-        has_this!($($rest,)*)
     };
 
     () => {
@@ -103,25 +94,15 @@ macro_rules! ret {
     };
 }
 
-macro_rules! method_parameters {
-    ([$($lst:tt,)*]) => {vec![$($lst),*]};
-
-    ([$($lst:tt,)*] this, $($rest:expr,)*) => {method_parameters!([$($lst,)*] $($rest,)*)};
-
-    ([$($lst:tt,)*] $param:expr, $($rest:expr,)*) => {
-        method_parameters!([$($lst,)*$param.as_field(),] $($rest,)*)
-    };
-}
-
 macro_rules! native_class {
-    (let $method_area:ident; class $cls:literal $($supcls:literal)?{$($clsbody:tt)*}) => {{
+    (let $method_area:ident; $(class $cls:literal $($supcls:literal)?{$($clsbody:tt)*})*) => {[$({
         let mut class = RawClass::new(access!(public native), $cls.into(), native_class!(@super $($supcls)?));
         class.register_methods(native_class!{
             @nonstatic {$($clsbody)*}
             access!()[]
         }, $method_area);
         class
-    }};
+    }),*]};
 
     (@$isstatic:ident {public $($clsbody:tt)*} access!($($access:tt)*)[$($prev:tt)*]) => {
         native_class!{
@@ -136,7 +117,7 @@ macro_rules! native_class {
     };
 
     (@$isstatic:ident {
-            fn $fn_name:literal($($param:ident: $paramty:tt),*) $($ret:expr)? => {
+            fn $fn_name:literal($(&$this:ident$(,)?)?$($param:ident: $paramty:ident),*) $($ret:expr)? => {
                 let $thread:ident, $verbose:ident;
                 $($body:tt)*
             } $($clsbody:tt)*
@@ -152,11 +133,11 @@ macro_rules! native_class {
                     access_flags: access!(native $($access)*),
                     name: $fn_name.into(),
                     descriptor: MethodDescriptor {
-                        parameters: method_parameters!{[] $($paramty,)*},
+                        parameters: vec![$($paramty.as_field()),*],
                         return_type: return_type!($($ret)?),
                         parameter_size: parameter_size!($($paramty,)*),
                     },
-                    code: RawCode::native(ret!($($ret)?).make_native(|$thread: &mut Thread, [$($param),*]: [u32; parameter_size!($($paramty,)*) + has_this!($($paramty,)*)], $verbose| {
+                    code: RawCode::native(ret!($($ret)?).make_native(|$thread: &mut Thread, [$($this,)?$($param),*]: [u32; parameter_size!($($paramty,)*) + has_this!($($this)?)], $verbose| {
                         $($body)*
                     })),
                     ..Default::default()
@@ -211,22 +192,24 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     let java_lang_object: Arc<str> = Arc::from("java/lang/Object");
     let java_lang_string: Arc<str> = Arc::from("java/lang/String");
 
-    let object = native_class!(
+    let object_field = ObjectField("java/lang/Object");
+
+    class_area.extend(native_class!(
         let method_area;
 
         class "java/lang/Object" {
-            public fn "<init>"(_this: this) => {
+            public fn "<init>"(&_this) => {
                 let _thread, _verbose;
                 Ok(())
             }
 
-            public fn "getClass"(this: this) ObjectField("java/lang/Class") => {
+            public fn "getClass"(&this) ObjectField("java/lang/Class") => {
                 let thread, _verbose;
                 let obj_class = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.class.clone())?;
                 Ok(get_class(&thread.heap, &thread.class_area, obj_class).unwrap_or(NULL))
             }
 
-            public fn "hashCode"(this: this) Int => {
+            public fn "hashCode"(&this) Int => {
                 let _thread, _verbose;
                 let mut hasher = DefaultHasher::new();
                 this.hash(&mut hasher);
@@ -234,29 +217,20 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 Ok(value)
             }
 
-            public fn "toString"(this: this) StringField => {
+            public fn "toString"(&this) StringField => {
                 let _thread, _verbose;
                 Ok(Arc::from(format!("{this:0>8X}")))
             }
         }
-    );
-    let mut util_objects = RawClass::new(
-        access!(public native),
-        "java/util/Objects".into(),
-        java_lang_object.clone(),
-    );
-    let objects_req_non_null = RawMethod {
-        access_flags: access!(public static native),
-        name: "requireNonNull".into(),
-        descriptor: method!(((Object(java_lang_object.clone()))) -> Object(java_lang_object.clone())),
-        code: RawCode::native(NativeSingleMethod(|_: &mut _, [ptr]: [u32; 1], _| {
-            // TODO: Use an exception here
-            assert!(ptr != 0);
-            Ok(ptr)
-        })),
-        ..Default::default()
-    };
-    util_objects.register_method(objects_req_non_null, method_area);
+
+        class "java/util/Objects" {
+            public static fn "requireNonNull"(object: object_field) ObjectField("java/lang/Object") => {
+                let _thread, _verbose;
+                assert!(object != 0);
+                Ok(object)
+            }
+        }
+    ));
 
     let mut enum_class = RawClass::new(
         access!(public abstract native),
@@ -461,13 +435,6 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         &java_lang_string,
     );
 
-    class_area.extend([
-        object,
-        util_objects,
-        enum_class,
-        string_builder,
-        random,
-        math,
-    ]);
+    class_area.extend([enum_class, string_builder, random, math]);
     drop((java_lang_object, java_lang_string));
 }
