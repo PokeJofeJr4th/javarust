@@ -101,6 +101,17 @@ macro_rules! ret {
 }
 
 #[macro_export]
+macro_rules! fn_name {
+    ($name:ident) => {
+        stringify!($name)
+    };
+
+    ($name:literal) => {
+        $name
+    };
+}
+
+#[macro_export]
 macro_rules! native_class {
     (let $method_area:ident; $(impl $cls:literal $($supcls:literal)?{$($clsbody:tt)*})*) => {[$({
         let mut class = $crate::class_loader::RawClass::new(access!(public native), $cls.into(), native_class!(@super $($supcls)?));
@@ -118,7 +129,7 @@ macro_rules! native_class {
     };
 
     (@$isstatic:ident {
-            fn $fn_name:literal($(&$this:ident$(,)?)?$($param:ident: $paramty:ident),*) $(->$ret:ident)? {
+            fn $fn_name:tt($(&$this:ident$(,)?)?$($param:ident: $paramty:ident),*) $(->$ret:ident)? {
                 let $thread:ident, $verbose:ident;
                 $($body:tt)*
             } $($clsbody:tt)*
@@ -132,7 +143,7 @@ macro_rules! native_class {
             [$($prev)*
                 $crate::class_loader::RawMethod {
                     access_flags: jvmrs_lib::access!(public native $($access)*),
-                    name: $fn_name.into(),
+                    name: $crate::fn_name!($fn_name).into(),
                     descriptor: jvmrs_lib::MethodDescriptor {
                         parameters: vec![$($crate::virtual_machine::native::field::Field::as_field($paramty)),*],
                         return_type: $crate::return_type!($($ret)?),
@@ -245,13 +256,13 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 Ok(())
             }
 
-            fn "getClass"(&this) -> class_field {
+            fn getClass(&this) -> class_field {
                 let thread, _verbose;
                 let obj_class = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.class.clone())?;
                 Ok(get_class(&thread.heap, &thread.class_area, obj_class))
             }
 
-            fn "hashCode"(&this) -> Int {
+            fn hashCode(&this) -> Int {
                 let _thread, _verbose;
                 let mut hasher = DefaultHasher::new();
                 this.hash(&mut hasher);
@@ -259,14 +270,14 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 Ok(value)
             }
 
-            fn "toString"(&this) -> StringField {
+            fn toString(&this) -> StringField {
                 let _thread, _verbose;
                 Ok(Arc::from(format!("{this:0>8X}")))
             }
         }
 
         impl "java/util/Objects" {
-            static fn "requireNonNull"(object: object_field) -> object_field {
+            static fn requireNonNull(object: object_field) -> object_field {
                 let _thread, _verbose;
                 assert!(object != 0);
                 Ok(object)
@@ -282,7 +293,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 })
             }
 
-            fn "setCharAt"(&this, index: Int, character: Char) {
+            fn setCharAt(&this, index: Int, character: Char) {
                 let thread, verbose;
                 let this = this as usize;
                 let index = index as usize;
@@ -304,7 +315,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 })
             }
 
-            fn "toString"(&this) -> StringField {
+            fn toString(&this) -> StringField {
                 let thread, _verbose;
                 let string = Arc::from(&*StringBuilder::inspect(
                     &thread.heap,
@@ -323,7 +334,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 })
             }
 
-            fn "nextInt"(&this, right_bound: Int) -> Int {
+            fn nextInt(&this, right_bound: Int) -> Int {
                 let thread, _verbose;
                 AnyObj.inspect(&thread.heap, this as usize, |o| o.native_fields[0].downcast_mut::<StdRng>().unwrap().random_range(0..(right_bound as i32)))
             }

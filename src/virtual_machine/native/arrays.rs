@@ -71,11 +71,7 @@ pub fn deep_to_string(
     }
 }
 
-pub fn to_string(
-    thread: &Thread,
-    [arr_ref]: [u32; 1],
-    _verbose: bool,
-) -> NativeReturn<Arc<str>> {
+pub fn to_string(thread: &Thread, [arr_ref]: [u32; 1], _verbose: bool) -> NativeReturn<Arc<str>> {
     let arr_ref = arr_ref as usize;
     let field_type = ArrayType::SELF.inspect(&thread.heap, arr_ref, |a| a.clone())?;
     if field_type.get_size() == 2 {
@@ -151,32 +147,32 @@ pub fn add_native_methods(
         impl "java/lang/Array" {}
 
         impl "java/util/Arrays" {
-            static fn "toString"(this: int_arr) -> StringField {
+            static fn toString(this: int_arr) -> StringField {
                 let thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
-            static fn "toString"(this: long_arr) -> StringField {
+            static fn toString(this: long_arr) -> StringField {
                 let thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
-            static fn "toString"(this: float_arr) -> StringField {
+            static fn toString(this: float_arr) -> StringField {
                 let thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
-            static fn "toString"(this: double_arr) -> StringField {
+            static fn toString(this: double_arr) -> StringField {
                 let thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
-            static fn "toString"(this: obj_arr) -> StringField {
+            static fn toString(this: obj_arr) -> StringField {
                 let thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
-            static fn "deepToString"(this: obj_arr) -> StringField {
+            static fn deepToString(this: obj_arr) -> StringField {
                 let thread, verbose;
                 deep_to_string(thread, [this], verbose)
             }

@@ -41,12 +41,12 @@ pub fn add_native_collections(
                 })
             }
 
-            fn "size"(&this) -> Int {
+            fn size(&this) -> Int {
                 let thread, _verbose;
                 HashMapObj::inspect(&thread.heap, this as usize, |m| m.len() as i32)
             }
 
-            fn "put"(&this, key: object_field, value: object_field) -> object_field {
+            fn put(&this, key: object_field, value: object_field) -> object_field {
                 let thread, verbose;
                 super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
@@ -59,7 +59,7 @@ pub fn add_native_collections(
                 .map(Option::unwrap_or_default)
             }
 
-            fn "get"(&this, key: object_field) -> object_field {
+            fn get(&this, key: object_field) -> object_field {
                 let thread, verbose;
                 super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
@@ -79,12 +79,12 @@ pub fn add_native_collections(
                 AnyObj.inspect(&thread.heap, this as usize, |o| o.native_fields.push(Box::<HashSet<u32>>::default()))
             }
 
-            fn "size"(&this) -> Int {
+            fn size(&this) -> Int {
                 let thread, _verbose;
                 HashSetObj::inspect(&thread.heap, this as usize, |this| this.len() as i32)
             }
 
-            fn "add"(&this, key: object_field) -> Boolean {
+            fn add(&this, key: object_field) -> Boolean {
                 let thread, verbose;
                 super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
@@ -94,7 +94,7 @@ pub fn add_native_collections(
                 HashSetObj::inspect(&thread.heap, this as usize, |set| set.insert(hash_code))
             }
 
-            fn "contains"(&this, key: object_field) -> Boolean {
+            fn contains(&this, key: object_field) -> Boolean {
                 let thread, verbose;
                 super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
@@ -170,7 +170,13 @@ pub fn add_native_collections(
                         })?;
 
                         // cmp.compare(target, next)
-                        super::resolve_and_invoke(thread, cmp, "compare", &compare_descriptor, verbose)?;
+                        super::resolve_and_invoke(
+                            thread,
+                            cmp,
+                            "compare",
+                            &compare_descriptor,
+                            verbose,
+                        )?;
                         thread.stackframe.locals[0] = cmp;
                         thread.stackframe.locals[1] = target;
                         thread.stackframe.locals[2] = next;
@@ -204,7 +210,13 @@ pub fn add_native_collections(
             for index in 0..length {
                 let next_obj =
                     ArrayListObj::inspect(&thread.heap, this as usize, |vec| vec[index as usize])?;
-                super::resolve_and_invoke(thread, next_obj, "toString", &to_string_descriptor, verbose)?;
+                super::resolve_and_invoke(
+                    thread,
+                    next_obj,
+                    "toString",
+                    &to_string_descriptor,
+                    verbose,
+                )?;
                 thread.stackframe.locals[0] = next_obj;
                 super::run_until_return(thread, verbose)?;
                 let str_ptr = thread.stackframe.operand_stack.pop().unwrap();

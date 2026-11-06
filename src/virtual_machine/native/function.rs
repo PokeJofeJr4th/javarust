@@ -119,7 +119,13 @@ pub(super) fn add_native_methods(
                       [first_fn_ptr, second_fn_ptr, arg]: [u32; 3],
                       verbose| {
                     // Run the first function
-                    super::resolve_and_invoke(thread, first_fn_ptr, "apply", &apply_signature, verbose)?;
+                    super::resolve_and_invoke(
+                        thread,
+                        first_fn_ptr,
+                        "apply",
+                        &apply_signature,
+                        verbose,
+                    )?;
                     thread.stackframe.locals[0] = first_fn_ptr;
                     thread.stackframe.locals[1] = arg;
                     super::run_until_return(thread, verbose)?;
@@ -127,7 +133,13 @@ pub(super) fn add_native_methods(
                     let first_return = thread.stackframe.operand_stack.pop().unwrap();
 
                     // Run the second function
-                    super::resolve_and_invoke(thread, second_fn_ptr, "apply", &apply_signature, verbose)?;
+                    super::resolve_and_invoke(
+                        thread,
+                        second_fn_ptr,
+                        "apply",
+                        &apply_signature,
+                        verbose,
+                    )?;
                     thread.stackframe.locals[0] = second_fn_ptr;
                     thread.stackframe.locals[1] = first_return;
                     super::run_until_return(thread, verbose)?;
@@ -533,7 +545,13 @@ pub(super) fn add_native_methods(
                 }
 
                 // Call this.equals(other)
-                super::resolve_and_invoke(thread, this_inner, "equals", &equals_descriptor, verbose)?;
+                super::resolve_and_invoke(
+                    thread,
+                    this_inner,
+                    "equals",
+                    &equals_descriptor,
+                    verbose,
+                )?;
                 thread.stackframe.locals[0] = this_inner;
                 thread.stackframe.locals[1] = other_inner;
                 super::run_until_return(thread, verbose)?;
@@ -600,7 +618,13 @@ pub(super) fn add_native_methods(
                     return Ok(0);
                 }
                 // Call inner.hashCode
-                super::resolve_and_invoke(thread, value, "hashCode", &hash_code_descriptor, verbose)?;
+                super::resolve_and_invoke(
+                    thread,
+                    value,
+                    "hashCode",
+                    &hash_code_descriptor,
+                    verbose,
+                )?;
                 thread.stackframe.locals[0] = value;
                 super::run_until_return(thread, verbose)?;
 
