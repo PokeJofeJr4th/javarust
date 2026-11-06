@@ -5,16 +5,17 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
-use jvmrs_lib::{access, field, method, FieldType};
+use jvmrs_lib::{access, field, method, FieldType, MethodDescriptor};
 use rand::RngExt;
 
 use crate::{
     class::{
-        code::{native_property, NativeDoubleMethod, NativeNoop, NativeSingleMethod, NativeVoid},
+        code::{native_property, NativeDoubleMethod, NativeSingleMethod, NativeVoid},
         Class, Field,
     },
     class_loader::{RawClass, RawCode, RawMethod},
     data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea, NULL},
+    virtual_machine::native::field::Int,
 };
 
 use self::primitives::make_primitives;
@@ -23,6 +24,8 @@ use super::{
     object::{AnyObj, Object, ObjectFinder, Random},
     Thread,
 };
+
+use field::{Field as FieldTrait, ObjectField, Void};
 
 pub mod arrays;
 pub mod character;
@@ -36,42 +39,133 @@ pub mod string_builder;
 pub mod system;
 pub mod throwable;
 
+mod field;
+
 pub static mut OBJECT_CLASS: Option<Arc<Class>> = None;
 pub static mut STRING_CLASS: Option<Arc<Class>> = None;
 pub static mut STRING_BUILDER_CLASS: Option<Arc<Class>> = None;
 pub static mut ARRAY_CLASS: Option<Arc<Class>> = None;
 pub static mut RANDOM_CLASS: Option<Arc<Class>> = None;
 
-macro_rules! native_class {
-    (
-        let method_area = $method_area:expr;
-        class $cls:literal $($supcls:literal)?{
-        $(
-            access!($($access:tt)*) method!($($method:tt)*) $name:literal =>$body:expr
-        )*
-    }) => {{
-        let mut cls = RawClass::new(
-            access!(public native),
-            $cls.into(),
-            native_class!(@super $($supcls)?)
-        );
-
-        $(
-            let method = RawMethod {
-                access_flags: access!($($access)*),
-                name: $name.into(),
-                descriptor: method!($($method)*),
-                code: RawCode::native($body),
-                ..Default::default()
-            };
-            cls.register_method(method, $method_area);
-        )*
-
-        cls
+macro_rules! parameter_size {
+    (Double, $($rest:tt,)*) => {{
+        2 + parameter_size!($($rest,)*)
     }};
 
+    (Long, $($rest:tt,)*) => {{
+        2 + parameter_size!($($rest,)*)
+    }};
+
+    (this, $($rest:tt,)*) => {{
+        parameter_size!($($rest,)*)
+    }};
+
+    ($pty:tt, $($rest:tt,)*) => {{
+        1 + parameter_size!($($rest,)*)
+    }};
+
+    () => {0};
+}
+
+macro_rules! has_this {
+    (this, $($rest:tt,)*) => {
+        1
+    };
+
+    ($pty:tt, $($rest:tt,)*) => {
+        has_this!($($rest,)*)
+    };
+
+    () => {
+        0
+    };
+}
+
+macro_rules! return_type {
+    () => {
+        None
+    };
+
+    ($pty:expr) => {
+        Some(FieldTrait::as_field($pty))
+    };
+}
+
+macro_rules! ret {
+    ($pty:expr) => {
+        $pty
+    };
+    () => {
+        Void
+    };
+}
+
+macro_rules! method_parameters {
+    ([$($lst:tt,)*]) => {vec![$($lst),*]};
+
+    ([$($lst:tt,)*] this, $($rest:expr,)*) => {method_parameters!([$($lst,)*] $($rest,)*)};
+
+    ([$($lst:tt,)*] $param:expr, $($rest:expr,)*) => {
+        method_parameters!([$($lst,)*$param.as_field(),] $($rest,)*)
+    };
+}
+
+macro_rules! native_class {
+    (let $method_area:ident; class $cls:literal $($supcls:literal)?{$($clsbody:tt)*}) => {{
+        let mut class = RawClass::new(access!(public native), $cls.into(), native_class!(@super $($supcls)?));
+        class.register_methods(native_class!{
+            @nonstatic {$($clsbody)*}
+            access!()[]
+        }, $method_area);
+        class
+    }};
+
+    (@$isstatic:ident {public $($clsbody:tt)*} access!($($access:tt)*)[$($prev:tt)*]) => {
+        native_class!{
+            @$isstatic {$($clsbody)*} access!($($access)* public) [$($prev)*]
+        }
+    };
+
+    (@$isstatic:ident {static $($clsbody:tt)*} access!($($access:tt)*)[$($prev:tt)*]) => {
+        native_class!{
+            @isstatic {$($clsbody)*} access!($($access)* static) [$($prev)*]
+        }
+    };
+
+    (@$isstatic:ident {
+            fn $fn_name:literal($($param:ident: $paramty:tt),*) $($ret:expr)? => {
+                let $thread:ident, $verbose:ident;
+                $($body:tt)*
+            } $($clsbody:tt)*
+        }
+        access!($($access:tt)*)
+        [$($prev:tt)*]
+    ) => {
+        native_class!{
+            @nonstatic {$($clsbody)*}
+            access!()
+            [$($prev)*
+                RawMethod {
+                    access_flags: access!(native $($access)*),
+                    name: $fn_name.into(),
+                    descriptor: MethodDescriptor {
+                        parameters: method_parameters!{[] $($paramty,)*},
+                        return_type: return_type!($($ret)?),
+                        parameter_size: parameter_size!($($paramty,)*),
+                    },
+                    code: RawCode::native(ret!($($ret)?).make_native(|$thread: &mut Thread, [$($param),*]: [u32; parameter_size!($($paramty,)*) + has_this!($($paramty,)*)], $verbose| {
+                        $($body)*
+                    })),
+                    ..Default::default()
+                },
+            ]
+        }
+    };
+
+    (@nonstatic {} access!()[$($prev:tt)*]) => {[$($prev)*]};
+
+    (@super $supcls:literal) => {$supcls.into()};
     (@super) => {"java/lang/Object".into()};
-    (@super $supcls:literal) => {$supcls.into()}
 }
 
 /// Execute instructions until the current stack frame returns
@@ -118,24 +212,28 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         Ok(Arc::from(format!("{obj_ref:0>8X}")))
     });
 
+    let class_field = ObjectField("java/lang/Class");
     let mut object = native_class!(
-        let method_area = method_area;
+        let method_area;
         class "java/lang/Object" {
-            access!(public native) method!(() -> void) "<init>" => NativeNoop
+            public fn "<init>"(_this: this) => {
+                let _thread, _verbose;
+                Ok(())
+            }
 
-            access!(public native) method!(() -> Object("java/lang/Class".into())) "getClass" => NativeSingleMethod(
-                |thread: &mut Thread, [obj]: [u32; 1], _| {
-                    let obj_class = AnyObj.inspect(&thread.heap, obj as usize, |obj| obj.class.clone())?;
-                    Ok(Some(get_class(&thread.heap, &thread.class_area, obj_class).unwrap_or(NULL)))
-                },
-            )
+            public fn "getClass"(this: this) class_field => {
+                let thread, _verbose;
+                let obj_class = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.class.clone())?;
+                Ok(get_class(&thread.heap, &thread.class_area, obj_class).unwrap_or(NULL))
+            }
 
-            access!(public native) method!(() -> int) "hashCode" => NativeSingleMethod(|_: &mut _, [ptr]: [u32; 1], _| {
+            public fn "hashCode"(this: this) Int => {
+                let _thread, _verbose;
                 let mut hasher = DefaultHasher::new();
-                ptr.hash(&mut hasher);
-                let value = hasher.finish() as u32;
-                Ok(Some(value))
-            })
+                this.hash(&mut hasher);
+                let value = hasher.finish() as i32;
+                Ok(value)
+            }
         }
     );
     println!("{object:?}");
@@ -146,7 +244,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         java_lang_object.clone(),
     );
     let objects_req_non_null = RawMethod {
-        access_flags: access!(public native),
+        access_flags: access!(public static native),
         name: "requireNonNull".into(),
         descriptor: method!(((Object(java_lang_object.clone()))) -> Object(java_lang_object.clone())),
         code: RawCode::native(NativeSingleMethod(|_: &mut _, [ptr]: [u32; 1], _| {

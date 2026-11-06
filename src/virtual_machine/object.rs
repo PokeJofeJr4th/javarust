@@ -100,7 +100,10 @@ impl Object {
                 }
             }
         }
-        panic!("Failed to find any implementation");
+        panic!(
+            "Failed to find any implementation for {}.{}",
+            self.class.this, method
+        );
     }
 
     #[must_use]
