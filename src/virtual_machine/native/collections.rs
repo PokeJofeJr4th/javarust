@@ -117,9 +117,10 @@ pub fn add_native_collections(
                 AnyObj.inspect(&thread.heap, this as usize, |o| o.native_fields.push(Box::new(Vec::<u32>::new())))
             }
 
-            fn add(&this, ptr: object_field) {
+            fn add(&this, ptr: object_field) -> Boolean {
                 let thread, _verbose;
-                ArrayListObj::inspect(&thread.heap, this as usize, |o| o.push(ptr))
+                ArrayListObj::inspect(&thread.heap, this as usize, |o| o.push(ptr))?;
+                Ok(true)
             }
 
             fn size(&this) -> Int {
