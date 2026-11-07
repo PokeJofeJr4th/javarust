@@ -147,32 +147,32 @@ pub fn add_native_methods(
         impl "java/lang/Array" {}
 
         impl "java/util/Arrays" {
-            static fn toString(this: int_arr) -> StringField {
+            fn toString(this: int_arr) -> StringField {
                 let thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
-            static fn toString(this: long_arr) -> StringField {
+            fn toString(this: long_arr) -> StringField {
                 let thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
-            static fn toString(this: float_arr) -> StringField {
+            fn toString(this: float_arr) -> StringField {
                 let thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
-            static fn toString(this: double_arr) -> StringField {
+            fn toString(this: double_arr) -> StringField {
                 let thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
-            static fn toString(this: obj_arr) -> StringField {
+            fn toString(this: obj_arr) -> StringField {
                 let thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
-            static fn deepToString(this: obj_arr) -> StringField {
+            fn deepToString(this: obj_arr) -> StringField {
                 let thread, verbose;
                 deep_to_string(thread, [this], verbose)
             }
