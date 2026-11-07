@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{println, sync::Arc};
 
 use jvmrs_lib::{access, method, FieldType};
 
@@ -6,9 +6,10 @@ use crate::{
     class::{code::NativeVoid, Field},
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea, NULL},
+    native_class,
     virtual_machine::{
-        native::string::native_println_object,
-        object::{Array1, Array2, ArrayType, Object, ObjectFinder as _},
+        native::field::{Boolean, Char, Double, Float, Int, Long, StringField},
+        object::{Array1, Array2, ArrayType, Object, ObjectFinder as _, StringObj},
         Thread,
     },
 };
@@ -18,118 +19,75 @@ pub fn add_native_methods(
     class_area: &mut WorkingClassArea,
     method_area: &mut WorkingMethodArea,
     java_lang_object: &Arc<str>,
-    java_lang_string: &Arc<str>,
 ) {
-    let println_string = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!(((Object(java_lang_string.clone()))) -> void),
-        code: RawCode::native(NativeVoid(native_println_object)),
-        ..Default::default()
-    };
-    let println_object = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!(((Object(java_lang_object.clone()))) -> void),
-        code: RawCode::native(NativeVoid(native_println_object)),
-        ..Default::default()
-    };
-    let println_char = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!((char) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, [_, c]: [u32; 2], _| {
-            let char = char::from_u32(c).ok_or_else(|| String::from("Invalid Character code"))?;
-            println!("{char}");
-            Ok(())
-        })),
-        ..Default::default()
-    };
-    let println_bool = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!((boolean) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, [_, b]: [u32; 2], _| {
-            let bool = b != 0;
-            println!("{bool}");
-            Ok(())
-        })),
-        ..Default::default()
-    };
-    let println_int = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!((int) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, [_, i]: [u32; 2], _| {
-            let int = i as i32;
-            println!("{int}");
-            Ok(())
-        })),
-        ..Default::default()
-    };
-    let println_double = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!((double) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, [_, left, right]: [u32; 3], _| {
-            let long = f64::from_bits((left as u64) << 32 | (right as u64));
-            println!("{long}");
-            Ok(())
-        })),
-        ..Default::default()
-    };
-    let println_long = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!((long) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, [_, left, right]: [u32; 3], _| {
-            let long = ((left as u64) << 32 | (right as u64)) as i64;
-            println!("{long}");
-            Ok(())
-        })),
-        ..Default::default()
-    };
-    let println_float = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!((float) -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, [_, f]: [u32; 2], _| {
-            let float = f32::from_bits(f);
-            println!("{float}");
-            Ok(())
-        })),
-        ..Default::default()
-    };
-    let println_empty = RawMethod {
-        access_flags: access!(public native),
-        name: "println".into(),
-        descriptor: method!(() -> void),
-        code: RawCode::native(NativeVoid(|_: &mut _, [_]: [u32; 1], _| {
-            println!();
-            Ok(())
-        })),
-        ..Default::default()
-    };
-    let mut printstream = RawClass::new(
-        access!(public native),
-        "java/io/PrintStream".into(),
-        java_lang_object.clone(),
-    );
-    printstream.register_methods(
-        [
-            println_string,
-            println_object,
-            println_empty,
-            println_float,
-            println_double,
-            println_int,
-            println_bool,
-            println_char,
-            println_long,
-        ],
-        method_area,
-    );
+    class_area.extend(native_class!(
+        use method_area;
+        impl java::io::PrintStream {
+            fn println(&_this, s: StringField) {
+                use _thread, _verbose;
+                println!("{s}");
+                Ok(())
+            }
 
+            fn println(&_this, o: java::lang::Object) {
+                use thread, verbose;
+                super::resolve_and_invoke(thread,
+                    o,
+                    "toString",
+                    &method!(() -> Object("java/lang/String".into())),
+                    verbose,
+                )?;
+                thread.stackframe.locals[0] = o;
+                super::run_until_return(thread, verbose)?;
+                let ret = thread.stackframe.operand_stack.pop().unwrap();
+                let str = StringObj::SELF.inspect(&thread.heap, ret as usize, |a| a.clone())?;
+                println!("{str}");
+                Ok(())
+            }
+
+            fn println(&_this, c: Char) {
+                use _thread, _verbose;
+                println!("{c}");
+                Ok(())
+            }
+
+            fn println(&_this, b: Boolean) {
+                use _thread, _verbose;
+                println!("{b}");
+                Ok(())
+            }
+
+            fn println(&_this, i: Int) {
+                use _thread, _verbose;
+                println!("{i}");
+                Ok(())
+            }
+
+            fn println(&_this, d: Double) {
+                use _thread, _verbose;
+                println!("{d}");
+                Ok(())
+            }
+
+            fn println(&_this, l: Long) {
+                use _thread, _verbose;
+                println!("{l}");
+                Ok(())
+            }
+
+            fn println(&_this, f: Float) {
+                use _thread, _verbose;
+                println!("{f}");
+                Ok(())
+            }
+
+            fn println(&_this) {
+                use _thread, _verbose;
+                println!();
+                Ok(())
+            }
+        }
+    ));
     // let system_out = heap.allocate(Object::from_class(class_area, &printstream));
 
     let mut system = RawClass::new(
@@ -208,5 +166,5 @@ pub fn add_native_methods(
     };
     system.register_method(arraycopy, method_area);
 
-    class_area.extend([system, printstream]);
+    class_area.extend([system]);
 }

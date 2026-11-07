@@ -33,26 +33,6 @@ pub fn native_string_value_of(
     Ok(thread.stackframe.operand_stack.pop().unwrap())
 }
 
-pub fn native_println_object(
-    thread: &mut Thread,
-    [_, arg]: [u32; 2],
-    verbose: bool,
-) -> NativeReturn<()> {
-    // push a fake return address
-    super::resolve_and_invoke(thread, 
-        arg,
-        "toString",
-        &method!(() -> Object("java/lang/String".into())),
-        verbose,
-    )?;
-    thread.stackframe.locals[0] = arg;
-    super::run_until_return(thread, verbose)?;
-    let ret = thread.stackframe.operand_stack.pop().unwrap();
-    let str = StringObj::SELF.inspect(&thread.heap, ret as usize, |a| a.clone())?;
-    println!("{str}");
-    Ok(())
-}
-
 pub fn native_string_char_at(
     thread: &mut Thread,
     [string_ref, index]: [u32; 2],

@@ -490,12 +490,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         &java_lang_object,
         &java_lang_string,
     );
-    system::add_native_methods(
-        class_area,
-        method_area,
-        &java_lang_object,
-        &java_lang_string,
-    );
+    system::add_native_methods(class_area, method_area, &java_lang_object);
 
     class_area.extend([enum_class, math]);
     drop((java_lang_object, java_lang_string));
