@@ -11,7 +11,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     class_area.extend(native_class! {
         use method_area;
 
-        impl "java/lang/Class" {
+        impl java::lang::Class {
             fn getName(&this) -> StringField {
                 use thread, _verbose;
                 ClassObj::inspect(&thread.heap, this as usize, |c| c.this.clone())

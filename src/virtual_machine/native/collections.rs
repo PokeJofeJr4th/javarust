@@ -35,7 +35,7 @@ pub fn add_native_collections(
     class_area.extend(native_class!(
         use method_area;
 
-        impl "java/util/HashMap" {
+        impl java::util::HashMap {
             fn "<init>"(&this) {
                 use thread, _verbose;
                 AnyObj.inspect(&thread.heap, this as usize, |obj| {
@@ -75,7 +75,7 @@ pub fn add_native_collections(
             }
         }
 
-        impl "java/util/HashSet" {
+        impl java::util::HashSet {
             fn "<init>"(&this) {
                 use thread, _verbose;
                 AnyObj.inspect(&thread.heap, this as usize, |o| o.native_fields.push(Box::<HashSet<u32>>::default()))
@@ -108,7 +108,7 @@ pub fn add_native_collections(
             }
         }
 
-        impl "java/util/ArrayList" {
+        impl java::util::ArrayList {
             fn "<init>"(&this) {
                 use thread, _verbose;
                 AnyObj.inspect(&thread.heap, this as usize, |o| o.native_fields.push(Box::new(Vec::<u32>::new())))
@@ -211,7 +211,7 @@ pub fn add_native_collections(
             }
         }
 
-        impl(abstract) "java/util/Comparator" {
+        impl(abstract) java::util::Comparator {
             fn compare(&this, first: java::lang::Object, second: java::lang::Object) -> Boolean;
         }
     ));

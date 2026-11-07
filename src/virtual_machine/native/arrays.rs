@@ -144,9 +144,9 @@ pub fn add_native_methods(
     let [array, mut arrays] = native_class! {
         use method_area;
 
-        impl "java/lang/Array" {}
+        impl java::lang::Array {}
 
-        impl "java/util/Arrays" {
+        impl java::util::Arrays {
             fn toString(this: int_arr) -> StringField {
                 use thread, verbose;
                 to_string(thread, [this], verbose)

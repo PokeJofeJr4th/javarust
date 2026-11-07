@@ -47,8 +47,23 @@ pub static mut RANDOM_CLASS: Option<Arc<Class>> = None;
 
 #[macro_export]
 macro_rules! native_class {
-    (use $method_area:ident; $(impl$(($($access:tt)*))? $cls:literal $(($supcls:literal))?{$($clsbody:tt)*})*) => {[$({
-        let mut class = $crate::class_loader::RawClass::new(jvmrs_lib::access!(public native $($($access)*)?), $cls.into(), native_class!(@super $($supcls)?));
+    (
+        use $method_area:ident;
+        $(
+            impl
+                $(($($access:tt)*))?
+                $cls:ident$(::$classsegment:ident)*
+                $(($supcls:ident$(::$supclasssegment:ident)*))?
+            {
+                $($clsbody:tt)*
+            }
+        )*
+    ) => {[$({
+        let mut class = $crate::class_loader::RawClass::new(
+            jvmrs_lib::access!(public native $($($access)*)?),
+            $crate::native_class!(@parse_class $cls$(::$classsegment)*).into(),
+            native_class!(@super $($supcls$(::$supclasssegment)*)?)
+        );
         native_class!{
             @{$($clsbody)*}
             []
@@ -134,9 +149,8 @@ macro_rules! native_class {
         $class.register_methods([$($methods)*], $method_area);
     };
 
-    (@super $supcls:literal) => {$supcls.into()};
+    (@super $($supcls:tt)+) => {$crate::native_class!(@parse_class $($supcls)*).into()};
     (@super) => {"java/lang/Object".into()};
-
 
     (@maybe_static) => {jvmrs_lib::access!()};
     (@maybe_static $($t:tt)+) => {jvmrs_lib::access!(static)};
@@ -169,7 +183,11 @@ macro_rules! native_class {
     (@param_size ) => {0};
 
     (@parse_type $ty:ident) => {$ty};
-    (@parse_type $ty:ident$(::$segment:ident)+) => {$crate::virtual_machine::native::field::ObjectField(concat!(stringify!($ty), $("/", stringify!($segment),)*))};
+    (@parse_type $ty:ident$(::$segment:ident)+) => {
+        $crate::virtual_machine::native::field::ObjectField($crate::native_class!(@parse_class $ty$(::$segment)*))
+    };
+
+    (@parse_class $ty:ident$(::$segment:ident)+) => {concat!(stringify!($ty), $("/", stringify!($segment),)*)};
 }
 
 /// Execute instructions until the current stack frame returns
@@ -243,7 +261,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     class_area.extend(native_class!(
         use method_area;
 
-        impl "java/lang/Object" {
+        impl java::lang::Object {
             fn "<init>"(&_this) {
                 use _thread, _verbose;
                 Ok(())
@@ -269,7 +287,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
             }
         }
 
-        impl "java/util/Objects" {
+        impl java::util::Objects {
             fn requireNonNull(object: java::lang::Object) -> java::lang::Object {
                 use _thread, _verbose;
                 assert!(object != 0);
@@ -277,7 +295,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
             }
         }
 
-        impl "java/lang/StringBuilder" {
+        impl java::lang::StringBuilder {
             fn "<init>"(&this, string: StringField) {
                 use thread, _verbose;
                 let init_string = string.to_string();
@@ -319,7 +337,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
             }
         }
 
-        impl "java/util/Random" {
+        impl java::util::Random {
             fn "<init>"(&this) {
                 use thread, _verbose;
                 AnyObj.inspect(&thread.heap, this as usize, |o| {

@@ -21,7 +21,7 @@ pub(super) fn add_native_methods(
         method!(((Object(java_lang_object.clone()))) -> Object("java/lang/Object".into()));
     class_area.extend(native_class! {
         use method_area;
-        impl "java/util/stream/Stream" {
+        impl java::util::stream::Stream {
             fn "$next"(&_this) -> java::lang::Object;
 
             fn allMatch(&this, predicate: java::util::function::Predicate) -> Boolean {
