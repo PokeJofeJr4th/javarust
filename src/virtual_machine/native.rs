@@ -48,7 +48,7 @@ pub static mut RANDOM_CLASS: Option<Arc<Class>> = None;
 #[macro_export]
 macro_rules! native_class {
     (use $method_area:ident; $(impl$(($($access:tt)*))? $cls:literal $(($supcls:literal))?{$($clsbody:tt)*})*) => {[$({
-        let mut class = $crate::class_loader::RawClass::new(access!(public native $($($access)*)?), $cls.into(), native_class!(@super $($supcls)?));
+        let mut class = $crate::class_loader::RawClass::new(jvmrs_lib::access!(public native $($($access)*)?), $cls.into(), native_class!(@super $($supcls)?));
         native_class!{
             @{$($clsbody)*}
             []
@@ -456,12 +456,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         &java_lang_object,
         &java_lang_string,
     );
-    reflect::add_native_methods(
-        method_area,
-        class_area,
-        &java_lang_object,
-        &java_lang_string,
-    );
+    reflect::add_native_methods(method_area, class_area);
     function::add_native_methods(
         method_area,
         class_area,
