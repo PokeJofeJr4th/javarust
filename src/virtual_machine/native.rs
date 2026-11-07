@@ -128,7 +128,7 @@ macro_rules! native_class {
         let mut class = $crate::class_loader::RawClass::new(access!(public native $($($access)*)?), $cls.into(), native_class!(@super $($supcls)?));
         class.register_methods(native_class!{
             @{$($clsbody)*}
-            access!()[]
+            []
         }, $method_area);
         class
     }),*]};
@@ -136,15 +136,13 @@ macro_rules! native_class {
     (@{
             fn $fn_name:tt($(&$this:ident$(,)?)?$($param:ident: $paramty:ident),*) $(->$ret:ident)?; $($clsbody:tt)*
         }
-        access!($($access:tt)*)
         [$($prev:tt)*]
     ) => {
         native_class!{
             @{$($clsbody)*}
-            access!()
             [$($prev)*
                 $crate::class_loader::RawMethod {
-                    access_flags: jvmrs_lib::access!(public abstract native $($access)*) | $crate::maybe_static!($($this)?),
+                    access_flags: jvmrs_lib::access!(public abstract native) | $crate::maybe_static!($($this)?),
                     name: $crate::fn_name!($fn_name).into(),
                     descriptor: jvmrs_lib::MethodDescriptor {
                         parameters: vec![$($crate::virtual_machine::native::field::Field::as_field($paramty)),*],
@@ -164,15 +162,13 @@ macro_rules! native_class {
                 $($body:tt)*
             } $($clsbody:tt)*
         }
-        access!($($access:tt)*)
         [$($prev:tt)*]
     ) => {
         native_class!{
             @{$($clsbody)*}
-            access!()
             [$($prev)*
                 $crate::class_loader::RawMethod {
-                    access_flags: jvmrs_lib::access!(public native $($access)*) | $crate::maybe_static!($($this)?),
+                    access_flags: jvmrs_lib::access!(public native) | $crate::maybe_static!($($this)?),
                     name: $crate::fn_name!($fn_name).into(),
                     descriptor: jvmrs_lib::MethodDescriptor {
                         parameters: vec![$($crate::virtual_machine::native::field::Field::as_field($paramty)),*],
@@ -200,7 +196,7 @@ macro_rules! native_class {
         }
     };
 
-    (@{} access!()[$($prev:tt)*]) => {[$($prev)*]};
+    (@{}[$($prev:tt)*]) => {[$($prev)*]};
 
     (@super $supcls:literal) => {$supcls.into()};
     (@super) => {"java/lang/Object".into()};
