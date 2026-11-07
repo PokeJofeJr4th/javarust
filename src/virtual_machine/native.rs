@@ -46,83 +46,6 @@ pub static mut ARRAY_CLASS: Option<Arc<Class>> = None;
 pub static mut RANDOM_CLASS: Option<Arc<Class>> = None;
 
 #[macro_export]
-macro_rules! parameter_size {
-    (Double, $($rest:tt,)*) => {{
-        2 + $crate::parameter_size!($($rest,)*)
-    }};
-
-    (Long, $($rest:tt,)*) => {{
-        2 + $crate::parameter_size!($($rest,)*)
-    }};
-
-    (this, $($rest:tt,)*) => {{
-        $crate::parameter_size!($($rest,)*)
-    }};
-
-    ($pty:tt, $($rest:tt,)*) => {{
-        1 + $crate::parameter_size!($($rest,)*)
-    }};
-
-    () => {0};
-}
-
-#[macro_export]
-macro_rules! has_this {
-    ($($any:tt)+) => {
-        1
-    };
-
-    () => {
-        0
-    };
-}
-
-#[macro_export]
-macro_rules! return_type {
-    () => {
-        ::core::option::Option::None
-    };
-
-    ($pty:expr) => {
-        ::core::option::Option::Some($crate::virtual_machine::native::field::Field::as_field(
-            $pty,
-        ))
-    };
-}
-
-#[macro_export]
-macro_rules! ret {
-    ($pty:expr) => {
-        $pty
-    };
-    () => {
-        $crate::virtual_machine::native::field::Void
-    };
-}
-
-#[macro_export]
-macro_rules! fn_name {
-    ($name:ident) => {
-        stringify!($name)
-    };
-
-    ($name:literal) => {
-        $name
-    };
-}
-
-#[macro_export]
-macro_rules! maybe_static {
-    () => {
-        jvmrs_lib::access!()
-    };
-
-    ($($t:tt)+) => {
-        jvmrs_lib::access!(static)
-    };
-}
-
-#[macro_export]
 macro_rules! native_class {
     (use $method_area:ident; $(impl$(($($access:tt)*))? $cls:literal $(($supcls:literal))?{$($clsbody:tt)*})*) => {[$({
         let mut class = $crate::class_loader::RawClass::new(access!(public native $($($access)*)?), $cls.into(), native_class!(@super $($supcls)?));
@@ -146,12 +69,12 @@ macro_rules! native_class {
             @{$($clsbody)*}
             [$($methods)*
                 $crate::class_loader::RawMethod {
-                    access_flags: jvmrs_lib::access!(public abstract native) | $crate::maybe_static!($($this)?),
-                    name: $crate::fn_name!($fn_name).into(),
+                    access_flags: jvmrs_lib::access!(public abstract native) | $crate::native_class!(@maybe_static $($this)?),
+                    name: $crate::native_class!(@fn_name $fn_name).into(),
                     descriptor: jvmrs_lib::MethodDescriptor {
                         parameters: vec![$($crate::virtual_machine::native::field::Field::as_field($paramty)),*],
-                        return_type: $crate::return_type!($($ret)?),
-                        parameter_size: $crate::parameter_size!($($paramty,)*),
+                        return_type: $crate::native_class!(@return_type $($ret)?),
+                        parameter_size: $crate::native_class!(@param_size $($paramty,)*),
                     },
                     code: $crate::class_loader::RawCode::Abstract,
                     ..::core::default::Default::default()
@@ -176,14 +99,14 @@ macro_rules! native_class {
             @{$($clsbody)*}
             [$($methods)*
                 $crate::class_loader::RawMethod {
-                    access_flags: jvmrs_lib::access!(public native) | $crate::maybe_static!($($this)?),
-                    name: $crate::fn_name!($fn_name).into(),
+                    access_flags: jvmrs_lib::access!(public native) | $crate::native_class!(@maybe_static $($this)?),
+                    name: $crate::native_class!(@fn_name $fn_name).into(),
                     descriptor: jvmrs_lib::MethodDescriptor {
                         parameters: vec![$($crate::virtual_machine::native::field::Field::as_field($paramty)),*],
-                        return_type: $crate::return_type!($($ret)?),
-                        parameter_size: $crate::parameter_size!($($paramty,)*),
+                        return_type: $crate::native_class!(@return_type $($ret)?),
+                        parameter_size: $crate::native_class!(@param_size $($paramty,)*),
                     },
-                    code: $crate::class_loader::RawCode::native($crate::virtual_machine::native::field::Field::make_native($crate::ret!($($ret)?), move |$thread: &mut $crate::virtual_machine::Thread, args: [u32; $crate::parameter_size!($($paramty,)*) + $crate::has_this!($($this)?)], $verbose| {
+                    code: $crate::class_loader::RawCode::native($crate::virtual_machine::native::field::Field::make_native($crate::native_class!(@ret $($ret)?), move |$thread: &mut $crate::virtual_machine::Thread, args: [u32; $crate::native_class!(@param_size $($paramty,)*) + $crate::native_class!(@any $($this)?)], $verbose| {
                         let mut argc: usize = 0;
                         $(
                             let $this = args[0];
@@ -191,7 +114,7 @@ macro_rules! native_class {
                         )?
                         $(
                             let $param = $crate::virtual_machine::native::field::Field::get_parameter(&$paramty,$thread, argc, &args);
-                            argc += $crate::parameter_size!($paramty,);
+                            argc += $crate::native_class!(@param_size $paramty,);
                         )*
                         // shut up the compiler warning for unused variable
                         let _ = argc;
@@ -212,6 +135,37 @@ macro_rules! native_class {
 
     (@super $supcls:literal) => {$supcls.into()};
     (@super) => {"java/lang/Object".into()};
+
+
+    (@maybe_static) => {jvmrs_lib::access!()};
+    (@maybe_static $($t:tt)+) => {jvmrs_lib::access!(static)};
+
+    (@fn_name $name:ident) => {stringify!($name)};
+    (@fn_name $name:literal) => {$name};
+
+    (@ret) => {$crate::virtual_machine::native::field::Void};
+    (@ret $pty:expr) => {$pty};
+
+    (@return_type ) => {::core::option::Option::None};
+    (@return_type $pty:expr) => {
+        ::core::option::Option::Some($crate::virtual_machine::native::field::Field::as_field(
+            $pty,
+        ))
+    };
+
+    (@any $($any:tt)+) => {1};
+    (@any) => {0};
+
+    (@param_size Double, $($rest:tt,)*) => {{
+        2 + $crate::native_class!(@param_size $($rest,)*)
+    }};
+    (@param_size Long, $($rest:tt,)*) => {{
+        2 + $crate::native_class!(@param_size $($rest,)*)
+    }};
+    (@param_size $pty:tt, $($rest:tt,)*) => {{
+        1 + $crate::native_class!(@param_size $($rest,)*)
+    }};
+    (@param_size ) => {0};
 }
 
 /// Execute instructions until the current stack frame returns
