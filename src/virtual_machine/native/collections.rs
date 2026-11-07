@@ -7,7 +7,7 @@ use jvmrs_lib::{access, field, method};
 use crate::virtual_machine::native::field::{Boolean, Int, ObjectField, StringField};
 use crate::{
     class::{
-        code::{native_property, NativeDoubleMethod, NativeSingleMethod, NativeVoid},
+        code::{NativeDoubleMethod, NativeSingleMethod},
         Field,
     },
     class_loader::{RawClass, RawCode, RawMethod},
