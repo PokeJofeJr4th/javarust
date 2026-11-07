@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use jvmrs_lib::{access, FieldType};
+use jvmrs_lib::FieldType;
 
 use crate::native_class;
 use crate::virtual_machine::native::field::{ArrayField, ObjectField, StringField};

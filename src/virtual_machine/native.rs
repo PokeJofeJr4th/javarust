@@ -107,6 +107,7 @@ macro_rules! native_class {
                         parameter_size: $crate::native_class!(@param_size $($paramty,)*),
                     },
                     code: $crate::class_loader::RawCode::native($crate::virtual_machine::native::field::Field::make_native($crate::native_class!(@ret $($ret)?), move |$thread: &mut $crate::virtual_machine::Thread, args: [u32; $crate::native_class!(@param_size $($paramty,)*) + $crate::native_class!(@any $($this)?)], $verbose| {
+                        #[allow(unused_mut)]
                         let mut argc: usize = 0;
                         $(
                             let $this = args[0];
@@ -117,7 +118,7 @@ macro_rules! native_class {
                             argc += $crate::native_class!(@param_size $paramty,);
                         )*
                         // shut up the compiler warning for unused variable
-                        let _ = argc;
+                        let _ = (argc, args);
 
                         $($body)*
                     })),
