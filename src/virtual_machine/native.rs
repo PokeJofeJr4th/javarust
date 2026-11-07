@@ -23,7 +23,7 @@ use super::{
     Thread,
 };
 
-use field::{Char, Int, ObjectField, StringField};
+use field::{Char, Int, StringField};
 use primitives::make_primitives;
 
 pub mod arrays;
@@ -59,7 +59,7 @@ macro_rules! native_class {
     }),*]};
 
     (@{
-            fn $fn_name:tt($(&$this:ident$(,)?)?$($param:ident: $paramty:ident),*) $(->$ret:ident)?; $($clsbody:tt)*
+            fn $fn_name:tt($(&$this:ident$(,)?)?$($param:ident: $paramty:ident$(::$paramsegment:ident)*),*) $(->$retty:ident$(::$retsegment:ident)*)?; $($clsbody:tt)*
         }
         [$($methods:tt)*]
         $class:ident
@@ -72,8 +72,8 @@ macro_rules! native_class {
                     access_flags: jvmrs_lib::access!(public abstract native) | $crate::native_class!(@maybe_static $($this)?),
                     name: $crate::native_class!(@fn_name $fn_name).into(),
                     descriptor: jvmrs_lib::MethodDescriptor {
-                        parameters: vec![$($crate::virtual_machine::native::field::Field::as_field($paramty)),*],
-                        return_type: $crate::native_class!(@return_type $($ret)?),
+                        parameters: vec![$($crate::virtual_machine::native::field::Field::as_field($crate::native_class!(@parse_type $paramty$(::$paramsegment)*))),*],
+                        return_type: $crate::native_class!(@return_type $($retty$(::$retsegment)*)?),
                         parameter_size: $crate::native_class!(@param_size $($paramty,)*),
                     },
                     code: $crate::class_loader::RawCode::Abstract,
@@ -86,7 +86,7 @@ macro_rules! native_class {
     };
 
     (@{
-            fn $fn_name:tt($(&$this:ident$(,)?)?$($param:ident: $paramty:ident),*) $(->$ret:ident)? {
+            fn $fn_name:tt($(&$this:ident$(,)?)?$($param:ident: $paramty:ident$(::$paramsegment:ident)*),*) $(->$retty:ident$(::$retsegment:ident)*)? {
                 use $thread:ident, $verbose:ident;
                 $($body:tt)*
             } $($clsbody:tt)*
@@ -102,11 +102,11 @@ macro_rules! native_class {
                     access_flags: jvmrs_lib::access!(public native) | $crate::native_class!(@maybe_static $($this)?),
                     name: $crate::native_class!(@fn_name $fn_name).into(),
                     descriptor: jvmrs_lib::MethodDescriptor {
-                        parameters: vec![$($crate::virtual_machine::native::field::Field::as_field($paramty)),*],
-                        return_type: $crate::native_class!(@return_type $($ret)?),
+                        parameters: vec![$($crate::virtual_machine::native::field::Field::as_field($crate::native_class!(@parse_type $paramty$(::$paramsegment)*))),*],
+                        return_type: $crate::native_class!(@return_type $($retty$(::$retsegment)*)?),
                         parameter_size: $crate::native_class!(@param_size $($paramty,)*),
                     },
-                    code: $crate::class_loader::RawCode::native($crate::virtual_machine::native::field::Field::make_native($crate::native_class!(@ret $($ret)?), move |$thread: &mut $crate::virtual_machine::Thread, args: [u32; $crate::native_class!(@param_size $($paramty,)*) + $crate::native_class!(@any $($this)?)], $verbose| {
+                    code: $crate::class_loader::RawCode::native($crate::virtual_machine::native::field::Field::make_native($crate::native_class!(@ret $($retty$(::$retsegment)*)?), move |$thread: &mut $crate::virtual_machine::Thread, args: [u32; $crate::native_class!(@param_size $($paramty,)*) + $crate::native_class!(@any $($this)?)], $verbose| {
                         #[allow(unused_mut)]
                         let mut argc: usize = 0;
                         $(
@@ -114,7 +114,7 @@ macro_rules! native_class {
                             argc += 1;
                         )?
                         $(
-                            let $param = $crate::virtual_machine::native::field::Field::get_parameter(&$paramty,$thread, argc, &args);
+                            let $param = $crate::virtual_machine::native::field::Field::get_parameter(&$crate::native_class!(@parse_type $paramty$(::$paramsegment)*), $thread, argc, &args);
                             argc += $crate::native_class!(@param_size $paramty,);
                         )*
                         // shut up the compiler warning for unused variable
@@ -145,12 +145,12 @@ macro_rules! native_class {
     (@fn_name $name:literal) => {$name};
 
     (@ret) => {$crate::virtual_machine::native::field::Void};
-    (@ret $pty:expr) => {$pty};
+    (@ret $($pty:tt)*) => {$crate::native_class!(@parse_type $($pty)*)};
 
     (@return_type ) => {::core::option::Option::None};
-    (@return_type $pty:expr) => {
+    (@return_type $($pty:tt)*) => {
         ::core::option::Option::Some($crate::virtual_machine::native::field::Field::as_field(
-            $pty,
+            $crate::native_class!(@parse_type $($pty)*),
         ))
     };
 
@@ -167,6 +167,9 @@ macro_rules! native_class {
         1 + $crate::native_class!(@param_size $($rest,)*)
     }};
     (@param_size ) => {0};
+
+    (@parse_type $ty:ident) => {$ty};
+    (@parse_type $ty:ident$(::$segment:ident)+) => {$crate::virtual_machine::native::field::ObjectField(concat!(stringify!($ty), $("/", stringify!($segment),)*))};
 }
 
 /// Execute instructions until the current stack frame returns
@@ -237,9 +240,6 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     let java_lang_object: Arc<str> = Arc::from("java/lang/Object");
     let java_lang_string: Arc<str> = Arc::from("java/lang/String");
 
-    let object_field = ObjectField("java/lang/Object");
-    let class_field = ObjectField("java/lang/Class");
-
     class_area.extend(native_class!(
         use method_area;
 
@@ -249,7 +249,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 Ok(())
             }
 
-            fn getClass(&this) -> class_field {
+            fn getClass(&this) -> java::lang::Class {
                 use thread, _verbose;
                 let obj_class = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.class.clone())?;
                 Ok(get_class(&thread.heap, &thread.class_area, obj_class))
@@ -270,7 +270,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         }
 
         impl "java/util/Objects" {
-            fn requireNonNull(object: object_field) -> object_field {
+            fn requireNonNull(object: java::lang::Object) -> java::lang::Object {
                 use _thread, _verbose;
                 assert!(object != 0);
                 Ok(object)

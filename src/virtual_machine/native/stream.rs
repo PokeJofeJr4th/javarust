@@ -5,10 +5,7 @@ use jvmrs_lib::method;
 use crate::{
     data::{WorkingClassArea, WorkingMethodArea},
     native_class,
-    virtual_machine::{
-        native::field::{Boolean, ObjectField},
-        object::ObjectFinder,
-    },
+    virtual_machine::{native::field::Boolean, object::ObjectFinder},
 };
 
 use super::function::Optional;
@@ -19,22 +16,15 @@ pub(super) fn add_native_methods(
     class_area: &mut WorkingClassArea,
     java_lang_object: &Arc<str>,
 ) {
-    let object_field = ObjectField("java/lang/Object");
-    let predicate_field = ObjectField("java/util/function/Predicate");
-    let stream_field = ObjectField("java/util/stream/Stream");
-    let optional_field = ObjectField("java/util/Optional");
-    let consumer_field = ObjectField("java/util/function/Consumer");
-    let supplier_field = ObjectField("java/util/function/Supplier");
-    let function_field = ObjectField("java/util/function/Function");
     let accept_descriptor = method!(((Object(java_lang_object.clone()))) -> void);
     let apply_descriptor =
         method!(((Object(java_lang_object.clone()))) -> Object("java/lang/Object".into()));
     class_area.extend(native_class! {
         use method_area;
         impl "java/util/stream/Stream" {
-            fn "$next"(&_this) -> object_field;
+            fn "$next"(&_this) -> java::lang::Object;
 
-            fn allMatch(&this, predicate: predicate_field) -> Boolean {
+            fn allMatch(&this, predicate: java::util::function::Predicate) -> Boolean {
                 use thread, verbose;
                 loop {
                     // execute .$next()
@@ -75,7 +65,7 @@ pub(super) fn add_native_methods(
                 }
             }
 
-            fn anyMatch(&this, predicate: predicate_field) -> Boolean {
+            fn anyMatch(&this, predicate: java::util::function::Predicate) -> Boolean {
                 use thread, verbose;
                 loop {
                     // execute .$next()
@@ -113,7 +103,7 @@ pub(super) fn add_native_methods(
                 }
             }
 
-            fn noneMatch(&this, predicate: predicate_field) -> Boolean {
+            fn noneMatch(&this, predicate: java::util::function::Predicate) -> Boolean {
                 use thread, verbose;
                 loop {
                     super::resolve_and_invoke(thread, this, "$next", &method!(() -> Object("java/lang/Object".into())), verbose)?;
@@ -141,7 +131,7 @@ pub(super) fn add_native_methods(
                 }
             }
 
-            fn empty() -> stream_field {
+            fn empty() -> java::util::stream::Stream {
                 use thread, _verbose;
                 let invoke = jvmrs_lib::MethodHandle::InvokeStatic {
                     class: Arc::from("java/util/Optional"),
@@ -159,7 +149,7 @@ pub(super) fn add_native_methods(
                 Ok(idx)
             }
 
-            fn "$filter"(stream: stream_field, predicate: predicate_field) -> optional_field {
+            fn "$filter"(stream: java::util::stream::Stream, predicate: java::util::function::Predicate) -> java::util::Optional {
                 use thread, verbose;
                 loop {
                     super::resolve_and_invoke(thread, stream, "$next", &method!(() -> Object("java/lang/Object".into())), verbose)?;
@@ -191,7 +181,7 @@ pub(super) fn add_native_methods(
                 }
             }
 
-            fn filter(&this, predicate: predicate_field) -> stream_field {
+            fn filter(&this, predicate: java::util::function::Predicate) -> java::util::stream::Stream {
                 use thread, _verbose;
                 let invoke = jvmrs_lib::MethodHandle::InvokeStatic {
                     class: Arc::from("java/util/stream/Stream"),
@@ -209,7 +199,7 @@ pub(super) fn add_native_methods(
                 Ok(idx)
             }
 
-            fn forEach(&this, consumer: consumer_field) {
+            fn forEach(&this, consumer: java::util::function::Consumer) {
                 use thread, verbose;
                 loop {
                     super::resolve_and_invoke(thread, this, "$next", &method!(() -> Object("java/lang/Object".into())), verbose)?;
@@ -235,7 +225,7 @@ pub(super) fn add_native_methods(
                 }
             }
 
-            fn "$generate"(supplier: supplier_field) -> object_field {
+            fn "$generate"(supplier: java::util::function::Supplier) -> java::lang::Object {
                 use thread, verbose;
                 super::resolve_and_invoke(thread, supplier, "get", &method!(() -> Object("java/lang/Object".into())), verbose)?;
                 thread.stackframe.locals[0] = supplier;
@@ -243,7 +233,7 @@ pub(super) fn add_native_methods(
                 Ok(thread.stackframe.operand_stack.pop().unwrap())
             }
 
-            fn generate(supplier: supplier_field) -> stream_field {
+            fn generate(supplier: java::util::function::Supplier) -> java::util::stream::Stream {
                 use thread, _verbose;
                 let invoke = jvmrs_lib::MethodHandle::InvokeStatic {
                     class: Arc::from("java/util/stream/Stream"),
@@ -261,7 +251,7 @@ pub(super) fn add_native_methods(
                 Ok(idx)
             }
 
-            fn "$map"(this: stream_field, func: function_field) -> object_field {
+            fn "$map"(this: java::util::stream::Stream, func: java::util::function::Function) -> java::lang::Object {
                 use thread, verbose;
                 // Get the next thing from the inner iterator
                 super::resolve_and_invoke(thread, this, "$next", &method!(() -> Object("java/lang/Object".into())), verbose)?;
@@ -288,7 +278,7 @@ pub(super) fn add_native_methods(
                 Ok(opt_ret)
             }
 
-            fn map(&this, function: function_field) -> stream_field {
+            fn map(&this, function: java::util::function::Function) -> java::util::stream::Stream {
                 use thread, _verbose;
                 let invoke = jvmrs_lib::MethodHandle::InvokeStatic {
                     class: Arc::from("java/util/stream/Stream"),

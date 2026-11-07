@@ -4,7 +4,7 @@ use std::{collections::HashMap, fmt::Write};
 
 use jvmrs_lib::{access, field, method};
 
-use crate::virtual_machine::native::field::{Boolean, Int, ObjectField, StringField};
+use crate::virtual_machine::native::field::{Boolean, Int, StringField};
 use crate::{
     class::{
         code::{NativeDoubleMethod, NativeSingleMethod},
@@ -29,9 +29,6 @@ pub fn add_native_collections(
     java_lang_object: &Arc<str>,
     java_lang_string: &Arc<str>,
 ) {
-    let object_field = ObjectField("java/lang/Object");
-    let comparator_field = ObjectField("java/util/Comparator");
-    let stream_field = ObjectField("java/util/stream/Stream");
     let compare_descriptor =
         method!(((Object("java/lang/Object".into())), (Object("java/lang/Object".into()))) -> int);
     let to_string_descriptor = method!(() -> Object(java_lang_string.clone()));
@@ -51,7 +48,7 @@ pub fn add_native_collections(
                 HashMapObj::inspect(&thread.heap, this as usize, |m| m.len() as i32)
             }
 
-            fn put(&this, key: object_field, value: object_field) -> object_field {
+            fn put(&this, key: java::lang::Object, value: java::lang::Object) -> java::lang::Object {
                 use thread, verbose;
                 super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
@@ -64,7 +61,7 @@ pub fn add_native_collections(
                 .map(Option::unwrap_or_default)
             }
 
-            fn get(&this, key: object_field) -> object_field {
+            fn get(&this, key: java::lang::Object) -> java::lang::Object {
                 use thread, verbose;
                 super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
@@ -89,7 +86,7 @@ pub fn add_native_collections(
                 HashSetObj::inspect(&thread.heap, this as usize, |this| this.len() as i32)
             }
 
-            fn add(&this, key: object_field) -> Boolean {
+            fn add(&this, key: java::lang::Object) -> Boolean {
                 use thread, verbose;
                 super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
@@ -99,7 +96,7 @@ pub fn add_native_collections(
                 HashSetObj::inspect(&thread.heap, this as usize, |set| set.insert(hash_code))
             }
 
-            fn contains(&this, key: object_field) -> Boolean {
+            fn contains(&this, key: java::lang::Object) -> Boolean {
                 use thread, verbose;
                 super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
@@ -117,7 +114,7 @@ pub fn add_native_collections(
                 AnyObj.inspect(&thread.heap, this as usize, |o| o.native_fields.push(Box::new(Vec::<u32>::new())))
             }
 
-            fn add(&this, ptr: object_field) -> Boolean {
+            fn add(&this, ptr: java::lang::Object) -> Boolean {
                 use thread, _verbose;
                 ArrayListObj::inspect(&thread.heap, this as usize, |o| o.push(ptr))?;
                 Ok(true)
@@ -128,7 +125,7 @@ pub fn add_native_collections(
                 ArrayListObj::inspect(&thread.heap, this as usize, |o| o.len() as i32)
             }
 
-            fn sort(&this, cmp: comparator_field) {
+            fn sort(&this, cmp: java::util::Comparator) {
                 use thread, verbose;
                 let length =
                     ArrayListObj::inspect(&thread.heap, this as usize, |arrlist| arrlist.len())?;
@@ -198,7 +195,7 @@ pub fn add_native_collections(
                 Ok(Arc::from(str))
             }
 
-            fn stream(&this) -> stream_field {
+            fn stream(&this) -> java::util::stream::Stream {
                 use thread, verbose;
                 let array_stream = thread
                     .class_area
@@ -215,7 +212,7 @@ pub fn add_native_collections(
         }
 
         impl(abstract) "java/util/Comparator" {
-            fn compare(&this, first: object_field, second: object_field) -> Boolean;
+            fn compare(&this, first: java::lang::Object, second: java::lang::Object) -> Boolean;
         }
     ));
 
