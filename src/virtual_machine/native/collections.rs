@@ -213,6 +213,10 @@ pub fn add_native_collections(
                 Ok(stream_idx)
             }
         }
+
+        impl(abstract) "java/util/Comparator" {
+            fn compare(&this, first: object_field, second: object_field) -> Boolean;
+        }
     ));
 
     let mut array_stream = RawClass::new(
@@ -296,20 +300,5 @@ pub fn add_native_collections(
         .push("java/util/stream/Stream".into());
     array_stream.register_methods([arr_stream_next, arr_stream_count], method_area);
 
-    let mut comparator = RawClass::new(
-        access!(public abstract native),
-        "java/util/Comparator".into(),
-        java_lang_object.clone(),
-    );
-    let compare = RawMethod {
-        name: "compare".into(),
-        access_flags: access!(public native),
-        descriptor: method!(((Object(java_lang_object.clone())), (Object(java_lang_object.clone()))) -> boolean),
-        code: RawCode::Abstract,
-        ..Default::default()
-    };
-
-    comparator.register_method(compare, method_area);
-
-    class_area.extend([comparator, array_stream]);
+    class_area.extend([array_stream]);
 }

@@ -113,8 +113,8 @@ macro_rules! fn_name {
 
 #[macro_export]
 macro_rules! native_class {
-    (let $method_area:ident; $(impl $cls:literal $($supcls:literal)?{$($clsbody:tt)*})*) => {[$({
-        let mut class = $crate::class_loader::RawClass::new(access!(public native), $cls.into(), native_class!(@super $($supcls)?));
+    (let $method_area:ident; $(impl$(($($access:tt)*))? $cls:literal $(($supcls:literal))?{$($clsbody:tt)*})*) => {[$({
+        let mut class = $crate::class_loader::RawClass::new(access!(public native $($($access)*)?), $cls.into(), native_class!(@super $($supcls)?));
         class.register_methods(native_class!{
             @nonstatic {$($clsbody)*}
             access!()[]
@@ -125,6 +125,30 @@ macro_rules! native_class {
     (@$isstatic:ident {static $($clsbody:tt)*} access!($($access:tt)*)[$($prev:tt)*]) => {
         native_class!{
             @isstatic {$($clsbody)*} access!($($access)* static) [$($prev)*]
+        }
+    };
+    (@$isstatic:ident {
+            fn $fn_name:tt($(&$this:ident$(,)?)?$($param:ident: $paramty:ident),*) $(->$ret:ident)?; $($clsbody:tt)*
+        }
+        access!($($access:tt)*)
+        [$($prev:tt)*]
+    ) => {
+        native_class!{
+            @nonstatic {$($clsbody)*}
+            access!()
+            [$($prev)*
+                $crate::class_loader::RawMethod {
+                    access_flags: jvmrs_lib::access!(public abstract native $($access)*),
+                    name: $crate::fn_name!($fn_name).into(),
+                    descriptor: jvmrs_lib::MethodDescriptor {
+                        parameters: vec![$($crate::virtual_machine::native::field::Field::as_field($paramty)),*],
+                        return_type: $crate::return_type!($($ret)?),
+                        parameter_size: $crate::parameter_size!($($paramty,)*),
+                    },
+                    code: $crate::class_loader::RawCode::Abstract,
+                    ..::core::default::Default::default()
+                },
+            ]
         }
     };
 
