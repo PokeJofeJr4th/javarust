@@ -142,38 +142,38 @@ pub fn add_native_methods(
     let double_arr = ArrayField(super::field::Double);
     let obj_arr = ArrayField(ObjectField("java/lang/Object"));
     let [array, mut arrays] = native_class! {
-        let method_area;
+        use method_area;
 
         impl "java/lang/Array" {}
 
         impl "java/util/Arrays" {
             fn toString(this: int_arr) -> StringField {
-                let thread, verbose;
+                use thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
             fn toString(this: long_arr) -> StringField {
-                let thread, verbose;
+                use thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
             fn toString(this: float_arr) -> StringField {
-                let thread, verbose;
+                use thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
             fn toString(this: double_arr) -> StringField {
-                let thread, verbose;
+                use thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
             fn toString(this: obj_arr) -> StringField {
-                let thread, verbose;
+                use thread, verbose;
                 to_string(thread, [this], verbose)
             }
 
             fn deepToString(this: obj_arr) -> StringField {
-                let thread, verbose;
+                use thread, verbose;
                 deep_to_string(thread, [this], verbose)
             }
         }

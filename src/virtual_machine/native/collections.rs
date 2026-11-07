@@ -36,23 +36,23 @@ pub fn add_native_collections(
         method!(((Object("java/lang/Object".into())), (Object("java/lang/Object".into()))) -> int);
     let to_string_descriptor = method!(() -> Object(java_lang_string.clone()));
     class_area.extend(native_class!(
-        let method_area;
+        use method_area;
 
         impl "java/util/HashMap" {
             fn "<init>"(&this) {
-                let thread, _verbose;
+                use thread, _verbose;
                 AnyObj.inspect(&thread.heap, this as usize, |obj| {
                     obj.native_fields.push(Box::<HashMap<u32, u32>>::default());
                 })
             }
 
             fn size(&this) -> Int {
-                let thread, _verbose;
+                use thread, _verbose;
                 HashMapObj::inspect(&thread.heap, this as usize, |m| m.len() as i32)
             }
 
             fn put(&this, key: object_field, value: object_field) -> object_field {
-                let thread, verbose;
+                use thread, verbose;
                 super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
                 super::run_until_return(thread, verbose)?;
@@ -65,7 +65,7 @@ pub fn add_native_collections(
             }
 
             fn get(&this, key: object_field) -> object_field {
-                let thread, verbose;
+                use thread, verbose;
                 super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
                 super::run_until_return(thread, verbose)?;
@@ -80,17 +80,17 @@ pub fn add_native_collections(
 
         impl "java/util/HashSet" {
             fn "<init>"(&this) {
-                let thread, _verbose;
+                use thread, _verbose;
                 AnyObj.inspect(&thread.heap, this as usize, |o| o.native_fields.push(Box::<HashSet<u32>>::default()))
             }
 
             fn size(&this) -> Int {
-                let thread, _verbose;
+                use thread, _verbose;
                 HashSetObj::inspect(&thread.heap, this as usize, |this| this.len() as i32)
             }
 
             fn add(&this, key: object_field) -> Boolean {
-                let thread, verbose;
+                use thread, verbose;
                 super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
                 super::run_until_return(thread, verbose)?;
@@ -100,7 +100,7 @@ pub fn add_native_collections(
             }
 
             fn contains(&this, key: object_field) -> Boolean {
-                let thread, verbose;
+                use thread, verbose;
                 super::resolve_and_invoke(thread, key, "hashCode", &method!(() -> int), verbose)?;
                 thread.stackframe.locals[0] = key;
                 super::run_until_return(thread, verbose)?;
@@ -113,23 +113,23 @@ pub fn add_native_collections(
 
         impl "java/util/ArrayList" {
             fn "<init>"(&this) {
-                let thread, _verbose;
+                use thread, _verbose;
                 AnyObj.inspect(&thread.heap, this as usize, |o| o.native_fields.push(Box::new(Vec::<u32>::new())))
             }
 
             fn add(&this, ptr: object_field) -> Boolean {
-                let thread, _verbose;
+                use thread, _verbose;
                 ArrayListObj::inspect(&thread.heap, this as usize, |o| o.push(ptr))?;
                 Ok(true)
             }
 
             fn size(&this) -> Int {
-                let thread, _verbose;
+                use thread, _verbose;
                 ArrayListObj::inspect(&thread.heap, this as usize, |o| o.len() as i32)
             }
 
             fn sort(&this, cmp: comparator_field) {
-                let thread, verbose;
+                use thread, verbose;
                 let length =
                     ArrayListObj::inspect(&thread.heap, this as usize, |arrlist| arrlist.len())?;
                 for partition in 1..length {
@@ -172,7 +172,7 @@ pub fn add_native_collections(
             }
 
             fn toString(&this) -> StringField {
-                let thread, verbose;
+                use thread, verbose;
                 let mut str = String::from("[");
                 let length = ArrayListObj::inspect(&thread.heap, this as usize, |vec| vec.len() as u32)?;
                 for index in 0..length {
@@ -199,7 +199,7 @@ pub fn add_native_collections(
             }
 
             fn stream(&this) -> stream_field {
-                let thread, verbose;
+                use thread, verbose;
                 let array_stream = thread
                     .class_area
                     .search("java/util/ArrayList$Stream")
