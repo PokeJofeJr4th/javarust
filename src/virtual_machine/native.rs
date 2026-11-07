@@ -126,20 +126,24 @@ macro_rules! maybe_static {
 macro_rules! native_class {
     (use $method_area:ident; $(impl$(($($access:tt)*))? $cls:literal $(($supcls:literal))?{$($clsbody:tt)*})*) => {[$({
         let mut class = $crate::class_loader::RawClass::new(access!(public native $($($access)*)?), $cls.into(), native_class!(@super $($supcls)?));
-        class.register_methods(native_class!{
-            @methods{$($clsbody)*}
+        native_class!{
+            @{$($clsbody)*}
             []
-        }, $method_area);
+            class
+            $method_area
+        }
         class
     }),*]};
 
-    (@methods{
+    (@{
             fn $fn_name:tt($(&$this:ident$(,)?)?$($param:ident: $paramty:ident),*) $(->$ret:ident)?; $($clsbody:tt)*
         }
         [$($methods:tt)*]
+        $class:ident
+        $method_area:ident
     ) => {
         native_class!{
-            @methods{$($clsbody)*}
+            @{$($clsbody)*}
             [$($methods)*
                 $crate::class_loader::RawMethod {
                     access_flags: jvmrs_lib::access!(public abstract native) | $crate::maybe_static!($($this)?),
@@ -153,19 +157,23 @@ macro_rules! native_class {
                     ..::core::default::Default::default()
                 },
             ]
+            $class
+            $method_area
         }
     };
 
-    (@methods{
+    (@{
             fn $fn_name:tt($(&$this:ident$(,)?)?$($param:ident: $paramty:ident),*) $(->$ret:ident)? {
                 use $thread:ident, $verbose:ident;
                 $($body:tt)*
             } $($clsbody:tt)*
         }
         [$($methods:tt)*]
+        $class:ident
+        $method_area:ident
     ) => {
         native_class!{
-            @methods{$($clsbody)*}
+            @{$($clsbody)*}
             [$($methods)*
                 $crate::class_loader::RawMethod {
                     access_flags: jvmrs_lib::access!(public native) | $crate::maybe_static!($($this)?),
@@ -193,10 +201,14 @@ macro_rules! native_class {
                     ..::core::default::Default::default()
                 },
             ]
+            $class
+            $method_area
         }
     };
 
-    (@methods{}[$($methods:tt)*]) => {[$($methods)*]};
+    (@{}[$($methods:tt)*]$class:ident$method_area:ident) => {
+        $class.register_methods([$($methods)*], $method_area);
+    };
 
     (@super $supcls:literal) => {$supcls.into()};
     (@super) => {"java/lang/Object".into()};
