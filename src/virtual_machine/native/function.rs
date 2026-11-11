@@ -8,7 +8,8 @@ use crate::{
         Field,
     },
     class_loader::{RawClass, RawCode, RawMethod},
-    data::{WorkingClassArea, WorkingMethodArea},
+    data::{WorkingClassArea, WorkingMethodArea, NULL},
+    native_class,
     virtual_machine::{
         object::{AnyObj, LambdaOverride, Object, ObjectFinder, StringObj},
         Thread,
@@ -83,154 +84,49 @@ pub(super) fn add_native_methods(
     java_lang_object: &Arc<str>,
     java_lang_string: &Arc<str>,
 ) {
-    let mut function = RawClass::new(
-        access!(public native abstract),
-        "java/util/function/Function".into(),
-        java_lang_object.clone(),
-    );
-    function.static_data.extend([0, 0]);
-    function.statics.extend([(
-        Field {
-            access_flags: access!(public static),
-            name: "$IDENTITY".into(),
-            descriptor: field!(Object(function.this.clone())),
-            ..Default::default()
-        },
-        0,
-    )]);
+    class_area.extend(native_class!{
+        use method_area;
 
-    let apply = RawMethod {
-        name: "apply".into(),
-        access_flags: access!(public abstract),
-        descriptor: method!(((Object(java_lang_object.clone()))) -> Object(java_lang_object.clone())),
-        code: RawCode::Abstract,
-        ..Default::default()
-    };
-    let apply_name = apply.name.clone();
-    let apply_signature = apply.descriptor.clone();
-    let compose_lambda = {
-        let apply_signature = apply_signature.clone();
-        RawMethod {
-            name: "$compose".into(),
-            access_flags: access!(public static native),
-            descriptor: method!(((Object(function.this.clone())), (Object(function.this.clone())), (Object(java_lang_object.clone()))) -> Object(java_lang_object.clone())),
-            code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread,
-                      [first_fn_ptr, second_fn_ptr, arg]: [u32; 3],
-                      verbose| {
-                    // Run the first function
-                    super::resolve_and_invoke(
-                        thread,
-                        first_fn_ptr,
-                        "apply",
-                        &apply_signature,
-                        verbose,
-                    )?;
-                    thread.stackframe.locals[0] = first_fn_ptr;
-                    thread.stackframe.locals[1] = arg;
-                    super::run_until_return(thread, verbose)?;
-                    // get the first value returned
-                    let first_return = thread.stackframe.operand_stack.pop().unwrap();
+        impl java::util::function::Function {
+            static "$IDENTITY": java::util::function::Function = NULL;
 
-                    // Run the second function
-                    super::resolve_and_invoke(
-                        thread,
-                        second_fn_ptr,
-                        "apply",
-                        &apply_signature,
-                        verbose,
-                    )?;
-                    thread.stackframe.locals[0] = second_fn_ptr;
-                    thread.stackframe.locals[1] = first_return;
-                    super::run_until_return(thread, verbose)?;
+            fn apply(&this, val: java::lang::Object) -> java::lang::Object;
 
-                    // Return the result
-                    Ok(thread.stackframe.operand_stack.pop().unwrap())
-                },
-            )),
-            ..Default::default()
-        }
-    };
-    let compose = {
-        let function_this = function.this.clone();
-        let apply_name = apply.name.clone();
-        let apply_signature = apply.descriptor.clone();
-        let compose_handle = MethodHandle::InvokeStatic {
-            class: function_this.clone(),
-            name: "$compose".into(),
-            method_type: compose_lambda.descriptor.clone(),
-        };
-        RawMethod {
-            name: "compose".into(),
-            access_flags: access!(public native),
-            descriptor: method!(((Object(function.this.clone()))) -> Object(function.this.clone())),
-            code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [this, before]: [u32; 2], _verbose| {
-                    let function_class = thread.class_area.search(&function_this).unwrap();
-                    let lambda_object = LambdaOverride {
-                        method_name: apply_name.clone(),
-                        method_descriptor: apply_signature.clone(),
-                        invoke: compose_handle.clone(),
-                        captures: vec![before, this],
-                    }
-                    .as_object(function_class);
-                    let idx = thread.heap.lock().unwrap().allocate(lambda_object);
-                    Ok(idx)
-                },
-            )),
-            ..Default::default()
-        }
-    };
-    let and_then = RawMethod {
-        name: "andThen".into(),
-        access_flags: access!(public native),
-        descriptor: method!(((Object(function.this.clone()))) -> Object(function.this.clone())),
-        code: RawCode::native(make_lambda_override::<2>(
-            apply.name.clone(),
-            apply.descriptor.clone(),
-            function.this.clone(),
-            compose_lambda.name.clone(),
-            compose_lambda.descriptor.clone(),
-            function.this.clone(),
-        )),
-        ..Default::default()
-    };
-    let function_clinit = {
-        let function_this = function.this.clone();
-        let identity_override = LambdaOverride {
-            method_name: apply_name,
-            method_descriptor: apply_signature,
-            invoke: MethodHandle::InvokeStatic {
-                class: function.this.clone(),
-                name: "$identity".into(),
-                method_type: method!(((Object(java_lang_object.clone()))) -> Object(java_lang_object.clone())),
-            },
-            captures: Vec::new(),
-        };
-        RawMethod::clinit(move |thread: &mut Thread, []: [u32; 0], _verbose| {
-            let class = thread.class_area.search(&function_this).unwrap();
-            let identity_lambda = Object {
-                fields: Vec::new(),
-                native_fields: vec![Box::new(identity_override.clone())],
-                class,
-            };
-            let idx = thread.heap.lock().unwrap().allocate(identity_lambda);
-            thread
-                .class_area
-                .search("java/util/function/Function")
-                .unwrap()
-                .static_data
-                .lock()
-                .unwrap()[0] = idx;
-            Ok(())
-        })
-    };
-    let identity = RawMethod {
-        name: "identity".into(),
-        access_flags: access!(public static native),
-        descriptor: method!(() -> Object(function.this.clone())),
-        code: RawCode::native(NativeSingleMethod(
-            move |thread: &mut Thread, []: [u32; 0], verbose| {
+            fn "<clinit>"() {
+                use thread, _v;
+                let class = thread.class_area.search("java/util/function/Function").unwrap();
+                let identity_lambda = Object {
+                    fields: Vec::new(),
+                    native_fields: vec![Box::new(LambdaOverride {
+                        method_name: "apply".into(),
+                        method_descriptor: method!(((Object("java/lang/Object".into()))) -> Object("java/lang/Object".into())),
+                        invoke: MethodHandle::InvokeStatic {
+                            class: "java/util/function/Function".into(),
+                            name: "$identity".into(),
+                            method_type: method!(((Object("java/lang/Object".into()))) -> Object("java/lang/Object".into())),
+                        },
+                        captures: Vec::new(),
+                    })],
+                    class,
+                };
+                let idx = thread.heap.lock().unwrap().allocate(identity_lambda);
+                thread
+                    .class_area
+                    .search("java/util/function/Function")
+                    .unwrap()
+                    .static_data
+                    .lock()
+                    .unwrap()[0] = idx;
+                Ok(())
+            }
+
+            fn "$identity"(o: java::lang::Object) -> java::lang::Object {
+                use _t, _v;
+                Ok(o)
+            }
+
+            fn identity() -> java::util::function::Function {
+                use thread, verbose;
                 let function = thread
                     .class_area
                     .search("java/util/function/Function")
@@ -240,32 +136,81 @@ pub(super) fn add_native_methods(
                 }
                 let value = function.static_data.lock().unwrap()[0];
                 Ok(value)
-            },
-        )),
-        ..Default::default()
-    };
-    let identity_lambda = RawMethod {
-        name: "$identity".into(),
-        access_flags: access!(public static native),
-        descriptor: method!(((Object(java_lang_object.clone()))) -> Object(java_lang_object.clone())),
-        code: RawCode::native(NativeSingleMethod(
-            |_thread: &mut Thread, [o]: [u32; 1], _verbose| Ok(o),
-        )),
-        ..Default::default()
-    };
+            }
 
-    function.register_methods(
-        [
-            apply,
-            and_then,
-            compose,
-            identity,
-            identity_lambda,
-            function_clinit,
-            compose_lambda,
-        ],
-        method_area,
-    );
+            fn "$compose"(
+                first_fn_ptr: java::util::function::Function,
+                second_fn_ptr: java::util::function::Function,
+                arg: java::lang::Object
+            ) -> java::lang::Object {
+                use thread, verbose;
+                // Run the first function
+                super::resolve_and_invoke(
+                    thread,
+                    first_fn_ptr,
+                    "apply",
+                    &method!(((Object("java/lang/Object".into()))) -> Object("java/lang/Object".into())),
+                    verbose,
+                )?;
+                thread.stackframe.locals[0] = first_fn_ptr;
+                thread.stackframe.locals[1] = arg;
+                super::run_until_return(thread, verbose)?;
+                // get the first value returned
+                let first_return = thread.stackframe.operand_stack.pop().unwrap();
+
+                // Run the second function
+                super::resolve_and_invoke(
+                    thread,
+                    second_fn_ptr,
+                    "apply",
+                    &method!(((Object("java/lang/Object".into()))) -> Object("java/lang/Object".into())),
+                    verbose,
+                )?;
+                thread.stackframe.locals[0] = second_fn_ptr;
+                thread.stackframe.locals[1] = first_return;
+                super::run_until_return(thread, verbose)?;
+
+                // Return the result
+                Ok(thread.stackframe.operand_stack.pop().unwrap())
+            }
+
+            fn compose(&this, before: java::util::function::Function) -> java::util::function::Function {
+                use thread, _v;
+                let function_class = thread.class_area.search("java/util/function/Function").unwrap();
+                let lambda_object = LambdaOverride {
+                    method_name: "apply".into(),
+                    method_descriptor: method!(((Object("java/lang/Object".into()))) -> Object("java/lang/Object".into())),
+                    invoke: MethodHandle::InvokeStatic {
+                        class: "java/util/function/Function".into(),
+                        name: "$compose".into(),
+                        method_type: method!(((Object("java/util/function/Function".into())), (Object("java/util/function/Function".into())), (Object("java/lang/Object".into()))) -> Object("java/lang/Object".into())),
+                    },
+                    captures: vec![before, this],
+                }
+                .as_object(function_class);
+                let idx = thread.heap.lock().unwrap().allocate(lambda_object);
+                Ok(idx)
+            }
+
+            fn andThen(&this, before: java::util::function::Function) -> java::util::function::Function {
+                use thread, _v;
+                let function_class = thread.class_area.search("java/util/function/Function").unwrap();
+                let lambda_object = LambdaOverride {
+                    method_name: "apply".into(),
+                    method_descriptor: method!(((Object("java/lang/Object".into()))) -> Object("java/lang/Object".into())),
+                    invoke: MethodHandle::InvokeStatic {
+                        class: "java/util/function/Function".into(),
+                        name: "$compose".into(),
+                        method_type: method!(((Object("java/util/function/Function".into())), (Object("java/util/function/Function".into())), (Object("java/lang/Object".into()))) -> Object("java/lang/Object".into())),
+                    },
+                    captures: vec![this, before],
+                }
+                .as_object(function_class);
+                let idx = thread.heap.lock().unwrap().allocate(lambda_object);
+                Ok(idx)
+            }
+        }
+    });
 
     let mut predicate = RawClass::new(
         access!(public native),
@@ -314,7 +259,7 @@ pub(super) fn add_native_methods(
     };
     let is_equal = {
         let equals_handle = MethodHandle::InvokeStatic {
-            class: "java/util/Objects".into(),
+            class: "java/lang/Objects".into(),
             name: "equals".into(),
             method_type: method!(((Object(java_lang_object.clone()))) -> boolean),
         };
@@ -668,7 +613,7 @@ pub(super) fn add_native_methods(
     let opt_map = RawMethod {
         name: "map".into(),
         access_flags: access!(public native),
-        descriptor: method!(((Object(function.this.clone()))) -> Object(optional.this.clone())),
+        descriptor: method!(((Object("java/util/function/Function".into()))) -> Object(optional.this.clone())),
         code: RawCode::native(NativeSingleMethod(
             move |thread: &mut Thread, [this, func]: [u32; 2], verbose| {
                 let value = AnyObj.inspect(&thread.heap, this as usize, |obj| obj.fields[0])?;
@@ -746,5 +691,5 @@ pub(super) fn add_native_methods(
     };
     consumer.register_method(consumer_accept, method_area);
 
-    class_area.extend([function, optional, predicate, consumer]);
+    class_area.extend([optional, predicate, consumer]);
 }
