@@ -1,16 +1,14 @@
 use std::sync::Arc;
 
-use jvmrs_lib::{access, field, method, MethodDescriptor, MethodHandle};
+use jvmrs_lib::{access, field, method, MethodHandle};
 
 use crate::{
-    class::{
-        code::{NativeMethod, NativeSingleMethod},
-        Field,
-    },
+    class::{code::NativeSingleMethod, Field},
     class_loader::{RawClass, RawCode, RawMethod},
     data::{WorkingClassArea, WorkingMethodArea, NULL},
     native_class,
     virtual_machine::{
+        native::field::Boolean,
         object::{AnyObj, LambdaOverride, Object, ObjectFinder, StringObj},
         Thread,
     },
@@ -44,37 +42,6 @@ impl ObjectFinder for Optional {
         object.fields[0] = value.unwrap_or(u32::MAX);
         Ok(output)
     }
-}
-
-pub fn make_lambda_override<const CAPTURES: usize>(
-    overriden_name: Arc<str>,
-    overriden_descriptor: MethodDescriptor,
-    instance_class: Arc<str>,
-    invoke_name: Arc<str>,
-    invoke_descriptor: MethodDescriptor,
-    invoke_class: Arc<str>,
-) -> impl NativeMethod {
-    let method_name = overriden_name;
-    let method_descriptor = overriden_descriptor;
-    let invoke = MethodHandle::InvokeStatic {
-        class: invoke_class,
-        name: invoke_name,
-        method_type: invoke_descriptor,
-    };
-    NativeSingleMethod(
-        move |thread: &mut Thread, caps: [u32; CAPTURES], _verbose| {
-            let class = thread.class_area.search(&instance_class).unwrap();
-            let lambda_object = LambdaOverride {
-                method_name: method_name.clone(),
-                method_descriptor: method_descriptor.clone(),
-                invoke: invoke.clone(),
-                captures: caps.to_vec(),
-            }
-            .as_object(class);
-            let idx = thread.heap.lock().unwrap().allocate(lambda_object);
-            Ok(idx)
-        },
-    )
 }
 
 #[allow(clippy::too_many_lines)]
@@ -210,176 +177,139 @@ pub(super) fn add_native_methods(
                 Ok(idx)
             }
         }
-    });
 
-    let mut predicate = RawClass::new(
-        access!(public native),
-        "java/util/function/Predicate".into(),
-        java_lang_object.clone(),
-    );
-    let predicate_test = RawMethod {
-        name: "test".into(),
-        access_flags: access!(public abstract),
-        descriptor: method!(((Object(java_lang_object.clone()))) -> boolean),
-        code: RawCode::Abstract,
-        ..Default::default()
-    };
-    let predicate_neg_lambda = {
-        let test_signature = predicate_test.descriptor.clone();
-        RawMethod {
-            name: "$negative".into(),
-            access_flags: access!(public static),
-            descriptor: method!(((Object(predicate.this.clone())), (Object(java_lang_object.clone()))) -> boolean),
-            code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [predicate, object]: [u32; 2], verbose| {
-                    super::resolve_and_invoke(thread, predicate, "test", &test_signature, verbose)?;
-                    thread.stackframe.locals[0] = predicate;
-                    thread.stackframe.locals[1] = object;
-                    super::run_until_return(thread, verbose)?;
-                    let value = thread.stackframe.operand_stack.pop().unwrap();
-                    Ok(u32::from(value == 0))
-                },
-            )),
-            ..Default::default()
+        impl java::util::function::Predicate {
+            fn test(&this, obj: java::lang::Object) -> Boolean;
+
+            fn "$negate"(predicate: java::util::function::Predicate, object: java::lang::Object) -> Boolean {
+                use thread, verbose;
+                super::resolve_and_invoke(thread, predicate, "test", &method!(((Object("java/lang/Object".into()))) -> boolean), verbose)?;
+                thread.stackframe.locals[0] = predicate;
+                thread.stackframe.locals[1] = object;
+                super::run_until_return(thread, verbose)?;
+                let value = thread.stackframe.operand_stack.pop().unwrap();
+                Ok(value == 0)
+            }
+
+            fn negate(&this) -> java::util::function::Predicate {
+                use thread, _v;
+                let invoke = MethodHandle::InvokeStatic {
+                    class: "java/util/function/Predicate".into(),
+                    name: "$negate".into(),
+                    method_type: method!(((Object("java/util/function/Predicate".into())), (Object("java/lang/Object".into()))) -> boolean),
+                };
+                let class = thread.class_area.search("java/util/function/Predicate").unwrap();
+                let lambda_object = LambdaOverride {
+                    method_name: "test".into(),
+                    method_descriptor: method!(((Object("java/lang/Object".into()))) -> boolean),
+                    invoke,
+                    captures: vec![this],
+                }
+                .as_object(class);
+                let idx = thread.heap.lock().unwrap().allocate(lambda_object);
+                Ok(idx)
+            }
+
+            fn isEqual(obj: java::lang::Object) -> java::util::function::Predicate {
+                use thread, _v;
+
+                let equals_handle = MethodHandle::InvokeStatic {
+                    class: "java/lang/Objects".into(),
+                    name: "equals".into(),
+                    method_type: method!(((Object("java/lang/Object".into()))) -> boolean),
+                };
+
+                let predicate_class = thread.class_area.search("java/util/function/Predicate").unwrap();
+                let lambda_object = LambdaOverride {
+                    method_name: "test".into(),
+                    method_descriptor: method!(((Object("java/lang/Object".into()))) -> boolean),
+                    invoke: equals_handle,
+                    captures: vec![obj],
+                }
+                .as_object(predicate_class);
+                let idx = thread.heap.lock().unwrap().allocate(lambda_object);
+                Ok(idx)
+            }
+
+            fn "$and"(
+                first: java::util::function::Predicate,
+                second: java::util::function::Predicate,
+                operand: java::lang::Object
+            ) -> Boolean {
+                use thread, verbose;
+                super::resolve_and_invoke(thread, first, "test", &method!(((Object("java/lang/Object".into()))) -> boolean), verbose)?;
+                thread.stackframe.locals[0] = first;
+                thread.stackframe.locals[1] = operand;
+                super::run_until_return(thread, verbose)?;
+                let ret = thread.stackframe.operand_stack.pop().unwrap();
+                if ret == 0 {
+                    return Ok(false);
+                }
+                super::resolve_and_invoke(thread, second, "test", &method!(((Object("java/lang/Object".into()))) -> boolean), verbose)?;
+                thread.stackframe.locals[0] = second;
+                thread.stackframe.locals[1] = operand;
+                super::run_until_return(thread, verbose)?;
+                Ok(thread.stackframe.operand_stack.pop().unwrap() > 0)
+            }
+
+            fn and(&this, other: java::util::function::Predicate) -> java::util::function::Predicate {
+                use thread, _v;
+                let predicate_class = thread.class_area.search("java/util/function/Function").unwrap();
+                let lambda_object = LambdaOverride {
+                    method_name: "test".into(),
+                    method_descriptor: method!(((Object("java/lang/Object".into()))) -> boolean),
+                    invoke: MethodHandle::InvokeStatic {
+                        class: "java/util/function/Predicate".into(),
+                        name: "$and".into(),
+                        method_type: method!(((Object("java/util/function/Predicate".into())), (Object("java/util/function/Predicate".into())), (Object("java/lang/Object".into()))) -> boolean),
+                    },
+                    captures: vec![this, other],
+                }
+                .as_object(predicate_class);
+                let idx = thread.heap.lock().unwrap().allocate(lambda_object);
+                Ok(idx)
+            }
+
+            fn "$or"(
+                first: java::util::function::Predicate,
+                second: java::util::function::Predicate,
+                operand: java::lang::Object
+            ) -> Boolean {
+                use thread, verbose;
+                super::resolve_and_invoke(thread, first, "test", &method!(((Object("java/lang/Object".into()))) -> boolean), verbose)?;
+                thread.stackframe.locals[0] = first;
+                thread.stackframe.locals[1] = operand;
+                super::run_until_return(thread, verbose)?;
+                let ret = thread.stackframe.operand_stack.pop().unwrap();
+                if ret > 0 {
+                    return Ok(true);
+                }
+                super::resolve_and_invoke(thread, second, "test", &method!(((Object("java/lang/Object".into()))) -> boolean), verbose)?;
+                thread.stackframe.locals[0] = second;
+                thread.stackframe.locals[1] = operand;
+                super::run_until_return(thread, verbose)?;
+                Ok(thread.stackframe.operand_stack.pop().unwrap() > 0)
+            }
+
+            fn or(&this, other: java::util::function::Predicate) -> java::util::function::Predicate {
+                use thread, _v;
+                let predicate_class = thread.class_area.search("java/util/function/Function").unwrap();
+                let lambda_object = LambdaOverride {
+                    method_name: "test".into(),
+                    method_descriptor: method!(((Object("java/lang/Object".into()))) -> boolean),
+                    invoke: MethodHandle::InvokeStatic {
+                        class: "java/util/function/Predicate".into(),
+                        name: "$or".into(),
+                        method_type: method!(((Object("java/util/function/Predicate".into())), (Object("java/util/function/Predicate".into())), (Object("java/lang/Object".into()))) -> boolean),
+                    },
+                    captures: vec![this, other],
+                }
+                .as_object(predicate_class);
+                let idx = thread.heap.lock().unwrap().allocate(lambda_object);
+                Ok(idx)
+            }
         }
-    };
-    let predicate_negate = RawMethod {
-        name: "negate".into(),
-        access_flags: access!(public native),
-        descriptor: method!(() -> Object(predicate.this.clone())),
-        code: RawCode::native(make_lambda_override::<1>(
-            predicate_test.name.clone(),
-            predicate_test.descriptor.clone(),
-            predicate.this.clone(),
-            predicate_neg_lambda.name.clone(),
-            predicate_neg_lambda.descriptor.clone(),
-            predicate.this.clone(),
-        )),
-        ..Default::default()
-    };
-    let is_equal = {
-        let equals_handle = MethodHandle::InvokeStatic {
-            class: "java/lang/Objects".into(),
-            name: "equals".into(),
-            method_type: method!(((Object(java_lang_object.clone()))) -> boolean),
-        };
-        let test_name = predicate_test.name.clone();
-        let test_signature = predicate_test.descriptor.clone();
-        let predicate_name = predicate.this.clone();
-        RawMethod {
-            name: "isEqual".into(),
-            access_flags: access!(public static native),
-            descriptor: method!(((Object(java_lang_object.clone()))) -> Object(predicate.this.clone())),
-            code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [target_ref]: [u32; 1], _verbose| {
-                    let predicate_class = thread.class_area.search(&predicate_name).unwrap();
-                    let lambda_object = LambdaOverride {
-                        method_name: test_name.clone(),
-                        method_descriptor: test_signature.clone(),
-                        invoke: equals_handle.clone(),
-                        captures: vec![target_ref],
-                    }
-                    .as_object(predicate_class);
-                    let idx = thread.heap.lock().unwrap().allocate(lambda_object);
-                    Ok(idx)
-                },
-            )),
-            ..Default::default()
-        }
-    };
-    let predicate_and_lambda = {
-        let test_signature = method!(((Object(java_lang_object.clone()))) -> boolean);
-        RawMethod {
-            name: "$and".into(),
-            access_flags: access!(public static native),
-            descriptor: method!(((Object(predicate.this.clone())), (Object(predicate.this.clone())), (Object(java_lang_object.clone()))) -> boolean),
-            code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [first, second, operand]: [u32; 3], verbose| {
-                    super::resolve_and_invoke(thread, first, "test", &test_signature, verbose)?;
-                    thread.stackframe.locals[0] = first;
-                    thread.stackframe.locals[1] = operand;
-                    super::run_until_return(thread, verbose)?;
-                    let ret = thread.stackframe.operand_stack.pop().unwrap();
-                    if ret == 0 {
-                        return Ok(0);
-                    }
-                    super::resolve_and_invoke(thread, second, "test", &test_signature, verbose)?;
-                    thread.stackframe.locals[0] = second;
-                    thread.stackframe.locals[1] = operand;
-                    super::run_until_return(thread, verbose)?;
-                    Ok(thread.stackframe.operand_stack.pop().unwrap())
-                },
-            )),
-            ..Default::default()
-        }
-    };
-    let predicate_or_lambda = {
-        let test_signature = method!(((Object(java_lang_object.clone()))) -> boolean);
-        RawMethod {
-            name: "$or".into(),
-            access_flags: access!(public static native),
-            descriptor: method!(((Object(predicate.this.clone())), (Object(predicate.this.clone())), (Object(java_lang_object.clone()))) -> boolean),
-            code: RawCode::native(NativeSingleMethod(
-                move |thread: &mut Thread, [first, second, operand]: [u32; 3], verbose| {
-                    super::resolve_and_invoke(thread, first, "test", &test_signature, verbose)?;
-                    thread.stackframe.locals[0] = first;
-                    thread.stackframe.locals[1] = operand;
-                    super::run_until_return(thread, verbose)?;
-                    let ret = thread.stackframe.operand_stack.pop().unwrap();
-                    if ret == 1 {
-                        return Ok(1);
-                    }
-                    super::resolve_and_invoke(thread, second, "test", &test_signature, verbose)?;
-                    thread.stackframe.locals[0] = second;
-                    thread.stackframe.locals[1] = operand;
-                    super::run_until_return(thread, verbose)?;
-                    Ok(thread.stackframe.operand_stack.pop().unwrap())
-                },
-            )),
-            ..Default::default()
-        }
-    };
-    let predicate_and = RawMethod {
-        name: "and".into(),
-        access_flags: access!(public native),
-        descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
-        code: RawCode::native(make_lambda_override::<2>(
-            predicate_test.name.clone(),
-            predicate_test.descriptor.clone(),
-            predicate.this.clone(),
-            predicate_and_lambda.name.clone(),
-            predicate_and_lambda.descriptor.clone(),
-            predicate.this.clone(),
-        )),
-        ..Default::default()
-    };
-    let predicate_or = RawMethod {
-        name: "or".into(),
-        access_flags: access!(public native),
-        descriptor: method!(((Object(predicate.this.clone()))) -> Object(predicate.this.clone())),
-        code: RawCode::native(make_lambda_override::<2>(
-            predicate_test.name.clone(),
-            predicate_test.descriptor.clone(),
-            predicate.this.clone(),
-            predicate_or_lambda.name.clone(),
-            predicate_or_lambda.descriptor.clone(),
-            predicate.this.clone(),
-        )),
-        ..Default::default()
-    };
-    predicate.register_methods(
-        [
-            predicate_test,
-            predicate_neg_lambda,
-            is_equal,
-            predicate_negate,
-            predicate_and_lambda,
-            predicate_or_lambda,
-            predicate_and,
-            predicate_or,
-        ],
-        method_area,
-    );
+    });
 
     let mut optional = RawClass::new(
         access!(public native),
@@ -510,7 +440,7 @@ pub(super) fn add_native_methods(
         RawMethod {
             name: "filter".into(),
             access_flags: access!(public native),
-            descriptor: method!(((Object(predicate.this.clone()))) -> Object(optional.this.clone())),
+            descriptor: method!(((Object("java/util/function/Predicate".into()))) -> Object(optional.this.clone())),
             code: RawCode::native(NativeSingleMethod(
                 move |thread: &mut Thread, [this, predicate]: [u32; 2], verbose| {
                     let this_value =
@@ -691,5 +621,5 @@ pub(super) fn add_native_methods(
     };
     consumer.register_method(consumer_accept, method_area);
 
-    class_area.extend([optional, predicate, consumer]);
+    class_area.extend([optional, consumer]);
 }
