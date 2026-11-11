@@ -13,6 +13,7 @@ use crate::{
 pub trait Field {
     type T;
 
+    #[allow(clippy::wrong_self_convention)]
     fn as_field(self) -> FieldType;
 
     fn make_native<const U: usize>(
@@ -21,6 +22,8 @@ pub trait Field {
     ) -> impl NativeMethod;
 
     fn get_parameter(&self, thread: &Thread, idx: usize, args: &[u32]) -> Self::T;
+
+    fn as_words(&self, val: Self::T) -> impl IntoIterator<Item = u32>;
 }
 
 #[derive(Clone, Copy)]
@@ -41,6 +44,10 @@ impl Field for Void {
     }
 
     fn get_parameter(&self, _: &Thread, _: usize, _: &[u32]) -> Self::T {}
+
+    fn as_words(&self, (): Self::T) -> impl IntoIterator<Item = u32> {
+        []
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -63,6 +70,10 @@ impl<T: Field> Field for ArrayField<T> {
     fn get_parameter(&self, _: &Thread, idx: usize, args: &[u32]) -> Self::T {
         args[idx]
     }
+
+    fn as_words(&self, val: Self::T) -> impl IntoIterator<Item = u32> {
+        [val]
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -84,6 +95,10 @@ impl Field for ObjectField {
 
     fn get_parameter(&self, _: &Thread, idx: usize, args: &[u32]) -> Self::T {
         args[idx]
+    }
+
+    fn as_words(&self, val: Self::T) -> impl IntoIterator<Item = u32> {
+        [val]
     }
 }
 
@@ -109,6 +124,10 @@ impl Field for Boolean {
     fn get_parameter(&self, _: &Thread, idx: usize, args: &[u32]) -> Self::T {
         args[idx] > 0
     }
+
+    fn as_words(&self, val: Self::T) -> impl IntoIterator<Item = u32> {
+        [u32::from(val)]
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -132,6 +151,10 @@ impl Field for Char {
 
     fn get_parameter(&self, _: &Thread, idx: usize, args: &[u32]) -> Self::T {
         char::try_from(args[idx]).unwrap()
+    }
+
+    fn as_words(&self, val: Self::T) -> impl IntoIterator<Item = u32> {
+        [val as u32]
     }
 }
 
@@ -157,6 +180,10 @@ impl Field for Int {
     fn get_parameter(&self, _: &Thread, idx: usize, args: &[u32]) -> Self::T {
         args[idx] as i32
     }
+
+    fn as_words(&self, val: Self::T) -> impl IntoIterator<Item = u32> {
+        [val as u32]
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -180,6 +207,10 @@ impl Field for Long {
 
     fn get_parameter(&self, _: &Thread, idx: usize, args: &[u32]) -> Self::T {
         (args[idx] as i64) << 32 | args[idx + 1] as i64
+    }
+
+    fn as_words(&self, val: Self::T) -> impl IntoIterator<Item = u32> {
+        [((val as u64) >> 32) as u32, val as u32]
     }
 }
 
@@ -205,6 +236,10 @@ impl Field for Float {
     fn get_parameter(&self, _: &Thread, idx: usize, args: &[u32]) -> Self::T {
         f32::from_bits(args[idx])
     }
+
+    fn as_words(&self, val: Self::T) -> impl IntoIterator<Item = u32> {
+        [val.to_bits()]
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -229,6 +264,10 @@ impl Field for Double {
     fn get_parameter(&self, _: &Thread, idx: usize, args: &[u32]) -> Self::T {
         f64::from_bits((args[idx] as u64) << 32 | args[idx + 1] as u64)
     }
+
+    fn as_words(&self, val: Self::T) -> impl IntoIterator<Item = u32> {
+        [(val.to_bits() >> 32) as u32, val.to_bits() as u32]
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -250,5 +289,11 @@ impl Field for StringField {
 
     fn get_parameter(&self, thread: &Thread, idx: usize, args: &[u32]) -> Self::T {
         StringObj::inspect(&thread.heap, args[idx] as usize, |o| o.clone()).unwrap()
+    }
+
+    #[allow(unreachable_code)]
+    fn as_words(&self, _: Self::T) -> impl IntoIterator<Item = u32> {
+        panic!("Can't use string in static initializer");
+        []
     }
 }

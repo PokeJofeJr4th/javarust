@@ -1,25 +1,14 @@
-use std::{println, sync::Arc};
-
-use jvmrs_lib::{access, method, FieldType};
+use jvmrs_lib::method;
 
 use crate::{
-    class::{code::NativeVoid, Field},
-    class_loader::{RawClass, RawCode, RawMethod},
-    data::{WorkingClassArea, WorkingMethodArea, NULL},
-    native_class,
-    virtual_machine::{
+    data::{NULL, WorkingClassArea, WorkingMethodArea}, native_class, virtual_machine::{
         native::field::{Boolean, Char, Double, Float, Int, Long, StringField},
         object::{Array1, Array2, ArrayType, Object, ObjectFinder as _, StringObj},
-        Thread,
     },
 };
 
 #[allow(clippy::too_many_lines)]
-pub fn add_native_methods(
-    class_area: &mut WorkingClassArea,
-    method_area: &mut WorkingMethodArea,
-    java_lang_object: &Arc<str>,
-) {
+pub fn add_native_methods(class_area: &mut WorkingClassArea, method_area: &mut WorkingMethodArea) {
     class_area.extend(native_class!(
         use method_area;
         impl java::io::PrintStream {
@@ -87,58 +76,23 @@ pub fn add_native_methods(
                 Ok(())
             }
         }
-    ));
-    // let system_out = heap.allocate(Object::from_class(class_area, &printstream));
 
-    let mut system = RawClass::new(
-        access!(public native),
-        "java/lang/System".into(),
-        java_lang_object.clone(),
-    );
-    let system_clinit = RawMethod {
-        name: "<clinit>".into(),
-        access_flags: access!(public static native),
-        descriptor: method!(() -> void),
-        code: RawCode::native(NativeVoid(|thread: &mut Thread, []: [u32; 0], verbose| {
-            let system_class = thread.class_area.search("java/lang/System").unwrap();
-            let out_ref = thread.heap.lock().unwrap().allocate(Object::from_class(
-                thread.class_area.search("java/io/PrintStream").unwrap(),
-            ));
-            system_class.static_data.lock().unwrap()[0] = out_ref;
-            thread.rember(out_ref, verbose);
-            Ok(())
-        })),
-        ..Default::default()
-    };
-    system.register_method(system_clinit, method_area);
+        impl java::lang::System {
+            static out: java::io::PrintStream = NULL;
 
-    system.static_data.push(NULL);
-    system.statics.push((
-        Field {
-            access_flags: access!(public native),
-            name: "out".into(),
-            descriptor: FieldType::Object("java/io/PrintStream".into()),
-            attributes: Vec::new(),
-            signature: None,
-            constant_value: None,
-        },
-        0,
-    ));
+            fn "<clinit>"() {
+                use thread, verbose;
+                let system_class = thread.class_area.search("java/lang/System").unwrap();
+                let out_ref = thread.heap.lock().unwrap().allocate(Object::from_class(
+                    thread.class_area.search("java/io/PrintStream").unwrap(),
+                ));
+                system_class.static_data.lock().unwrap()[0] = out_ref;
+                thread.rember(out_ref, verbose);
+                Ok(())
+            }
 
-    let arraycopy = RawMethod {
-        access_flags: access!(public native),
-        name: "arraycopy".into(),
-        descriptor: method!((
-            (Object(java_lang_object.clone())),
-            int,
-            (Object(java_lang_object.clone())),
-            int,
-            int
-        ) -> void),
-        code: RawCode::native(NativeVoid(
-            |thread: &mut Thread,
-             [src_idx, start, dest_idx, start_dest, count]: [u32; 5],
-             _verbose| {
+            fn "arraycopy"(src_idx: java::lang::Object, start: Int, dest_idx: java::lang::Object, start_dest: Int, count: Int) {
+                use thread, _v;
                 let arr_size =
                     ArrayType::inspect(&thread.heap, src_idx as usize, |f| f.get_size())?;
                 if arr_size == 1 {
@@ -160,11 +114,7 @@ pub fn add_native_methods(
                         }
                     })
                 }
-            },
-        )),
-        ..Default::default()
-    };
-    system.register_method(arraycopy, method_area);
-
-    class_area.extend([system]);
+            }
+        }
+    ));
 }

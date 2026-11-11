@@ -5,17 +5,13 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
-use jvmrs_lib::{access, field, method, MethodDescriptor};
+use jvmrs_lib::MethodDescriptor;
 use rand::{rngs::StdRng, RngExt};
 
 use crate::{
-    class::{
-        code::{native_property, NativeDoubleMethod, NativeSingleMethod, NativeVoid},
-        Class, Field,
-    },
-    class_loader::{RawClass, RawCode, RawMethod},
+    class::Class,
     data::{Heap, SharedClassArea, WorkingClassArea, WorkingMethodArea},
-    virtual_machine::{error, object::StringBuilder},
+    virtual_machine::{error, native::field::Double, object::StringBuilder},
 };
 
 use super::{
@@ -67,6 +63,7 @@ macro_rules! native_class {
         native_class!{
             @{$($clsbody)*}
             []
+            {}
             class
             $method_area
         }
@@ -77,6 +74,7 @@ macro_rules! native_class {
             fn $fn_name:tt($(&$this:ident$(,)?)?$($param:ident: $paramty:ident$(::$paramsegment:ident)*),*) $(->$retty:ident$(::$retsegment:ident)*)?; $($clsbody:tt)*
         }
         [$($methods:tt)*]
+        {$($post:tt)*}
         $class:ident
         $method_area:ident
     ) => {
@@ -95,6 +93,7 @@ macro_rules! native_class {
                     ..::core::default::Default::default()
                 },
             ]
+            {$($post)*}
             $class
             $method_area
         }
@@ -107,6 +106,7 @@ macro_rules! native_class {
             } $($clsbody:tt)*
         }
         [$($methods:tt)*]
+        {$($post:tt)*}
         $class:ident
         $method_area:ident
     ) => {
@@ -140,13 +140,61 @@ macro_rules! native_class {
                     ..::core::default::Default::default()
                 },
             ]
+            {$($post)*}
             $class
             $method_area
         }
     };
 
-    (@{}[$($methods:tt)*]$class:ident$method_area:ident) => {
+    (@{
+        static $varname:tt: $varty:ident$(::$varseg:ident)* = $val:expr;
+        $($clsbody:tt)*
+    }
+    [$($methods:tt)*]{$($post:tt)*}$class:ident$method_area:ident) => {
+        $crate::native_class!{@{
+                $($clsbody)*
+            }
+            [$($methods)*]
+            {
+                $($post)*
+                let size = $class.static_data.len();
+                $class.statics.push(($crate::class::Field {
+                    access_flags: jvmrs_lib::access!(public native),
+                    name: $crate::native_class!(@fn_name $varname).into(),
+                    descriptor: $crate::virtual_machine::native::field::Field::as_field($crate::native_class!(@ret $varty$(::$varseg)*)),
+                    ..Default::default()
+                }, size));
+                $class.static_data.extend($crate::virtual_machine::native::field::Field::as_words(&$crate::native_class!(@ret $varty$(::$varseg)*), $val));
+            }
+            $class$method_area
+        }
+    };
+
+    (@{
+        let $varname:tt: $varty:ident$(::$varseg:ident)*;
+        $($clsbody:tt)*
+    }
+    [$($methods:tt)*]{$($post:tt)*}$class:ident$method_area:ident) => {
+        $crate::native_class!{@{
+                $($clsbody)*
+            }
+            [$($methods)*]
+            {
+                $($post)*
+                $class.fields.push(($crate::class::Field {
+                    access_flags: jvmrs_lib::access!(public native),
+                    name: $crate::native_class!(@fn_name $varname).into(),
+                    descriptor: $crate::virtual_machine::native::field::Field::as_field($crate::native_class!(@ret $varty$(::$varseg)*)),
+                    ..Default::default()
+                }, $crate::native_class!(@param_size $varty,)));
+            }
+            $class$method_area
+        }
+    };
+
+    (@{}[$($methods:tt)*]{$($post:tt)*}$class:ident$method_area:ident) => {
         $class.register_methods([$($methods)*], $method_area);
+        $($post)*
     };
 
     (@super $($supcls:tt)+) => {$crate::native_class!(@parse_class $($supcls)*).into()};
@@ -350,125 +398,42 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
                 AnyObj.inspect(&thread.heap, this as usize, |o| o.native_fields[0].downcast_mut::<StdRng>().unwrap().random_range(0..(right_bound as i32)))
             }
         }
+
+        impl java::lang::Enum {
+            let "enum$name": java::lang::String;
+            let "enum$id": Int;
+
+            fn "<init>"(&obj_ref, string: java::lang::String, id: Int) {
+                use thread, _verbose;
+                AnyObj.inspect(&thread.heap, obj_ref as usize, |instance| {
+                    instance.fields = vec![string, id as u32];
+                })
+            }
+
+            fn toString(&this) -> java::lang::String {
+                use thread, _verbose;
+                AnyObj.inspect(&thread.heap, this as usize, |f| f.fields[0])
+            }
+
+            fn name(&this) -> java::lang::String {
+                use thread, _verbose;
+                AnyObj.inspect(&thread.heap, this as usize, |f| f.fields[0])
+            }
+        }
+
+        impl java::lang::Math {
+            static E: Double = E;
+            static PI: Double = PI;
+            static TAU: Double = TAU;
+
+            fn sqrt(value: Double) -> Double {
+                use _t, _v;
+                Ok(value.sqrt())
+            }
+        }
     ));
 
-    let mut enum_class = RawClass::new(
-        access!(public abstract native),
-        "java/lang/Enum".into(),
-        java_lang_object.clone(),
-    );
-    enum_class.field_size = 2;
-    enum_class.fields = vec![
-        (
-            Field {
-                access_flags: access!(public native),
-                name: "enum$name".into(),
-                descriptor: field!(Object(java_lang_string.clone())),
-                ..Default::default()
-            },
-            0,
-        ),
-        (
-            Field {
-                access_flags: access!(public native),
-                name: "enum$id".into(),
-                descriptor: field!(int),
-                ..Default::default()
-            },
-            1,
-        ),
-    ];
-    let enum_init = RawMethod {
-        access_flags: access!(public native),
-        name: "<init>".into(),
-        descriptor: method!(((Object(java_lang_string.clone())), int) -> void),
-        code: RawCode::native(NativeVoid(
-            |thread: &mut Thread, [obj_ref, string, id]: [u32; 3], _verbose| {
-                AnyObj.inspect(&thread.heap, obj_ref as usize, |instance| {
-                    instance.fields = vec![string, id];
-                })
-            },
-        )),
-        ..Default::default()
-    };
-    let enum_to_string = RawMethod {
-        access_flags: access!(public native),
-        name: "toString".into(),
-        descriptor: method!(() -> Object(java_lang_object.clone())),
-        code: RawCode::native(NativeSingleMethod(native_property(AnyObj, |obj| {
-            obj.fields[0]
-        }))),
-        ..Default::default()
-    };
-    let enum_name = RawMethod {
-        name: "name".into(),
-        ..enum_to_string.clone()
-    };
-    enum_class.register_methods([enum_init, enum_to_string, enum_name], method_area);
-
-    let sqrt_double = RawMethod {
-        access_flags: access!(public static native),
-        name: "sqrt".into(),
-        descriptor: method!((double) -> double),
-        code: RawCode::native(NativeDoubleMethod(
-            |_: &mut _, [left, right]: [u32; 2], _| {
-                Ok(f64::from_bits((left as u64) << 32 | (right as u64))
-                    .sqrt()
-                    .to_bits())
-            },
-        )),
-        ..Default::default()
-    };
-    let mut math = RawClass::new(
-        access!(public native),
-        "java/lang/Math".into(),
-        java_lang_object.clone(),
-    );
-    math.static_data.extend([
-        E.to_bits() as u32,
-        (E.to_bits() >> 32) as u32,
-        PI.to_bits() as u32,
-        (PI.to_bits() >> 32) as u32,
-        TAU.to_bits() as u32,
-        (TAU.to_bits() >> 32) as u32,
-    ]);
-    math.statics.extend([
-        (
-            Field {
-                access_flags: access!(public static final),
-                name: "E".into(),
-                descriptor: field!(double),
-                ..Default::default()
-            },
-            0,
-        ),
-        (
-            Field {
-                access_flags: access!(public static final),
-                name: "PI".into(),
-                descriptor: field!(double),
-                ..Default::default()
-            },
-            2,
-        ),
-        (
-            Field {
-                access_flags: access!(public static final),
-                name: "TAU".into(),
-                descriptor: field!(double),
-                ..Default::default()
-            },
-            4,
-        ),
-    ]);
-    math.register_method(sqrt_double, method_area);
-
-    throwable::add_native_methods(
-        &java_lang_object,
-        &java_lang_string,
-        method_area,
-        class_area,
-    );
+    throwable::add_native_methods(method_area, class_area);
     collections::add_native_collections(
         class_area,
         method_area,
@@ -484,14 +449,8 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
     );
     stream::add_native_methods(method_area, class_area, &java_lang_object);
     arrays::add_native_methods(class_area, method_area, &java_lang_object);
-    string::add_native_methods(
-        class_area,
-        method_area,
-        &java_lang_object,
-        &java_lang_string,
-    );
-    system::add_native_methods(class_area, method_area, &java_lang_object);
+    string::add_native_methods(class_area, method_area);
+    system::add_native_methods(class_area, method_area);
 
-    class_area.extend([enum_class, math]);
     drop((java_lang_object, java_lang_string));
 }
