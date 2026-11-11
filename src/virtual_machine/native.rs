@@ -181,12 +181,14 @@ macro_rules! native_class {
             [$($methods)*]
             {
                 $($post)*
+                let size = $class.field_size;
+                $class.field_size += $crate::native_class!(@param_size $varty,);
                 $class.fields.push(($crate::class::Field {
                     access_flags: jvmrs_lib::access!(public native),
                     name: $crate::native_class!(@fn_name $varname).into(),
                     descriptor: $crate::virtual_machine::native::field::Field::as_field($crate::native_class!(@ret $varty$(::$varseg)*)),
                     ..Default::default()
-                }, $crate::native_class!(@param_size $varty,)));
+                }, size));
             }
             $class$method_area
         }
@@ -441,12 +443,7 @@ pub fn add_native_methods(method_area: &mut WorkingMethodArea, class_area: &mut 
         &java_lang_string,
     );
     reflect::add_native_methods(method_area, class_area);
-    function::add_native_methods(
-        method_area,
-        class_area,
-        &java_lang_object,
-        &java_lang_string,
-    );
+    function::add_native_methods(method_area, class_area);
     stream::add_native_methods(method_area, class_area, &java_lang_object);
     arrays::add_native_methods(class_area, method_area, &java_lang_object);
     string::add_native_methods(class_area, method_area);
